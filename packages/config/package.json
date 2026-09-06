@@ -1,0 +1,8 @@
+{
+  "name": "@careerforge/config",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "lint": "echo \"config: lint placeholder\""
+  }
+}

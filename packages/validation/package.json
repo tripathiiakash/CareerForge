@@ -1,0 +1,9 @@
+{
+  "name": "@careerforge/validation",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo \"validation: build placeholder\"",
+    "lint": "echo \"validation: lint placeholder\""
+  }
+}

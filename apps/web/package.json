@@ -1,0 +1,10 @@
+{
+  "name": "@careerforge/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo \"web: build placeholder\"",
+    "dev": "echo \"web: dev placeholder\"",
+    "lint": "echo \"web: lint placeholder\""
+  }
+}

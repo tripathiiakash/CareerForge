@@ -1,0 +1,10 @@
+{
+  "name": "@careerforge/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "echo \"api: build placeholder\"",
+    "dev": "echo \"api: dev placeholder\"",
+    "lint": "echo \"api: lint placeholder\""
+  }
+}
