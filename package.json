@@ -10,12 +10,15 @@
     "build": "turbo build",
     "dev": "turbo dev",
     "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,md,json}\""
   },
   "devDependencies": {
+    "@types/node": "^22.13.0",
     "prettier": "^3.5.0",
-    "turbo": "^2.4.4"
+    "turbo": "^2.4.4",
+    "typescript": "^5.7.3"
   },
   "packageManager": "npm@11.6.2"
 }

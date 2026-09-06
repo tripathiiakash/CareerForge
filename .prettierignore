@@ -4,3 +4,4 @@ build
 .turbo
 .next
 package-lock.json
+docs

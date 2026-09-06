@@ -2,7 +2,20 @@
   "name": "@careerforge/config",
   "version": "0.1.0",
   "private": true,
+  "files": [
+    "tsconfig.base.json",
+    "tsconfig.node.json",
+    "tsconfig.web.json",
+    "tsconfig.package.json"
+  ],
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.node.json": "./tsconfig.node.json",
+    "./tsconfig.web.json": "./tsconfig.web.json",
+    "./tsconfig.package.json": "./tsconfig.package.json"
+  },
   "scripts": {
+    "build": "echo \"config: no build required\"",
     "lint": "echo \"config: lint placeholder\""
   }
 }
