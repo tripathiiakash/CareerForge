@@ -1,0 +1,235 @@
+// =============================================================================
+// CareerForge Prisma Schema
+// Source of truth: docs/DATABASE.md
+// Do NOT add, remove, or rename fields without updating DATABASE.md first.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// Derived from the VARCHAR status/type columns in DATABASE.md.
+// Using enums here enforces compile-time safety while the DB stores strings.
+// ---------------------------------------------------------------------------
+
+/// User roles — docs/DATABASE.md: users.role VARCHAR(50)
+enum UserRole {
+  STUDENT
+  RECRUITER
+  ADMIN
+}
+
+/// Employment type — docs/DATABASE.md: jobs.employment_type VARCHAR(50)
+enum EmploymentType {
+  INTERNSHIP
+  FULL_TIME
+}
+
+/// Job lifecycle status — docs/DATABASE.md: jobs.status VARCHAR(50)
+enum JobStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+}
+
+/// AI analysis processing status — docs/DATABASE.md: ai_analyses.status VARCHAR(20)
+enum AnalysisStatus {
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// Application tracking status — docs/DATABASE.md: applications.status VARCHAR(50)
+enum ApplicationStatus {
+  APPLIED
+  SHORTLISTED
+  REJECTED
+}
+
+// ---------------------------------------------------------------------------
+// 1. Users (Auth Module)
+// docs/DATABASE.md §1
+// Central identity table for all platform users.
+// ---------------------------------------------------------------------------
+model User {
+  id            String    @id @default(uuid()) @db.Uuid
+  email         String    @unique @db.VarChar(255)
+  password_hash String    @db.VarChar(255)
+  role          UserRole
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  is_banned     Boolean   @default(false)
+
+  // Relations
+  recruiter Recruiter?
+  student   Student?
+
+  @@map("users")
+}
+
+// ---------------------------------------------------------------------------
+// 2. Companies (Jobs/Recruiter Module)
+// docs/DATABASE.md §2
+// Organizations that recruiters belong to.
+// Note: no updated_at per DATABASE.md.
+// ---------------------------------------------------------------------------
+model Company {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String   @db.VarChar(255)
+  website    String?  @db.VarChar(255)
+  logo_url   String?  @db.VarChar(512)
+  created_at DateTime @default(now())
+
+  // Relations
+  recruiters Recruiter[]
+  jobs       Job[]
+
+  @@map("companies")
+}
+
+// ---------------------------------------------------------------------------
+// 3. Recruiters (Recruiter Module)
+// docs/DATABASE.md §3
+// Profile data specific to recruiter accounts.
+// ---------------------------------------------------------------------------
+model Recruiter {
+  id          String  @id @default(uuid()) @db.Uuid
+  user_id     String  @unique @db.Uuid
+  company_id  String  @db.Uuid
+  first_name  String  @db.VarChar(100)
+  last_name   String  @db.VarChar(100)
+  is_approved Boolean @default(false)
+
+  // Relations
+  user    User    @relation(fields: [user_id], references: [id])
+  company Company @relation(fields: [company_id], references: [id])
+  jobs    Job[]
+
+  @@map("recruiters")
+}
+
+// ---------------------------------------------------------------------------
+// 4. Students (Student Module)
+// docs/DATABASE.md §4
+// Profile data for job seekers.
+// ---------------------------------------------------------------------------
+model Student {
+  id              String   @id @default(uuid()) @db.Uuid
+  user_id         String   @unique @db.Uuid
+  first_name      String   @db.VarChar(100)
+  last_name       String   @db.VarChar(100)
+  university      String?  @db.VarChar(255)
+  graduation_year Int?
+  degree          String?  @db.VarChar(100)
+  skills          String[]
+  github_url      String?  @db.VarChar(255)
+  linkedin_url    String?  @db.VarChar(255)
+
+  // Relations
+  user         User          @relation(fields: [user_id], references: [id])
+  resumes      Resume[]
+  applications Application[]
+
+  @@map("students")
+}
+
+// ---------------------------------------------------------------------------
+// 5. Resumes (Student Module)
+// docs/DATABASE.md §5
+// Stores PDF links and parsed text.
+// Note: no updated_at per DATABASE.md (immutable after upload).
+// ---------------------------------------------------------------------------
+model Resume {
+  id          String   @id @default(uuid()) @db.Uuid
+  student_id  String   @db.Uuid
+  file_url    String   @db.VarChar(512)
+  parsed_text String?
+  is_primary  Boolean  @default(true)
+  created_at  DateTime @default(now())
+
+  // Relations
+  student     Student      @relation(fields: [student_id], references: [id])
+  ai_analysis AiAnalysis?
+  applications Application[]
+
+  @@map("resumes")
+}
+
+// ---------------------------------------------------------------------------
+// 6. AI Resume Analyses (AI Module)
+// docs/DATABASE.md §6
+// Stores Gemini API results. 1:1 with resumes.
+// Note: no updated_at per DATABASE.md (worker writes result exactly once).
+// ---------------------------------------------------------------------------
+model AiAnalysis {
+  id               String         @id @default(uuid()) @db.Uuid
+  resume_id        String         @unique @db.Uuid
+  status           AnalysisStatus @default(PROCESSING)
+  score            Int?
+  missing_skills   String[]
+  formatting_tips  String[]
+  error_message    String?
+  created_at       DateTime       @default(now())
+
+  // Relations
+  resume Resume @relation(fields: [resume_id], references: [id])
+
+  @@map("ai_analyses")
+}
+
+// ---------------------------------------------------------------------------
+// 7. Jobs (Jobs Module)
+// docs/DATABASE.md §7
+// Job postings created by recruiters.
+// ---------------------------------------------------------------------------
+model Job {
+  id              String         @id @default(uuid()) @db.Uuid
+  recruiter_id    String         @db.Uuid
+  company_id      String         @db.Uuid
+  title           String         @db.VarChar(255)
+  description     String
+  required_skills String[]
+  employment_type EmploymentType
+  status          JobStatus      @default(PENDING)
+  created_at      DateTime       @default(now())
+  updated_at      DateTime       @updatedAt
+
+  // Relations
+  recruiter    Recruiter     @relation(fields: [recruiter_id], references: [id])
+  company      Company       @relation(fields: [company_id], references: [id])
+  applications Application[]
+
+  @@map("jobs")
+}
+
+// ---------------------------------------------------------------------------
+// 8. Applications (Applications Module)
+// docs/DATABASE.md §8
+// Transactional link between student, resume, and job.
+// UNIQUE constraint on (job_id, student_id) prevents duplicate applications.
+// ---------------------------------------------------------------------------
+model Application {
+  id         String            @id @default(uuid()) @db.Uuid
+  job_id     String            @db.Uuid
+  student_id String            @db.Uuid
+  resume_id  String            @db.Uuid
+  status     ApplicationStatus @default(APPLIED)
+  applied_at DateTime          @default(now())
+  updated_at DateTime          @updatedAt
+
+  // Relations
+  job     Job     @relation(fields: [job_id], references: [id])
+  student Student @relation(fields: [student_id], references: [id])
+  resume  Resume  @relation(fields: [resume_id], references: [id])
+
+  // Unique constraint: a student can only apply once per job
+  @@unique([job_id, student_id])
+  @@map("applications")
+}

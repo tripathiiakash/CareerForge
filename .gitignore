@@ -29,3 +29,6 @@ pnpm-debug.log*
 # Editor and OS files
 .DS_Store
 Thumbs.db
+
+# Prisma generated client
+**/generated/prisma/
