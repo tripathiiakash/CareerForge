@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { ConfigModule } from './core/config/config.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { StudentModule } from './modules/student/student.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 /**
@@ -11,7 +12,7 @@ import { PrismaModule } from './prisma/prisma.module';
  * and PrismaService directly.
  */
 @Module({
-  imports: [ConfigModule, PrismaModule, AuthModule],
+  imports: [ConfigModule, PrismaModule, AuthModule, StudentModule],
   controllers: [AppController],
   providers: [],
 })
