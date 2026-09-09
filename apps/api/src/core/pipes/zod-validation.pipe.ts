@@ -19,7 +19,12 @@ import { ZodType } from 'zod';
 export class ZodValidationPipe implements PipeTransform {
   constructor(private readonly schema: ZodType) {}
 
-  transform(value: unknown, _metadata: ArgumentMetadata): unknown {
+  transform(value: unknown, metadata: ArgumentMetadata): unknown {
+    // Skip validation for custom parameter decorators (e.g. @CurrentUser)
+    if (metadata.type === 'custom') {
+      return value;
+    }
+
     const result = this.schema.safeParse(value);
 
     if (!result.success) {

@@ -37,3 +37,68 @@ export const loginSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+
+export const updateStudentProfileSchema = z.object({
+  first_name: z
+    .string()
+    .trim()
+    .min(1, 'First name must be between 1 and 100 characters')
+    .max(100, 'First name cannot exceed 100 characters')
+    .optional(),
+  last_name: z
+    .string()
+    .trim()
+    .min(1, 'Last name must be between 1 and 100 characters')
+    .max(100, 'Last name cannot exceed 100 characters')
+    .optional(),
+  university: z
+    .string()
+    .trim()
+    .max(255, 'University cannot exceed 255 characters')
+    .nullable()
+    .optional(),
+  graduation_year: z
+    .number({ message: 'Graduation year must be a valid number' })
+    .int('Graduation year must be an integer')
+    .min(2000, 'Graduation year must be between 2000 and 2035')
+    .max(2035, 'Graduation year must be between 2000 and 2035')
+    .nullable()
+    .optional(),
+  degree: z
+    .string()
+    .trim()
+    .max(100, 'Degree cannot exceed 100 characters')
+    .nullable()
+    .optional(),
+  skills: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, 'Skill cannot be empty')
+        .max(50, 'Each skill cannot exceed 50 characters')
+    )
+    .max(30, 'Skills cannot exceed 30 items')
+    .transform((items) =>
+      Array.from(new Set(items.map((s) => s.toLowerCase())))
+    )
+    .optional(),
+  github_url: z
+    .string()
+    .trim()
+    .url('Must be a valid URL format')
+    .max(255, 'GitHub URL cannot exceed 255 characters')
+    .nullable()
+    .optional(),
+  linkedin_url: z
+    .string()
+    .trim()
+    .url('Must be a valid URL format')
+    .max(255, 'LinkedIn URL cannot exceed 255 characters')
+    .nullable()
+    .optional(),
+});
+
+export type UpdateStudentProfileInput = z.infer<
+  typeof updateStudentProfileSchema
+>;
