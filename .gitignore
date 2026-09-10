@@ -32,3 +32,7 @@ Thumbs.db
 
 # Prisma generated client
 **/generated/prisma/
+
+# Local file uploads
+uploads/
+**/uploads/

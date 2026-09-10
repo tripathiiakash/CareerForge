@@ -75,6 +75,33 @@ export class AllExceptionsFilter implements ExceptionFilter {
           details = resObj.details;
         }
       }
+
+      if (
+        status === HttpStatus.PAYLOAD_TOO_LARGE ||
+        message === 'File too large'
+      ) {
+        status = HttpStatus.PAYLOAD_TOO_LARGE;
+        code = 'VALIDATION_ERROR';
+        message = 'File exceeds 5MB size limit';
+      }
+    } else if (
+      exception instanceof Error &&
+      (exception.name === 'MulterError' ||
+        (exception as unknown as Record<string, unknown>).code ===
+          'LIMIT_FILE_SIZE')
+    ) {
+      if (
+        (exception as unknown as Record<string, unknown>).code ===
+        'LIMIT_FILE_SIZE'
+      ) {
+        status = HttpStatus.PAYLOAD_TOO_LARGE;
+        code = 'VALIDATION_ERROR';
+        message = 'File exceeds 5MB size limit';
+      } else {
+        status = HttpStatus.BAD_REQUEST;
+        code = 'VALIDATION_ERROR';
+        message = exception.message || 'File upload validation failed';
+      }
     } else if (exception instanceof Error) {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       code = 'INTERNAL_ERROR';
@@ -127,6 +154,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return 'NOT_FOUND';
       case HttpStatus.CONFLICT:
         return 'CONFLICT';
+      case HttpStatus.PAYLOAD_TOO_LARGE:
+        return 'VALIDATION_ERROR';
       case HttpStatus.TOO_MANY_REQUESTS:
         return 'RATE_LIMITED';
       case HttpStatus.INTERNAL_SERVER_ERROR:
