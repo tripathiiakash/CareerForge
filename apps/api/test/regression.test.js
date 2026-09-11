@@ -4,6 +4,7 @@ const {
   registerSchema,
   loginSchema,
   updateStudentProfileSchema,
+  updateRecruiterProfileSchema,
   aiResumeAnalysisOutputSchema,
 } = require('@careerforge/validation');
 const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
@@ -108,6 +109,43 @@ describe('Regression & Architecture Integrity Test Suite', () => {
         () =>
           updateStudentProfileSchema.parse({
             skills: Array.from({ length: 35 }, (_, i) => `skill-${i}`), // max 30
+          }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+  });
+
+  describe('Recruiter Profile Validation', () => {
+    it('should validate recruiter profile updates correctly', () => {
+      const validProfile = {
+        first_name: 'Sarah',
+        last_name: 'Connor',
+        company_id: '1d8b67b1-419b-43d8-a53c-ebc4d32fbb47',
+      };
+
+      const parsed = updateRecruiterProfileSchema.parse(validProfile);
+      assert.equal(parsed.first_name, 'Sarah');
+      assert.equal(parsed.last_name, 'Connor');
+      assert.equal(parsed.company_id, '1d8b67b1-419b-43d8-a53c-ebc4d32fbb47');
+
+      // Empty object is valid (all fields optional)
+      const emptyParsed = updateRecruiterProfileSchema.parse({});
+      assert.deepEqual(emptyParsed, {});
+    });
+
+    it('should reject invalid company_id or empty names', () => {
+      assert.throws(
+        () =>
+          updateRecruiterProfileSchema.parse({
+            company_id: 'not-a-valid-uuid',
+          }),
+        (err) => err.name === 'ZodError'
+      );
+
+      assert.throws(
+        () =>
+          updateRecruiterProfileSchema.parse({
+            first_name: '   ', // empty after trim
           }),
         (err) => err.name === 'ZodError'
       );

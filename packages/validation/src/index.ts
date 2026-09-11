@@ -103,6 +103,26 @@ export type UpdateStudentProfileInput = z.infer<
   typeof updateStudentProfileSchema
 >;
 
+export const updateRecruiterProfileSchema = z.object({
+  first_name: z
+    .string()
+    .trim()
+    .min(1, 'First name must be between 1 and 100 characters')
+    .max(100, 'First name cannot exceed 100 characters')
+    .optional(),
+  last_name: z
+    .string()
+    .trim()
+    .min(1, 'Last name must be between 1 and 100 characters')
+    .max(100, 'Last name cannot exceed 100 characters')
+    .optional(),
+  company_id: z.string().uuid('Must be a valid UUID format').optional(),
+});
+
+export type UpdateRecruiterProfileInput = z.infer<
+  typeof updateRecruiterProfileSchema
+>;
+
 export const aiResumeAnalysisOutputSchema = z.object({
   score: z
     .number({ message: 'Score must be a number' })
