@@ -57,6 +57,25 @@ export class LocalStorageProvider implements IStorageProvider {
     }
   }
 
+  async getBuffer(fileKey: string): Promise<Buffer> {
+    const targetPath = this.resolveAndVerifyPath(fileKey);
+    try {
+      return await fs.readFile(targetPath);
+    } catch (error: unknown) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        (error as { code?: string }).code === 'ENOENT'
+      ) {
+        throw new BadRequestException({
+          code: 'FILE_NOT_FOUND',
+          message: 'Stored resume file not found',
+        });
+      }
+      throw error;
+    }
+  }
+
   private resolveAndVerifyPath(fileKey: string): string {
     // Sanitization: fileKey must only be alphanumeric characters, hyphens, and .pdf extension
     if (!/^[a-zA-Z0-9-]+\.pdf$/.test(fileKey)) {

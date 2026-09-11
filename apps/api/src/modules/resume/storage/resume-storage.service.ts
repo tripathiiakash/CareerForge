@@ -20,4 +20,8 @@ export class ResumeStorageService {
   async deleteFile(fileKey: string): Promise<void> {
     return this.storageProvider.delete(fileKey);
   }
+
+  async getFileBuffer(fileKey: string): Promise<Buffer> {
+    return this.storageProvider.getBuffer(fileKey);
+  }
 }

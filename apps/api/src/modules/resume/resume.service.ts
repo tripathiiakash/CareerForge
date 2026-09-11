@@ -5,6 +5,11 @@ import {
   Injectable,
 } from '@nestjs/common';
 import * as path from 'path';
+import { QueueService } from '../../core/queue/queue.service';
+import {
+  QUEUE_NAMES,
+  ResumeTextExtractionJobData,
+} from '../../core/queue/queue.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StudentService } from '../student/student.service';
 import { ResumeListItemDto } from './dto/resume-response.dto';
@@ -20,7 +25,8 @@ export class ResumeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly studentService: StudentService,
-    private readonly resumeStorageService: ResumeStorageService
+    private readonly resumeStorageService: ResumeStorageService,
+    private readonly queueService: QueueService
   ) {}
 
   /**
@@ -118,6 +124,22 @@ export class ResumeService {
           },
         });
       });
+
+      // 5. Enqueue background text extraction job
+      await this.queueService.send<ResumeTextExtractionJobData>(
+        QUEUE_NAMES.RESUME_TEXT_EXTRACTION,
+        {
+          resumeId: resume.id,
+          studentId: student.id,
+          fileKey: uploadResult.fileKey,
+        },
+        {
+          singletonKey: resume.id,
+          retryLimit: 3,
+          retryDelay: 10,
+          retryBackoff: true,
+        }
+      );
 
       return {
         id: resume.id,
