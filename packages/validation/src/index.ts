@@ -102,3 +102,33 @@ export const updateStudentProfileSchema = z.object({
 export type UpdateStudentProfileInput = z.infer<
   typeof updateStudentProfileSchema
 >;
+
+export const aiResumeAnalysisOutputSchema = z.object({
+  score: z
+    .number({ message: 'Score must be a number' })
+    .int('Score must be an integer')
+    .min(0, 'Score cannot be less than 0')
+    .max(100, 'Score cannot exceed 100'),
+  missing_skills: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, 'Skill cannot be empty')
+        .max(80, 'Skill cannot exceed 80 characters')
+    )
+    .max(20, 'Missing skills cannot exceed 20 items'),
+  formatting_tips: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, 'Formatting tip cannot be empty')
+        .max(300, 'Formatting tip cannot exceed 300 characters')
+    )
+    .max(10, 'Formatting tips cannot exceed 10 items'),
+});
+
+export type AiResumeAnalysisOutput = z.infer<
+  typeof aiResumeAnalysisOutputSchema
+>;
