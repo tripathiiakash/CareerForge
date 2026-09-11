@@ -6,12 +6,11 @@ const {
   updateStudentProfileSchema,
   updateRecruiterProfileSchema,
   createCompanySchema,
+  createJobSchema,
   aiResumeAnalysisOutputSchema,
 } = require('@careerforge/validation');
 const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
-const {
-  validateEnvironment,
-} = require('../dist/core/config/config.validator');
+const { validateEnvironment } = require('../dist/core/config/config.validator');
 
 describe('Regression & Architecture Integrity Test Suite', () => {
   describe('Queue Names Integrity', () => {
@@ -183,6 +182,36 @@ describe('Regression & Architecture Integrity Test Suite', () => {
       assert.ok(CompanyModule);
       assert.ok(CompanyController);
       assert.ok(CompanyService);
+    });
+  });
+
+  describe('Job Creation Validation', () => {
+    it('should validate job creation schema adhering to docs/API.md §5.1', () => {
+      const valid = {
+        title: 'Junior Backend Developer',
+        description:
+          'We are looking for a Node.js developer with experience in building REST APIs and working with PostgreSQL databases...',
+        required_skills: ['Node.js', 'PostgreSQL'],
+        employment_type: 'FULL_TIME',
+      };
+      const parsed = createJobSchema.parse(valid);
+      assert.equal(parsed.title, 'Junior Backend Developer');
+      assert.equal(parsed.employment_type, 'FULL_TIME');
+
+      assert.throws(
+        () => createJobSchema.parse({ ...valid, title: 'AB' }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+
+    it('should correctly expose Job module components', () => {
+      const { JobModule } = require('../dist/modules/job/job.module');
+      const { JobController } = require('../dist/modules/job/job.controller');
+      const { JobService } = require('../dist/modules/job/job.service');
+
+      assert.ok(JobModule);
+      assert.ok(JobController);
+      assert.ok(JobService);
     });
   });
 

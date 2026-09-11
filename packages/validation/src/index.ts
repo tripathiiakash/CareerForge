@@ -176,3 +176,32 @@ export const aiResumeAnalysisOutputSchema = z.object({
 export type AiResumeAnalysisOutput = z.infer<
   typeof aiResumeAnalysisOutputSchema
 >;
+
+export const createJobSchema = z.object({
+  title: z
+    .string({ message: 'Title is required' })
+    .trim()
+    .min(3, 'Title must be between 3 and 255 characters')
+    .max(255, 'Title cannot exceed 255 characters'),
+  description: z
+    .string({ message: 'Description is required' })
+    .trim()
+    .min(50, 'Description must be at least 50 characters')
+    .max(10000, 'Description cannot exceed 10000 characters'),
+  required_skills: z
+    .array(
+      z
+        .string()
+        .trim()
+        .min(1, 'Skill cannot be empty')
+        .max(50, 'Each skill cannot exceed 50 characters'),
+      { message: 'Required skills must be an array' }
+    )
+    .min(1, 'At least 1 required skill is required')
+    .max(20, 'Required skills cannot exceed 20 items'),
+  employment_type: z.enum(['INTERNSHIP', 'FULL_TIME'], {
+    message: "Employment type must be exactly 'INTERNSHIP' or 'FULL_TIME'",
+  }),
+});
+
+export type CreateJobInput = z.infer<typeof createJobSchema>;
