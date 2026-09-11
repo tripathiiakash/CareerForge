@@ -3,6 +3,7 @@ import { AppController } from './app.controller';
 import { ConfigModule } from './core/config/config.module';
 import { QueueModule } from './core/queue/queue.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { CompanyModule } from './modules/company/company.module';
 import { RecruiterModule } from './modules/recruiter/recruiter.module';
 import { ResumeModule } from './modules/resume/resume.module';
 import { StudentModule } from './modules/student/student.module';
@@ -23,6 +24,7 @@ import { PrismaModule } from './prisma/prisma.module';
     StudentModule,
     ResumeModule,
     RecruiterModule,
+    CompanyModule,
   ],
   controllers: [AppController],
   providers: [],

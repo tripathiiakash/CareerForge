@@ -168,6 +168,22 @@ describe('Regression & Architecture Integrity Test Suite', () => {
         (err) => err.name === 'ZodError'
       );
     });
+
+    it('should correctly expose Company module components', () => {
+      const {
+        CompanyModule,
+      } = require('../dist/modules/company/company.module');
+      const {
+        CompanyController,
+      } = require('../dist/modules/company/company.controller');
+      const {
+        CompanyService,
+      } = require('../dist/modules/company/company.service');
+
+      assert.ok(CompanyModule);
+      assert.ok(CompanyController);
+      assert.ok(CompanyService);
+    });
   });
 
   describe('AI Output Validation Bounds', () => {
