@@ -8,7 +8,7 @@ import {
 } from './ai-provider.interface';
 
 const MAX_RESUME_TEXT_CHARS = 12000;
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 const GEMINI_API_URL =
   'https://generativelanguage.googleapis.com/v1beta/models';
 
