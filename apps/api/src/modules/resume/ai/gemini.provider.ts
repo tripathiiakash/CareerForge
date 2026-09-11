@@ -99,6 +99,7 @@ Return strictly a raw JSON object matching the schema. Do not wrap in markdown t
 
       // Strip markdown code fences if present (e.g. ```json ... ```)
       const cleanJsonText = rawContent
+        .trim()
         .replace(/^```(?:json)?\s*/i, '')
         .replace(/\s*```$/i, '')
         .trim();

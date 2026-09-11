@@ -104,6 +104,7 @@ export class ResumeAnalysisWorker implements OnModuleInit {
           missing_skills: analysisResult.missingSkills,
           formatting_tips: analysisResult.formattingTips,
           error_message: null,
+          created_at: new Date(),
         },
       });
 

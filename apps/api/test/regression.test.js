@@ -1,0 +1,189 @@
+const { describe, it } = require('node:test');
+const assert = require('node:assert/strict');
+const {
+  registerSchema,
+  loginSchema,
+  updateStudentProfileSchema,
+  aiResumeAnalysisOutputSchema,
+} = require('@careerforge/validation');
+const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
+const {
+  validateEnvironment,
+} = require('../dist/core/config/config.validator');
+
+describe('Regression & Architecture Integrity Test Suite', () => {
+  describe('Queue Names Integrity', () => {
+    it('should maintain stable queue names for background processing', () => {
+      assert.equal(
+        QUEUE_NAMES.RESUME_TEXT_EXTRACTION,
+        'resume-text-extraction'
+      );
+      assert.equal(QUEUE_NAMES.RESUME_AI_ANALYSIS, 'resume-ai-analysis');
+    });
+  });
+
+  describe('Authentication Schemas', () => {
+    it('should validate student registration correctly', () => {
+      const validStudent = {
+        email: 'Student@Example.COM',
+        password: 'Password123!',
+        role: 'STUDENT',
+      };
+      const parsed = registerSchema.parse(validStudent);
+      assert.equal(parsed.email, 'student@example.com');
+      assert.equal(parsed.role, 'STUDENT');
+    });
+
+    it('should validate recruiter registration correctly', () => {
+      const validRecruiter = {
+        email: 'recruiter@company.com',
+        password: 'Password123!',
+        role: 'RECRUITER',
+      };
+      const parsed = registerSchema.parse(validRecruiter);
+      assert.equal(parsed.role, 'RECRUITER');
+    });
+
+    it('should reject invalid role or weak passwords', () => {
+      assert.throws(
+        () =>
+          registerSchema.parse({
+            email: 'admin@system.com',
+            password: 'Password123!',
+            role: 'ADMIN', // only STUDENT or RECRUITER can self-register
+          }),
+        (err) => err.name === 'ZodError'
+      );
+
+      assert.throws(
+        () =>
+          registerSchema.parse({
+            email: 'user@example.com',
+            password: 'weak',
+            role: 'STUDENT',
+          }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+
+    it('should validate login credentials schema', () => {
+      const parsed = loginSchema.parse({
+        email: 'TEST@USER.COM',
+        password: 'password123',
+      });
+      assert.equal(parsed.email, 'test@user.com');
+    });
+  });
+
+  describe('Student Profile Validation', () => {
+    it('should validate student profile updates and normalize skills', () => {
+      const validProfile = {
+        first_name: 'Jane',
+        last_name: 'Doe',
+        university: 'Stanford University',
+        graduation_year: 2026,
+        degree: 'B.S. Computer Science',
+        skills: ['JavaScript', 'TypeScript', 'React', 'typescript'], // duplicates & mixed case
+        github_url: 'https://github.com/janedoe',
+        linkedin_url: 'https://linkedin.com/in/janedoe',
+      };
+
+      const parsed = updateStudentProfileSchema.parse(validProfile);
+      assert.equal(parsed.first_name, 'Jane');
+      assert.equal(parsed.graduation_year, 2026);
+      // Skills should be deduplicated and lowercased
+      assert.deepEqual(parsed.skills, ['javascript', 'typescript', 'react']);
+    });
+
+    it('should reject out-of-range graduation years or excessive skills', () => {
+      assert.throws(
+        () =>
+          updateStudentProfileSchema.parse({
+            graduation_year: 1990, // below 2000
+          }),
+        (err) => err.name === 'ZodError'
+      );
+
+      assert.throws(
+        () =>
+          updateStudentProfileSchema.parse({
+            skills: Array.from({ length: 35 }, (_, i) => `skill-${i}`), // max 30
+          }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+  });
+
+  describe('AI Output Validation Bounds', () => {
+    it('should enforce strict schema constraints on AI analysis outputs', () => {
+      const validOutput = {
+        score: 80,
+        missing_skills: ['GraphQL', 'Docker'],
+        formatting_tips: ['Use action verbs'],
+      };
+      const parsed = aiResumeAnalysisOutputSchema.parse(validOutput);
+      assert.equal(parsed.score, 80);
+
+      // Score < 0 rejected
+      assert.throws(
+        () =>
+          aiResumeAnalysisOutputSchema.parse({
+            ...validOutput,
+            score: -5,
+          }),
+        (err) => err.name === 'ZodError'
+      );
+
+      // Score > 100 rejected
+      assert.throws(
+        () =>
+          aiResumeAnalysisOutputSchema.parse({
+            ...validOutput,
+            score: 105,
+          }),
+        (err) => err.name === 'ZodError'
+      );
+
+      // Non-integer score rejected
+      assert.throws(
+        () =>
+          aiResumeAnalysisOutputSchema.parse({
+            ...validOutput,
+            score: 82.5,
+          }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+  });
+
+  describe('Environment Configuration Validation', () => {
+    it('should validate valid environment configuration', () => {
+      const validEnv = {
+        NODE_ENV: 'test',
+        PORT: '5001',
+        CORS_ORIGIN: 'http://localhost:3000',
+        DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+        PG_BOSS_SCHEMA: 'pgboss',
+        JWT_SECRET: 'a-very-secure-secret-key-at-least-32-characters-long',
+        JWT_EXPIRES_IN: '1d',
+      };
+
+      const config = validateEnvironment(validEnv);
+      assert.equal(config.nodeEnv, 'test');
+      assert.equal(config.port, 5001);
+      assert.equal(config.pgBossSchema, 'pgboss');
+    });
+
+    it('should throw ConfigValidationError on missing DATABASE_URL', () => {
+      const invalidEnv = {
+        NODE_ENV: 'test',
+        PORT: '5001',
+      };
+
+      assert.throws(
+        () => validateEnvironment(invalidEnv),
+        (err) => err.name === 'ConfigValidationError'
+      );
+    });
+  });
+});
