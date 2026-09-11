@@ -5,6 +5,7 @@ const {
   loginSchema,
   updateStudentProfileSchema,
   updateRecruiterProfileSchema,
+  createCompanySchema,
   aiResumeAnalysisOutputSchema,
 } = require('@careerforge/validation');
 const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
@@ -147,6 +148,23 @@ describe('Regression & Architecture Integrity Test Suite', () => {
           updateRecruiterProfileSchema.parse({
             first_name: '   ', // empty after trim
           }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+  });
+
+  describe('Company Creation Validation', () => {
+    it('should validate company creation schema adhering to docs/API.md §3.1', () => {
+      const valid = {
+        name: 'TechNova Solutions',
+        website: 'https://technova.example.com',
+        logo_url: 'https://s3.amazonaws.com/bucket/logo.png',
+      };
+      const parsed = createCompanySchema.parse(valid);
+      assert.equal(parsed.name, 'TechNova Solutions');
+
+      assert.throws(
+        () => createCompanySchema.parse({ name: 'A' }),
         (err) => err.name === 'ZodError'
       );
     });

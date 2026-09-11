@@ -123,6 +123,30 @@ export type UpdateRecruiterProfileInput = z.infer<
   typeof updateRecruiterProfileSchema
 >;
 
+export const createCompanySchema = z.object({
+  name: z
+    .string({ message: 'Company name is required' })
+    .trim()
+    .min(2, 'Company name must be between 2 and 255 characters')
+    .max(255, 'Company name cannot exceed 255 characters'),
+  website: z
+    .string()
+    .trim()
+    .url('Must be a valid URL format')
+    .max(255, 'Website URL cannot exceed 255 characters')
+    .nullable()
+    .optional(),
+  logo_url: z
+    .string()
+    .trim()
+    .url('Must be a valid URL format')
+    .max(512, 'Logo URL cannot exceed 512 characters')
+    .nullable()
+    .optional(),
+});
+
+export type CreateCompanyInput = z.infer<typeof createCompanySchema>;
+
 export const aiResumeAnalysisOutputSchema = z.object({
   score: z
     .number({ message: 'Score must be a number' })
