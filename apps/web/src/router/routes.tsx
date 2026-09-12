@@ -18,6 +18,7 @@ import { StudentDashboardPage } from '@/features/student/StudentDashboardPage';
 import { StudentProfilePage } from '@/features/student/StudentProfilePage';
 import { JobBoardPage } from '@/features/jobs/JobBoardPage';
 import { JobDetailsPage } from '@/features/jobs/JobDetailsPage';
+import { ApplicationsPage } from '@/features/applications/ApplicationsPage';
 import {
   RecruiterDashboardPage,
   RecruiterJobsPage,
@@ -89,7 +90,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'applications',
-            element: <StudentApplicationsPage />,
+            element: <ApplicationsPage />,
           },
           {
             path: 'resume',
