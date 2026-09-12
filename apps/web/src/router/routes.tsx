@@ -16,6 +16,8 @@ import {
 } from '@/pages/StudentPages';
 import { StudentDashboardPage } from '@/features/student/StudentDashboardPage';
 import { StudentProfilePage } from '@/features/student/StudentProfilePage';
+import { JobBoardPage } from '@/features/jobs/JobBoardPage';
+import { JobDetailsPage } from '@/features/jobs/JobDetailsPage';
 import {
   RecruiterDashboardPage,
   RecruiterJobsPage,
@@ -37,7 +39,7 @@ export const router = createBrowserRouter([
       },
       {
         path: 'jobs',
-        element: <StudentJobsPage />,
+        element: <JobBoardPage />,
       },
       {
         path: 'features',
@@ -79,7 +81,11 @@ export const router = createBrowserRouter([
           },
           {
             path: 'jobs',
-            element: <StudentJobsPage />,
+            element: <JobBoardPage />,
+          },
+          {
+            path: 'jobs/:jobId',
+            element: <JobDetailsPage />,
           },
           {
             path: 'applications',
