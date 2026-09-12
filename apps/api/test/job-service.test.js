@@ -69,6 +69,21 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
         delete: async () => ({
           id: validJobId,
         }),
+        count: async () => 1,
+        findMany: async () => [
+          {
+            id: validJobId,
+            title: validExistingJob.title,
+            required_skills: validExistingJob.required_skills,
+            employment_type: validExistingJob.employment_type,
+            created_at: validExistingJob.created_at,
+            company: {
+              id: validCompanyId,
+              name: validRecruiterRecord.company.name,
+              logo_url: validRecruiterRecord.company.logo_url,
+            },
+          },
+        ],
       },
       application: {
         deleteMany: async () => ({ count: 1 }),
@@ -597,6 +612,202 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
 
       await assert.rejects(
         () => service.deleteJob(validUserId, validJobId),
+        (err) => err === dbError
+      );
+    });
+  });
+
+  describe('listJobs (Phase 4.3.3 - docs/API.md §5.2)', () => {
+    it('1. successful job listing with default pagination (page=1, limit=10, newest first)', async () => {
+      let passedFindManyArgs = null;
+      let passedCountArgs = null;
+
+      mockPrisma.job.count = async (args) => {
+        passedCountArgs = args;
+        return 45;
+      };
+
+      mockPrisma.job.findMany = async (args) => {
+        passedFindManyArgs = args;
+        return [
+          {
+            id: validJobId,
+            title: 'Junior Backend Developer',
+            required_skills: ['Node.js', 'PostgreSQL'],
+            employment_type: 'FULL_TIME',
+            created_at: new Date('2024-02-05T12:00:00.000Z'),
+            company: {
+              id: validCompanyId,
+              name: 'TechNova Solutions',
+              logo_url: 'https://s3.amazonaws.com/bucket/logo.png',
+            },
+          },
+        ];
+      };
+
+      const result = await service.listJobs({});
+
+      assert.equal(result.meta.page, 1);
+      assert.equal(result.meta.limit, 10);
+      assert.equal(result.meta.total, 45);
+      assert.equal(result.meta.totalPages, 5);
+
+      assert.equal(passedFindManyArgs.skip, 0);
+      assert.equal(passedFindManyArgs.take, 10);
+      assert.deepEqual(passedFindManyArgs.orderBy, { created_at: 'desc' });
+      assert.equal(passedFindManyArgs.where.status, 'ACTIVE');
+      assert.equal(passedCountArgs.where.status, 'ACTIVE');
+
+      assert.equal(result.data.length, 1);
+      assert.equal(result.data[0].id, validJobId);
+      assert.equal(result.data[0].title, 'Junior Backend Developer');
+      assert.equal(result.data[0].company.id, validCompanyId);
+      assert.equal(result.data[0].company.name, 'TechNova Solutions');
+      assert.equal(
+        result.data[0].company.logo_url,
+        'https://s3.amazonaws.com/bucket/logo.png'
+      );
+    });
+
+    it('2. strict status constraint: where.status is always ACTIVE (pending and rejected jobs never exposed)', async () => {
+      let capturedWhere = null;
+      mockPrisma.job.findMany = async (args) => {
+        capturedWhere = args.where;
+        return [];
+      };
+
+      await service.listJobs({ page: 1, limit: 10 });
+      assert.equal(capturedWhere.status, 'ACTIVE');
+    });
+
+    it('3. search filter: case-insensitive search across title and description', async () => {
+      let capturedWhere = null;
+      mockPrisma.job.findMany = async (args) => {
+        capturedWhere = args.where;
+        return [];
+      };
+
+      await service.listJobs({ search: 'developer' });
+
+      assert.ok(capturedWhere.OR);
+      assert.equal(capturedWhere.OR.length, 2);
+      assert.deepEqual(capturedWhere.OR[0], {
+        title: { contains: 'developer', mode: 'insensitive' },
+      });
+      assert.deepEqual(capturedWhere.OR[1], {
+        description: { contains: 'developer', mode: 'insensitive' },
+      });
+    });
+
+    it('4. skills filter: comma-separated string parsed to array overlap query (hasSome)', async () => {
+      let capturedWhere = null;
+      mockPrisma.job.findMany = async (args) => {
+        capturedWhere = args.where;
+        return [];
+      };
+
+      await service.listJobs({ skills: 'react, node.js' });
+
+      assert.ok(capturedWhere.required_skills);
+      assert.ok(capturedWhere.required_skills.hasSome);
+      assert.ok(capturedWhere.required_skills.hasSome.includes('react'));
+      assert.ok(capturedWhere.required_skills.hasSome.includes('node.js'));
+    });
+
+    it('5. employment_type filter: applies filter when specified', async () => {
+      let capturedWhere = null;
+      mockPrisma.job.findMany = async (args) => {
+        capturedWhere = args.where;
+        return [];
+      };
+
+      await service.listJobs({ employment_type: 'INTERNSHIP' });
+      assert.equal(capturedWhere.employment_type, 'INTERNSHIP');
+
+      await service.listJobs({ employment_type: 'FULL_TIME' });
+      assert.equal(capturedWhere.employment_type, 'FULL_TIME');
+    });
+
+    it('6. custom pagination: skip, take, and totalPages calculated accurately', async () => {
+      let capturedArgs = null;
+      mockPrisma.job.count = async () => 23;
+      mockPrisma.job.findMany = async (args) => {
+        capturedArgs = args;
+        return [];
+      };
+
+      const result = await service.listJobs({ page: 3, limit: 5 });
+
+      assert.equal(capturedArgs.skip, 10); // (3 - 1) * 5
+      assert.equal(capturedArgs.take, 5);
+      assert.equal(result.meta.page, 3);
+      assert.equal(result.meta.limit, 5);
+      assert.equal(result.meta.total, 23);
+      assert.equal(result.meta.totalPages, 5); // Math.ceil(23 / 5)
+    });
+
+    it('7. empty result set: returns empty array with total=0 and totalPages=0', async () => {
+      mockPrisma.job.count = async () => 0;
+      mockPrisma.job.findMany = async () => [];
+
+      const result = await service.listJobs({ search: 'nonexistent-term' });
+
+      assert.deepEqual(result.data, []);
+      assert.equal(result.meta.total, 0);
+      assert.equal(result.meta.totalPages, 0);
+      assert.equal(result.meta.page, 1);
+      assert.equal(result.meta.limit, 10);
+    });
+
+    it('8. response shape: returns only documented public fields without leaking internal keys', async () => {
+      mockPrisma.job.count = async () => 1;
+      mockPrisma.job.findMany = async () => [
+        {
+          id: validJobId,
+          title: 'Junior Backend Developer',
+          required_skills: ['Node.js'],
+          employment_type: 'FULL_TIME',
+          created_at: new Date('2024-02-05T12:00:00.000Z'),
+          recruiter_id: validRecruiterId,
+          updated_at: new Date(),
+          description: 'Full secret description',
+          company: {
+            id: validCompanyId,
+            name: 'TechNova Solutions',
+            logo_url: null,
+          },
+        },
+      ];
+
+      const result = await service.listJobs({});
+      const item = result.data[0];
+
+      assert.deepEqual(Object.keys(item).sort(), [
+        'company',
+        'created_at',
+        'employment_type',
+        'id',
+        'required_skills',
+        'title',
+      ]);
+      assert.equal(item.recruiter_id, undefined);
+      assert.equal(item.updated_at, undefined);
+      assert.equal(item.description, undefined);
+      assert.deepEqual(Object.keys(item.company).sort(), [
+        'id',
+        'logo_url',
+        'name',
+      ]);
+    });
+
+    it('9. propagates database errors cleanly', async () => {
+      const dbError = new Error('Database query failed');
+      mockPrisma.job.findMany = async () => {
+        throw dbError;
+      };
+
+      await assert.rejects(
+        () => service.listJobs({}),
         (err) => err === dbError
       );
     });

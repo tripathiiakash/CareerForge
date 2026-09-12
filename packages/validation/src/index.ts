@@ -244,3 +244,26 @@ export const updateJobSchema = z
   });
 
 export type UpdateJobInput = z.infer<typeof updateJobSchema>;
+
+export const listJobsQuerySchema = z.object({
+  page: z.coerce
+    .number({ message: 'Page must be a valid number' })
+    .int('Page must be an integer')
+    .min(1, 'Page must be at least 1')
+    .default(1),
+  limit: z.coerce
+    .number({ message: 'Limit must be a valid number' })
+    .int('Limit must be an integer')
+    .min(1, 'Limit must be at least 1')
+    .max(50, 'Limit cannot exceed 50')
+    .default(10),
+  search: z.string().trim().max(255).optional(),
+  skills: z.string().trim().max(500).optional(),
+  employment_type: z
+    .enum(['INTERNSHIP', 'FULL_TIME'], {
+      message: "Employment type must be exactly 'INTERNSHIP' or 'FULL_TIME'",
+    })
+    .optional(),
+});
+
+export type ListJobsQueryInput = z.infer<typeof listJobsQuerySchema>;

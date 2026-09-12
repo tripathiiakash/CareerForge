@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const {
   createJobSchema,
   updateJobSchema,
+  listJobsQuerySchema,
 } = require('@careerforge/validation');
 
 describe('Job Validation Test Suite (docs/API.md §5.1)', () => {
@@ -341,6 +342,98 @@ describe('Job Update Validation Test Suite (docs/API.md §5.4)', () => {
           id: '11111111-1111-4111-8111-111111111111',
           created_at: new Date(),
         }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+});
+
+describe('Job List & Search Query Validation Test Suite (docs/API.md §5.2)', () => {
+  it('should supply documented default pagination values when empty query provided', () => {
+    const parsed = listJobsQuerySchema.parse({});
+    assert.equal(parsed.page, 1);
+    assert.equal(parsed.limit, 10);
+    assert.equal(parsed.search, undefined);
+    assert.equal(parsed.skills, undefined);
+    assert.equal(parsed.employment_type, undefined);
+  });
+
+  it('should accept valid custom pagination and coerce string parameters', () => {
+    const parsed = listJobsQuerySchema.parse({
+      page: '3',
+      limit: '25',
+    });
+    assert.equal(parsed.page, 3);
+    assert.equal(parsed.limit, 25);
+  });
+
+  it('should accept valid search, skills, and employment_type parameters', () => {
+    const parsed = listJobsQuerySchema.parse({
+      search: 'backend developer',
+      skills: 'react,node.js,postgresql',
+      employment_type: 'FULL_TIME',
+    });
+    assert.equal(parsed.search, 'backend developer');
+    assert.equal(parsed.skills, 'react,node.js,postgresql');
+    assert.equal(parsed.employment_type, 'FULL_TIME');
+
+    const parsedInternship = listJobsQuerySchema.parse({
+      employment_type: 'INTERNSHIP',
+    });
+    assert.equal(parsedInternship.employment_type, 'INTERNSHIP');
+  });
+
+  it('should reject invalid page values (< 1, 0, negative, non-numeric)', () => {
+    assert.throws(
+      () => listJobsQuerySchema.parse({ page: 0 }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobsQuerySchema.parse({ page: -5 }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobsQuerySchema.parse({ page: 'not-a-number' }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobsQuerySchema.parse({ page: 1.5 }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+
+  it('should reject invalid limit values (< 1, 0, > 50, non-numeric)', () => {
+    assert.throws(
+      () => listJobsQuerySchema.parse({ limit: 0 }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobsQuerySchema.parse({ limit: 51 }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobsQuerySchema.parse({ limit: 'abc' }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobsQuerySchema.parse({ limit: 10.5 }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+
+  it('should reject invalid employment_type values', () => {
+    assert.throws(
+      () => listJobsQuerySchema.parse({ employment_type: 'PART_TIME' }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobsQuerySchema.parse({ employment_type: 'CONTRACT' }),
       (err) => err.name === 'ZodError'
     );
   });

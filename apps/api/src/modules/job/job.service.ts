@@ -4,11 +4,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EmploymentType, JobStatus } from '@prisma/client';
+import { EmploymentType, JobStatus, Prisma } from '@prisma/client';
 import { sanitizeHtml } from '../../core/utils/sanitize-html.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateJobDto } from './dto/create-job.dto';
-import { JobCreatedData, JobUpdatedData } from './dto/job-response.dto';
+import {
+  JobCreatedData,
+  JobListItem,
+  JobUpdatedData,
+  ListJobsPaginationMeta,
+} from './dto/job-response.dto';
+import { ListJobsQueryDto } from './dto/list-jobs-query.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 
 const UUID_REGEX =
@@ -225,6 +231,113 @@ export class JobService {
 
     return {
       message: 'Job deleted successfully.',
+    };
+  }
+
+  /**
+   * 5.2 Search & List Jobs
+   * GET /api/v1/jobs
+   * - Public access for students and unauthenticated users.
+   * - Strictly filters by status = ACTIVE (pending and rejected jobs are never exposed).
+   * - Supports text search across title and description via case-insensitive matching.
+   * - Supports skills filtering via comma-separated overlap (hasSome).
+   * - Supports employment_type filtering.
+   * - Enforces pagination limits (page default 1, limit default 10, max 50).
+   * - Orders newest first (created_at: 'desc').
+   */
+  async listJobs(query: ListJobsQueryDto): Promise<{
+    data: JobListItem[];
+    meta: ListJobsPaginationMeta;
+  }> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.JobWhereInput = {
+      status: JobStatus.ACTIVE,
+    };
+
+    if (query.search && query.search.trim().length > 0) {
+      const term = query.search.trim();
+      where.OR = [
+        { title: { contains: term, mode: 'insensitive' } },
+        { description: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
+    if (query.skills && query.skills.trim().length > 0) {
+      const rawSkills = query.skills
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
+      if (rawSkills.length > 0) {
+        const skillsVariations = new Set<string>();
+        for (const s of rawSkills) {
+          skillsVariations.add(s);
+          skillsVariations.add(s.toLowerCase());
+          skillsVariations.add(s.toUpperCase());
+          skillsVariations.add(
+            s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
+          );
+        }
+        where.required_skills = {
+          hasSome: Array.from(skillsVariations),
+        };
+      }
+    }
+
+    if (query.employment_type) {
+      where.employment_type = query.employment_type as EmploymentType;
+    }
+
+    const [total, jobs] = await Promise.all([
+      this.prisma.job.count({ where }),
+      this.prisma.job.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        select: {
+          id: true,
+          title: true,
+          required_skills: true,
+          employment_type: true,
+          created_at: true,
+          company: {
+            select: {
+              id: true,
+              name: true,
+              logo_url: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    const data: JobListItem[] = jobs.map((job) => ({
+      id: job.id,
+      title: job.title,
+      company: {
+        id: job.company.id,
+        name: job.company.name,
+        logo_url: job.company.logo_url,
+      },
+      required_skills: job.required_skills,
+      employment_type: job.employment_type,
+      created_at: job.created_at,
+    }));
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
     };
   }
 }

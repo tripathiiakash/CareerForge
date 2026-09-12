@@ -8,6 +8,7 @@ const {
   createCompanySchema,
   createJobSchema,
   updateJobSchema,
+  listJobsQuerySchema,
   aiResumeAnalysisOutputSchema,
 } = require('@careerforge/validation');
 const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
@@ -220,6 +221,30 @@ describe('Regression & Architecture Integrity Test Suite', () => {
 
       assert.throws(
         () => updateJobSchema.parse({}),
+        (err) => err.name === 'ZodError'
+      );
+    });
+
+    it('should validate job list/search query schema adhering to docs/API.md §5.2', () => {
+      const defaultParsed = listJobsQuerySchema.parse({});
+      assert.equal(defaultParsed.page, 1);
+      assert.equal(defaultParsed.limit, 10);
+
+      const customParsed = listJobsQuerySchema.parse({
+        page: '2',
+        limit: '20',
+        search: 'backend',
+        skills: 'react,node.js',
+        employment_type: 'FULL_TIME',
+      });
+      assert.equal(customParsed.page, 2);
+      assert.equal(customParsed.limit, 20);
+      assert.equal(customParsed.search, 'backend');
+      assert.equal(customParsed.skills, 'react,node.js');
+      assert.equal(customParsed.employment_type, 'FULL_TIME');
+
+      assert.throws(
+        () => listJobsQuerySchema.parse({ limit: 100 }),
         (err) => err.name === 'ZodError'
       );
     });
