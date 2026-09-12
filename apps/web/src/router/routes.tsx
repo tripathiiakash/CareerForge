@@ -7,6 +7,8 @@ import { AdminLayout } from '@/layouts/AdminLayout';
 import { HomePage } from '@/pages/HomePage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { LoginPage, RegisterPage } from '@/pages/AuthPages';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { PublicOnlyRoute } from '@/components/auth/PublicOnlyRoute';
 import {
   StudentJobsPage,
   StudentApplicationsPage,
@@ -40,92 +42,113 @@ export const router = createBrowserRouter([
         path: 'features',
         element: <HomePage />,
       },
+      // Public-only auth routes (redirects if already authenticated)
       {
-        path: 'login',
-        element: <LoginPage />,
-      },
-      {
-        path: 'register',
-        element: <RegisterPage />,
+        element: <PublicOnlyRoute />,
+        children: [
+          {
+            path: 'login',
+            element: <LoginPage />,
+          },
+          {
+            path: 'register',
+            element: <RegisterPage />,
+          },
+        ],
       },
     ],
   },
 
-  // Student Portal routes
+  // Protected Student Portal routes
   {
     path: '/student',
-    element: <StudentLayout />,
+    element: <ProtectedRoute allowedRoles={['STUDENT']} />,
     errorElement: <NotFoundPage />,
     children: [
       {
-        index: true,
-        element: <Navigate to="/student/jobs" replace />,
-      },
-      {
-        path: 'jobs',
-        element: <StudentJobsPage />,
-      },
-      {
-        path: 'applications',
-        element: <StudentApplicationsPage />,
-      },
-      {
-        path: 'resume',
-        element: <StudentResumePage />,
-      },
-      {
-        path: 'profile',
-        element: <StudentProfilePage />,
+        element: <StudentLayout />,
+        children: [
+          {
+            index: true,
+            element: <Navigate to="/student/jobs" replace />,
+          },
+          {
+            path: 'jobs',
+            element: <StudentJobsPage />,
+          },
+          {
+            path: 'applications',
+            element: <StudentApplicationsPage />,
+          },
+          {
+            path: 'resume',
+            element: <StudentResumePage />,
+          },
+          {
+            path: 'profile',
+            element: <StudentProfilePage />,
+          },
+        ],
       },
     ],
   },
 
-  // Recruiter Portal routes
+  // Protected Recruiter Portal routes
   {
     path: '/recruiter',
-    element: <RecruiterLayout />,
+    element: <ProtectedRoute allowedRoles={['RECRUITER']} />,
     errorElement: <NotFoundPage />,
     children: [
       {
-        index: true,
-        element: <Navigate to="/recruiter/dashboard" replace />,
-      },
-      {
-        path: 'dashboard',
-        element: <RecruiterDashboardPage />,
-      },
-      {
-        path: 'jobs',
-        element: <RecruiterJobsPage />,
-      },
-      {
-        path: 'jobs/new',
-        element: <RecruiterPostJobPage />,
-      },
-      {
-        path: 'company',
-        element: <RecruiterCompanyPage />,
+        element: <RecruiterLayout />,
+        children: [
+          {
+            index: true,
+            element: <Navigate to="/recruiter/dashboard" replace />,
+          },
+          {
+            path: 'dashboard',
+            element: <RecruiterDashboardPage />,
+          },
+          {
+            path: 'jobs',
+            element: <RecruiterJobsPage />,
+          },
+          {
+            path: 'jobs/new',
+            element: <RecruiterPostJobPage />,
+          },
+          {
+            path: 'company',
+            element: <RecruiterCompanyPage />,
+          },
+        ],
       },
     ],
   },
 
-  // Admin Console routes
+  // Protected Admin Console routes
   {
     path: '/admin',
-    element: <AdminLayout />,
+    element: <ProtectedRoute allowedRoles={['ADMIN']} />,
     errorElement: <NotFoundPage />,
     children: [
       {
-        index: true,
-        element: <Navigate to="/admin/moderation" replace />,
-      },
-      {
-        path: 'moderation',
-        element: <AdminModerationPage />,
-      },
-      {
-        path: 'analytics',
-        element: <AdminAnalyticsPage />,
+        element: <AdminLayout />,
+        children: [
+          {
+            index: true,
+            element: <Navigate to="/admin/moderation" replace />,
+          },
+          {
+            path: 'moderation',
+            element: <AdminModerationPage />,
+          },
+          {
+            path: 'analytics',
+            element: <AdminAnalyticsPage />,
+          },
+        ],
       },
     ],
   },

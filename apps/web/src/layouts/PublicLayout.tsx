@@ -1,21 +1,26 @@
 import React, { useState } from 'react';
-import { Link, Outlet, useLocation } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Briefcase,
-  Sparkles,
   Menu,
   X,
   ArrowRight,
   Github,
   Twitter,
   Linkedin,
+  LogOut,
+  User,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/auth/AuthContext';
+import { getRoleDefaultPath } from '@/components/auth/ProtectedRoute';
 
 export const PublicLayout: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { isAuthenticated, user, role, logout } = useAuth();
 
   const navLinks = [
     { name: 'Browse Jobs', path: '/jobs' },
@@ -25,6 +30,11 @@ export const PublicLayout: React.FC = () => {
   ];
 
   const isActive = (path: string) => location.pathname === path;
+
+  const handleLogout = () => {
+    logout();
+    navigate('/');
+  };
 
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground selection:bg-primary/30 selection:text-primary-foreground relative overflow-x-hidden">
@@ -75,24 +85,65 @@ export const PublicLayout: React.FC = () => {
 
           {/* Action CTAs */}
           <div className="hidden md:flex items-center gap-3">
-            <Link to="/login">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="font-medium text-foreground hover:bg-white/5"
-              >
-                Sign In
-              </Button>
-            </Link>
-            <Link to="/register">
-              <Button
-                size="sm"
-                className="font-semibold shadow-md shadow-primary/20"
-              >
-                Get Started
-                <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-              </Button>
-            </Link>
+            {isAuthenticated ? (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/40 px-3 py-1.5 rounded-lg border border-border/50">
+                  <User className="h-3.5 w-3.5 text-primary" />
+                  <span className="font-medium text-foreground max-w-[140px] truncate">
+                    {user?.email}
+                  </span>
+                  <Badge
+                    variant={
+                      role === 'ADMIN'
+                        ? 'warning'
+                        : role === 'RECRUITER'
+                          ? 'success'
+                          : 'info'
+                    }
+                    className="text-[10px] py-0 px-1.5"
+                  >
+                    {role}
+                  </Badge>
+                </div>
+
+                <Link to={getRoleDefaultPath(role)}>
+                  <Button size="sm" variant="outline" className="font-medium">
+                    Dashboard
+                  </Button>
+                </Link>
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleLogout}
+                  className="text-muted-foreground hover:text-destructive gap-1.5"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  <span>Sign Out</span>
+                </Button>
+              </div>
+            ) : (
+              <>
+                <Link to="/login">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="font-medium text-foreground hover:bg-white/5"
+                  >
+                    Sign In
+                  </Button>
+                </Link>
+                <Link to="/register">
+                  <Button
+                    size="sm"
+                    className="font-semibold shadow-md shadow-primary/20"
+                  >
+                    Get Started
+                    <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile menu button */}
@@ -128,14 +179,45 @@ export const PublicLayout: React.FC = () => {
               ))}
             </div>
             <div className="pt-3 border-t border-border/40 flex flex-col gap-2">
-              <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
-                <Button variant="outline" className="w-full justify-center">
-                  Sign In
-                </Button>
-              </Link>
-              <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
-                <Button className="w-full justify-center">Get Started</Button>
-              </Link>
+              {isAuthenticated ? (
+                <>
+                  <div className="px-3 py-1.5 text-xs text-muted-foreground flex items-center justify-between">
+                    <span className="truncate">{user?.email}</span>
+                    <Badge variant="default">{role}</Badge>
+                  </div>
+                  <Link
+                    to={getRoleDefaultPath(role)}
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <Button className="w-full justify-center">
+                      Go to Dashboard
+                    </Button>
+                  </Link>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-center text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      handleLogout();
+                    }}
+                  >
+                    Sign Out
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
+                    <Button variant="outline" className="w-full justify-center">
+                      Sign In
+                    </Button>
+                  </Link>
+                  <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
+                    <Button className="w-full justify-center">
+                      Get Started
+                    </Button>
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         )}

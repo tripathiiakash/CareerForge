@@ -1,24 +1,17 @@
 import React from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import {
-  Briefcase,
-  FileText,
-  Send,
-  User,
-  Sparkles,
-  LogOut,
-  Compass,
-} from 'lucide-react';
+import { Briefcase, Send, User, Sparkles, LogOut, Compass } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/auth/AuthContext';
 
 export const StudentLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   const handleLogout = () => {
-    localStorage.removeItem('careerforge_token');
-    localStorage.removeItem('careerforge_user');
+    logout();
     navigate('/login');
   };
 
@@ -74,6 +67,11 @@ export const StudentLayout: React.FC = () => {
           </nav>
 
           <div className="flex items-center gap-3">
+            {user && (
+              <span className="hidden lg:inline text-xs text-muted-foreground max-w-[150px] truncate">
+                {user.email}
+              </span>
+            )}
             <Button
               variant="ghost"
               size="sm"
