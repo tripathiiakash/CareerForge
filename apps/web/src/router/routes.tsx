@@ -17,9 +17,7 @@ import { JobDetailsPage } from '@/features/jobs/JobDetailsPage';
 import { ApplicationsPage } from '@/features/applications/ApplicationsPage';
 import {
   RecruiterDashboardPage,
-  RecruiterJobsPage,
-  RecruiterPostJobPage,
-  RecruiterCompanyPage,
+  RecruiterProfilePage,
 } from '@/pages/RecruiterPages';
 import { AdminModerationPage, AdminAnalyticsPage } from '@/pages/AdminPages';
 
@@ -119,16 +117,8 @@ export const router = createBrowserRouter([
             element: <RecruiterDashboardPage />,
           },
           {
-            path: 'jobs',
-            element: <RecruiterJobsPage />,
-          },
-          {
-            path: 'jobs/new',
-            element: <RecruiterPostJobPage />,
-          },
-          {
-            path: 'company',
-            element: <RecruiterCompanyPage />,
+            path: 'profile',
+            element: <RecruiterProfilePage />,
           },
         ],
       },

@@ -1,12 +1,6 @@
 import React from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import {
-  Briefcase,
-  Building2,
-  PlusCircle,
-  LogOut,
-  LayoutDashboard,
-} from 'lucide-react';
+import { Briefcase, User, LogOut, LayoutDashboard } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/auth/AuthContext';
@@ -23,9 +17,7 @@ export const RecruiterLayout: React.FC = () => {
 
   const navItems = [
     { label: 'Dashboard', path: '/recruiter/dashboard', icon: LayoutDashboard },
-    { label: 'Manage Jobs', path: '/recruiter/jobs', icon: Briefcase },
-    { label: 'Post a Job', path: '/recruiter/jobs/new', icon: PlusCircle },
-    { label: 'Company Profile', path: '/recruiter/company', icon: Building2 },
+    { label: 'Profile', path: '/recruiter/profile', icon: User },
   ];
 
   return (
@@ -99,7 +91,7 @@ export const RecruiterLayout: React.FC = () => {
               <Link
                 key={item.path}
                 to={item.path}
-                className={`flex flex-col items-center gap-1 py-1 px-2 rounded text-xs ${
+                className={`flex flex-col items-center gap-1 py-1 px-4 rounded text-xs ${
                   active
                     ? 'text-emerald-400 font-bold'
                     : 'text-muted-foreground'
