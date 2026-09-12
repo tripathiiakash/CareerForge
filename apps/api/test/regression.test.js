@@ -9,6 +9,7 @@ const {
   createJobSchema,
   updateJobSchema,
   listJobsQuerySchema,
+  moderateJobStatusSchema,
   aiResumeAnalysisOutputSchema,
 } = require('@careerforge/validation');
 const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
@@ -249,13 +250,41 @@ describe('Regression & Architecture Integrity Test Suite', () => {
       );
     });
 
+    it('should validate job status moderation schema adhering to docs/API.md §9.2', () => {
+      const activeParsed = moderateJobStatusSchema.parse({ status: 'ACTIVE' });
+      assert.equal(activeParsed.status, 'ACTIVE');
+
+      const rejectedParsed = moderateJobStatusSchema.parse({
+        status: 'REJECTED',
+      });
+      assert.equal(rejectedParsed.status, 'REJECTED');
+
+      assert.throws(
+        () => moderateJobStatusSchema.parse({ status: 'PENDING' }),
+        (err) => err.name === 'ZodError'
+      );
+
+      assert.throws(
+        () =>
+          moderateJobStatusSchema.parse({
+            status: 'ACTIVE',
+            unexpected: 'field',
+          }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+
     it('should correctly expose Job module components', () => {
       const { JobModule } = require('../dist/modules/job/job.module');
       const { JobController } = require('../dist/modules/job/job.controller');
+      const {
+        AdminJobController,
+      } = require('../dist/modules/job/admin-job.controller');
       const { JobService } = require('../dist/modules/job/job.service');
 
       assert.ok(JobModule);
       assert.ok(JobController);
+      assert.ok(AdminJobController);
       assert.ok(JobService);
     });
   });

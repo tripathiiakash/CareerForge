@@ -11,10 +11,12 @@ import { CreateJobDto } from './dto/create-job.dto';
 import {
   JobCreatedData,
   JobListItem,
+  JobModeratedData,
   JobUpdatedData,
   ListJobsPaginationMeta,
 } from './dto/job-response.dto';
 import { ListJobsQueryDto } from './dto/list-jobs-query.dto';
+import { ModerateJobStatusDto } from './dto/moderate-job-status.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 
 const UUID_REGEX =
@@ -338,6 +340,61 @@ export class JobService {
         limit,
         totalPages,
       },
+    };
+  }
+
+  /**
+   * Moderates a pending job's status adhering to docs/API.md §9.2.
+   * - Restricts status transitions strictly to:
+   *   PENDING -> ACTIVE
+   *   PENDING -> REJECTED
+   * - Rejects attempts to moderate jobs that are not in PENDING state.
+   * - Returns documented response envelope and descriptive message.
+   */
+  async moderateJobStatus(
+    id: string,
+    dto: ModerateJobStatusDto
+  ): Promise<JobModeratedData> {
+    this.validateUuid(id);
+
+    const job = await this.prisma.job.findUnique({
+      where: { id },
+    });
+
+    if (!job) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Job does not exist',
+      });
+    }
+
+    if (job.status !== JobStatus.PENDING) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: `Job cannot be moderated. Only PENDING jobs can transition to ACTIVE or REJECTED (current status: ${job.status}).`,
+      });
+    }
+
+    const updatedJob = await this.prisma.job.update({
+      where: { id },
+      data: {
+        status: dto.status as JobStatus,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    const message =
+      updatedJob.status === JobStatus.ACTIVE
+        ? 'Job approved and now visible to students.'
+        : 'Job rejected and hidden from students.';
+
+    return {
+      id: updatedJob.id,
+      status: updatedJob.status,
+      message,
     };
   }
 }

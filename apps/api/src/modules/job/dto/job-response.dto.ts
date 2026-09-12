@@ -53,3 +53,14 @@ export interface ListJobsResponseDto {
   data: JobListItem[];
   meta: ListJobsPaginationMeta;
 }
+
+export interface JobModeratedData {
+  id: string;
+  status: string;
+  message: string;
+}
+
+export interface ModerateJobStatusResponseDto {
+  success: true;
+  data: JobModeratedData;
+}

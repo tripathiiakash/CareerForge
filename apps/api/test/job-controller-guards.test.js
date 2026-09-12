@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { Reflector } = require('@nestjs/core');
 const { RolesGuard } = require('../dist/core/guards/roles.guard');
 const { JobController } = require('../dist/modules/job/job.controller');
+const { AdminJobController } = require('../dist/modules/job/admin-job.controller');
 const { ROLES_KEY } = require('../dist/core/decorators/roles.decorator');
 const { IS_PUBLIC_KEY } = require('../dist/core/decorators/public.decorator');
 
@@ -345,6 +346,172 @@ describe('Job Controller & Security Guards Test Suite (docs/API.md §5.1, §5.2,
       await assert.rejects(
         () => controller.listJobs({}),
         (err) => err === mockDbError
+      );
+    });
+  });
+
+  describe('RolesGuard with ADMIN Role (Phase 4.3.4 - docs/API.md §9.2)', () => {
+    const reflector = new Reflector();
+
+    it('should reject users with STUDENT role when ADMIN role is required', () => {
+      const guard = new RolesGuard(reflector);
+
+      const mockHandler = () => {};
+      class MockAdminController {}
+      Reflect.defineMetadata(ROLES_KEY, ['ADMIN'], MockAdminController);
+
+      const studentRequest = {
+        user: { userId: 'user-student', role: 'STUDENT' },
+      };
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => studentRequest,
+        }),
+        getHandler: () => mockHandler,
+        getClass: () => MockAdminController,
+      };
+
+      assert.throws(
+        () => guard.canActivate(mockContext),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message ===
+            'Insufficient role permissions for this resource'
+      );
+    });
+
+    it('should reject users with RECRUITER role when ADMIN role is required', () => {
+      const guard = new RolesGuard(reflector);
+
+      const mockHandler = () => {};
+      class MockAdminController {}
+      Reflect.defineMetadata(ROLES_KEY, ['ADMIN'], MockAdminController);
+
+      const recruiterRequest = {
+        user: { userId: 'user-recruiter', role: 'RECRUITER' },
+      };
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => recruiterRequest,
+        }),
+        getHandler: () => mockHandler,
+        getClass: () => MockAdminController,
+      };
+
+      assert.throws(
+        () => guard.canActivate(mockContext),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message ===
+            'Insufficient role permissions for this resource'
+      );
+    });
+
+    it('should reject unauthenticated requests when ADMIN role is required', () => {
+      const guard = new RolesGuard(reflector);
+
+      const mockHandler = () => {};
+      class MockAdminController {}
+      Reflect.defineMetadata(ROLES_KEY, ['ADMIN'], MockAdminController);
+
+      const anonymousRequest = {};
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => anonymousRequest,
+        }),
+        getHandler: () => mockHandler,
+        getClass: () => MockAdminController,
+      };
+
+      assert.throws(
+        () => guard.canActivate(mockContext),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message ===
+            'Insufficient role permissions for this resource'
+      );
+    });
+
+    it('should allow users with ADMIN role', () => {
+      const guard = new RolesGuard(reflector);
+
+      const mockHandler = () => {};
+      class MockAdminController {}
+      Reflect.defineMetadata(ROLES_KEY, ['ADMIN'], MockAdminController);
+
+      const adminRequest = {
+        user: { userId: 'user-admin', role: 'ADMIN' },
+      };
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => adminRequest,
+        }),
+        getHandler: () => mockHandler,
+        getClass: () => MockAdminController,
+      };
+
+      const allowed = guard.canActivate(mockContext);
+      assert.equal(allowed, true);
+    });
+  });
+
+  describe('AdminJobController (Phase 4.3.4 - docs/API.md §9.2)', () => {
+    const reflector = new Reflector();
+
+    it('should have ADMIN role metadata defined on the controller class', () => {
+      const roles = reflector.get(ROLES_KEY, AdminJobController);
+      assert.deepEqual(roles, ['ADMIN']);
+    });
+
+    it('should route moderateJobStatus to jobService and return 200 OK envelope', async () => {
+      const jobId = '11111111-1111-4111-8111-111111111111';
+      const mockModeratedData = {
+        id: jobId,
+        status: 'ACTIVE',
+        message: 'Job approved and now visible to students.',
+      };
+
+      let capturedJobId = null;
+      let capturedDto = null;
+      const mockService = {
+        moderateJobStatus: async (id, dto) => {
+          capturedJobId = id;
+          capturedDto = dto;
+          return mockModeratedData;
+        },
+      };
+
+      const controller = new AdminJobController(mockService);
+      const dto = { status: 'ACTIVE' };
+      const response = await controller.moderateJobStatus(jobId, dto);
+
+      assert.equal(capturedJobId, jobId);
+      assert.deepEqual(capturedDto, dto);
+      assert.deepEqual(response, {
+        success: true,
+        data: mockModeratedData,
+      });
+    });
+
+    it('should propagate moderateJobStatus service errors without swallowing', async () => {
+      const mockError = new Error('Service failure');
+      const mockService = {
+        moderateJobStatus: async () => {
+          throw mockError;
+        },
+      };
+
+      const controller = new AdminJobController(mockService);
+
+      await assert.rejects(
+        () =>
+          controller.moderateJobStatus('11111111-1111-4111-8111-111111111111', {
+            status: 'ACTIVE',
+          }),
+        (err) => err === mockError
       );
     });
   });

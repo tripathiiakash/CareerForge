@@ -812,4 +812,168 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
       );
     });
   });
+
+  describe('moderateJobStatus (Phase 4.3.4 - docs/API.md §9.2)', () => {
+    const validJobId = '11111111-1111-4111-8111-111111111111';
+
+    it('1. successful job approval: PENDING -> ACTIVE returns documented envelope and message', async () => {
+      let updatePayload = null;
+      mockPrisma.job.findUnique = async ({ where }) => {
+        assert.equal(where.id, validJobId);
+        return {
+          id: validJobId,
+          status: 'PENDING',
+          recruiter_id: 'recruiter-123',
+          company_id: 'company-456',
+        };
+      };
+
+      mockPrisma.job.update = async ({ where, data, select }) => {
+        assert.equal(where.id, validJobId);
+        updatePayload = data;
+        return {
+          id: validJobId,
+          status: data.status,
+        };
+      };
+
+      const result = await service.moderateJobStatus(validJobId, {
+        status: 'ACTIVE',
+      });
+
+      assert.equal(updatePayload.status, 'ACTIVE');
+      assert.deepEqual(result, {
+        id: validJobId,
+        status: 'ACTIVE',
+        message: 'Job approved and now visible to students.',
+      });
+    });
+
+    it('2. successful job rejection: PENDING -> REJECTED returns documented envelope and message', async () => {
+      let updatePayload = null;
+      mockPrisma.job.findUnique = async () => ({
+        id: validJobId,
+        status: 'PENDING',
+      });
+
+      mockPrisma.job.update = async ({ data }) => {
+        updatePayload = data;
+        return {
+          id: validJobId,
+          status: data.status,
+        };
+      };
+
+      const result = await service.moderateJobStatus(validJobId, {
+        status: 'REJECTED',
+      });
+
+      assert.equal(updatePayload.status, 'REJECTED');
+      assert.deepEqual(result, {
+        id: validJobId,
+        status: 'REJECTED',
+        message: 'Job rejected and hidden from students.',
+      });
+    });
+
+    it('3. rejects invalid UUID with 400 VALIDATION_ERROR', async () => {
+      await assert.rejects(
+        () => service.moderateJobStatus('invalid-uuid', { status: 'ACTIVE' }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message.includes('UUID')
+      );
+    });
+
+    it('4. rejects with 404 NOT_FOUND when job does not exist', async () => {
+      mockPrisma.job.findUnique = async () => null;
+
+      await assert.rejects(
+        () => service.moderateJobStatus(validJobId, { status: 'ACTIVE' }),
+        (err) =>
+          err.status === 404 &&
+          err.response.code === 'NOT_FOUND' &&
+          err.response.message === 'Job does not exist'
+      );
+    });
+
+    it('5. rejects with 400 VALIDATION_ERROR when job is already ACTIVE', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        id: validJobId,
+        status: 'ACTIVE',
+      });
+
+      await assert.rejects(
+        () => service.moderateJobStatus(validJobId, { status: 'ACTIVE' }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message.includes('Only PENDING jobs')
+      );
+
+      await assert.rejects(
+        () => service.moderateJobStatus(validJobId, { status: 'REJECTED' }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message.includes('Only PENDING jobs')
+      );
+    });
+
+    it('6. rejects with 400 VALIDATION_ERROR when job is already REJECTED', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        id: validJobId,
+        status: 'REJECTED',
+      });
+
+      await assert.rejects(
+        () => service.moderateJobStatus(validJobId, { status: 'ACTIVE' }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message.includes('Only PENDING jobs')
+      );
+    });
+
+    it('7. security: does not alter ownership fields or expose internal data', async () => {
+      let capturedUpdateData = null;
+      mockPrisma.job.findUnique = async () => ({
+        id: validJobId,
+        status: 'PENDING',
+        recruiter_id: 'immutable-recruiter-id',
+        company_id: 'immutable-company-id',
+      });
+
+      mockPrisma.job.update = async ({ data }) => {
+        capturedUpdateData = data;
+        return {
+          id: validJobId,
+          status: data.status,
+        };
+      };
+
+      const result = await service.moderateJobStatus(validJobId, {
+        status: 'ACTIVE',
+      });
+
+      assert.deepEqual(Object.keys(capturedUpdateData), ['status']);
+      assert.equal(capturedUpdateData.recruiter_id, undefined);
+      assert.equal(capturedUpdateData.company_id, undefined);
+      assert.equal(result.recruiter_id, undefined);
+      assert.equal(result.company_id, undefined);
+    });
+
+    it('8. propagates database errors cleanly', async () => {
+      const dbError = new Error('Database connection failed');
+      mockPrisma.job.findUnique = async () => {
+        throw dbError;
+      };
+
+      await assert.rejects(
+        () => service.moderateJobStatus(validJobId, { status: 'ACTIVE' }),
+        (err) => err === dbError
+      );
+    });
+  });
 });

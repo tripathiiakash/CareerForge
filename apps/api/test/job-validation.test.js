@@ -4,6 +4,7 @@ const {
   createJobSchema,
   updateJobSchema,
   listJobsQuerySchema,
+  moderateJobStatusSchema,
 } = require('@careerforge/validation');
 
 describe('Job Validation Test Suite (docs/API.md §5.1)', () => {
@@ -434,6 +435,71 @@ describe('Job List & Search Query Validation Test Suite (docs/API.md §5.2)', ()
 
     assert.throws(
       () => listJobsQuerySchema.parse({ employment_type: 'CONTRACT' }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+});
+
+describe('Job Status Moderation Validation Test Suite (docs/API.md §9.2)', () => {
+  it('should accept a valid status of ACTIVE', () => {
+    const parsed = moderateJobStatusSchema.parse({ status: 'ACTIVE' });
+    assert.equal(parsed.status, 'ACTIVE');
+  });
+
+  it('should accept a valid status of REJECTED', () => {
+    const parsed = moderateJobStatusSchema.parse({ status: 'REJECTED' });
+    assert.equal(parsed.status, 'REJECTED');
+  });
+
+  it('should reject status of PENDING', () => {
+    assert.throws(
+      () => moderateJobStatusSchema.parse({ status: 'PENDING' }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+
+  it('should reject arbitrary or invalid status values', () => {
+    const invalidStatuses = ['APPROVED', 'DRAFT', 'DELETED', 'active', 'rejected', ''];
+    for (const invalid of invalidStatuses) {
+      assert.throws(
+        () => moderateJobStatusSchema.parse({ status: invalid }),
+        (err) => err.name === 'ZodError'
+      );
+    }
+  });
+
+  it('should reject an empty body {}', () => {
+    assert.throws(
+      () => moderateJobStatusSchema.parse({}),
+      (err) => err.name === 'ZodError'
+    );
+  });
+
+  it('should strictly reject unexpected or internal properties (strict mode)', () => {
+    assert.throws(
+      () =>
+        moderateJobStatusSchema.parse({
+          status: 'ACTIVE',
+          reason: 'Looks good',
+        }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () =>
+        moderateJobStatusSchema.parse({
+          status: 'ACTIVE',
+          recruiter_id: '11111111-1111-4111-8111-111111111111',
+        }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () =>
+        moderateJobStatusSchema.parse({
+          status: 'REJECTED',
+          id: '22222222-2222-4222-8222-222222222222',
+        }),
       (err) => err.name === 'ZodError'
     );
   });

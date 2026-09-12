@@ -267,3 +267,13 @@ export const listJobsQuerySchema = z.object({
 });
 
 export type ListJobsQueryInput = z.infer<typeof listJobsQuerySchema>;
+
+export const moderateJobStatusSchema = z
+  .object({
+    status: z.enum(['ACTIVE', 'REJECTED'], {
+      message: "Status must be exactly 'ACTIVE' or 'REJECTED'",
+    }),
+  })
+  .strict();
+
+export type ModerateJobStatusInput = z.infer<typeof moderateJobStatusSchema>;
