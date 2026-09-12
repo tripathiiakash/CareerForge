@@ -14,9 +14,17 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
   const validJobId = '33333333-3333-4333-8333-333333333333';
   const validResumeId = '44444444-4444-4444-8444-444444444444';
   const validApplicationId = '55555555-5555-4555-8555-555555555555';
+  const validRecruiterUserId = '66666666-6666-4666-8666-666666666666';
+  const validRecruiterId = '77777777-7777-4777-8777-777777777777';
 
   beforeEach(() => {
     mockPrisma = {
+      recruiter: {
+        findUnique: async () => ({
+          id: validRecruiterId,
+          user_id: validRecruiterUserId,
+        }),
+      },
       student: {
         findUnique: async () => ({
           id: validStudentId,
@@ -27,6 +35,7 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
         findUnique: async () => ({
           id: validJobId,
           status: 'ACTIVE',
+          recruiter_id: validRecruiterId,
         }),
       },
       resume: {
@@ -454,6 +463,250 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
 
       await assert.rejects(
         () => service.getStudentApplications(validUserId, {}),
+        (err) => err === dbError
+      );
+    });
+  });
+
+  describe('getJobApplicants (Phase 4.4.3 - docs/API.md §8.2)', () => {
+    const mockApplicants = [
+      {
+        id: 'app-1',
+        job_id: validJobId,
+        student_id: validStudentId,
+        resume_id: validResumeId,
+        status: 'APPLIED',
+        applied_at: new Date('2024-02-10T14:30:00.000Z'),
+        student: {
+          id: validStudentId,
+          user_id: validUserId,
+          first_name: 'Rahul',
+          last_name: 'Sharma',
+          university: 'State University',
+          degree: 'B.Tech Computer Science',
+          graduation_year: 2025,
+          skills: ['React', 'Node.js', 'TypeScript'],
+          github_url: 'https://github.com/rahul',
+          linkedin_url: 'https://linkedin.com/in/rahul',
+        },
+        resume: {
+          id: validResumeId,
+          file_url: 'https://cloud-storage.com/resumes/rahul.pdf',
+          parsed_text: 'SUPER SECRET PARSED TEXT THAT SHOULD NOT BE EXPOSED',
+        },
+      },
+      {
+        id: 'app-2',
+        job_id: validJobId,
+        student_id: 'student-2',
+        resume_id: 'resume-2',
+        status: 'SHORTLISTED',
+        applied_at: new Date('2024-02-09T10:00:00.000Z'),
+        student: {
+          id: 'student-2',
+          user_id: 'user-2',
+          first_name: 'Priya',
+          last_name: 'Patel',
+          university: 'Tech Institute',
+          degree: 'M.S. Software Engineering',
+          graduation_year: 2024,
+          skills: ['Python', 'PostgreSQL', 'Docker'],
+          github_url: 'https://github.com/priya',
+          linkedin_url: 'https://linkedin.com/in/priya',
+        },
+        resume: {
+          id: 'resume-2',
+          file_url: 'https://cloud-storage.com/resumes/priya.pdf',
+          parsed_text: 'ANOTHER SECRET RESUME TEXT',
+        },
+      },
+    ];
+
+    it('1. rejects with 400 VALIDATION_ERROR when jobId is invalid UUID', async () => {
+      await assert.rejects(
+        () => service.getJobApplicants(validRecruiterUserId, 'not-a-uuid', {}),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message === 'Invalid jobId format (must be a valid UUID)'
+      );
+    });
+
+    it('2. rejects with 404 NOT_FOUND when recruiter profile does not exist', async () => {
+      mockPrisma.recruiter.findUnique = async () => null;
+
+      await assert.rejects(
+        () => service.getJobApplicants(validRecruiterUserId, validJobId, {}),
+        (err) =>
+          err.status === 404 &&
+          err.response.code === 'NOT_FOUND' &&
+          err.response.message === 'Recruiter profile does not exist'
+      );
+    });
+
+    it('3. rejects with 404 NOT_FOUND when target job does not exist', async () => {
+      mockPrisma.job.findUnique = async () => null;
+
+      await assert.rejects(
+        () => service.getJobApplicants(validRecruiterUserId, validJobId, {}),
+        (err) =>
+          err.status === 404 &&
+          err.response.code === 'NOT_FOUND' &&
+          err.response.message === 'Job does not exist'
+      );
+    });
+
+    it('4. rejects with 403 FORBIDDEN when recruiter does not own the target job (BOLA/IDOR protection)', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        id: validJobId,
+        status: 'ACTIVE',
+        recruiter_id: 'other-recruiter-id-999',
+      });
+
+      await assert.rejects(
+        () => service.getJobApplicants(validRecruiterUserId, validJobId, {}),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message === 'Recruiter does not own this job'
+      );
+    });
+
+    it('5. returns paginated applicant list with default pagination values (page=1, limit=10)', async () => {
+      let capturedArgs = null;
+      mockPrisma.application.count = async (args) => {
+        capturedArgs = args;
+        return 2;
+      };
+      mockPrisma.application.findMany = async (args) => {
+        capturedArgs = { ...capturedArgs, ...args };
+        return mockApplicants;
+      };
+
+      const result = await service.getJobApplicants(
+        validRecruiterUserId,
+        validJobId,
+        {}
+      );
+
+      assert.equal(result.data.length, 2);
+      assert.equal(result.meta.page, 1);
+      assert.equal(result.meta.limit, 10);
+      assert.equal(result.meta.total, 2);
+      assert.equal(result.meta.totalPages, 1);
+
+      assert.equal(capturedArgs.where.job_id, validJobId);
+      assert.equal(capturedArgs.where.status, undefined);
+      assert.equal(capturedArgs.skip, 0);
+      assert.equal(capturedArgs.take, 10);
+      assert.deepEqual(capturedArgs.orderBy, { applied_at: 'desc' });
+    });
+
+    it('6. applies status filter when status query parameter is provided', async () => {
+      let capturedWhere = null;
+      mockPrisma.application.count = async ({ where }) => {
+        capturedWhere = where;
+        return 1;
+      };
+      mockPrisma.application.findMany = async ({ where }) => {
+        capturedWhere = where;
+        return [mockApplicants[1]];
+      };
+
+      const result = await service.getJobApplicants(
+        validRecruiterUserId,
+        validJobId,
+        { status: 'SHORTLISTED' }
+      );
+
+      assert.equal(result.data.length, 1);
+      assert.equal(result.data[0].status, 'SHORTLISTED');
+      assert.equal(capturedWhere.job_id, validJobId);
+      assert.equal(capturedWhere.status, 'SHORTLISTED');
+    });
+
+    it('7. respects custom pagination parameters and computes totalPages correctly', async () => {
+      let capturedPagination = null;
+      mockPrisma.application.count = async () => 14;
+      mockPrisma.application.findMany = async ({ skip, take }) => {
+        capturedPagination = { skip, take };
+        return mockApplicants;
+      };
+
+      const result = await service.getJobApplicants(
+        validRecruiterUserId,
+        validJobId,
+        { page: 2, limit: 5 }
+      );
+
+      assert.equal(result.meta.page, 2);
+      assert.equal(result.meta.limit, 5);
+      assert.equal(result.meta.total, 14);
+      assert.equal(result.meta.totalPages, 3);
+      assert.equal(capturedPagination.skip, 5);
+      assert.equal(capturedPagination.take, 5);
+    });
+
+    it('8. returns empty applicant list with total: 0, totalPages: 0 when no applicants exist', async () => {
+      mockPrisma.application.count = async () => 0;
+      mockPrisma.application.findMany = async () => [];
+
+      const result = await service.getJobApplicants(
+        validRecruiterUserId,
+        validJobId,
+        {}
+      );
+
+      assert.deepEqual(result.data, []);
+      assert.equal(result.meta.total, 0);
+      assert.equal(result.meta.totalPages, 0);
+    });
+
+    it('9. preserves applicant privacy: does NOT leak student user_id, github_url, linkedin_url or resume parsed_text', async () => {
+      mockPrisma.application.count = async () => 1;
+      mockPrisma.application.findMany = async () => [mockApplicants[0]];
+
+      const result = await service.getJobApplicants(
+        validRecruiterUserId,
+        validJobId,
+        {}
+      );
+
+      const applicant = result.data[0];
+      assert.equal(applicant.application_id, 'app-1');
+      assert.equal(applicant.status, 'APPLIED');
+      assert.deepEqual(applicant.student, {
+        id: validStudentId,
+        first_name: 'Rahul',
+        last_name: 'Sharma',
+        university: 'State University',
+        degree: 'B.Tech Computer Science',
+        graduation_year: 2025,
+        skills: ['React', 'Node.js', 'TypeScript'],
+      });
+      assert.deepEqual(applicant.resume, {
+        id: validResumeId,
+        file_url: 'https://cloud-storage.com/resumes/rahul.pdf',
+      });
+
+      // Strict privacy assertions
+      assert.equal(applicant.student.user_id, undefined);
+      assert.equal(applicant.student.github_url, undefined);
+      assert.equal(applicant.student.linkedin_url, undefined);
+      assert.equal(applicant.resume.parsed_text, undefined);
+      assert.equal(applicant.resume.student_id, undefined);
+      assert.equal(applicant.job_id, undefined);
+      assert.equal(applicant.student_id, undefined);
+    });
+
+    it('10. propagates database errors cleanly', async () => {
+      const dbError = new Error('Database query failure');
+      mockPrisma.application.findMany = async () => {
+        throw dbError;
+      };
+
+      await assert.rejects(
+        () => service.getJobApplicants(validRecruiterUserId, validJobId, {}),
         (err) => err === dbError
       );
     });

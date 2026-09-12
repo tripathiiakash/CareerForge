@@ -261,4 +261,180 @@ describe('Application Controller & Security Guards Test Suite (docs/API.md §8.1
       );
     });
   });
+
+  describe('Recruiter Job Applicants Guard & Controller (docs/API.md §8.2)', () => {
+    const reflector = new Reflector();
+
+    it('should have RECRUITER role metadata on getJobApplicants handler override', () => {
+      const handlerRoles = reflector.getAllAndOverride(ROLES_KEY, [
+        ApplicationController.prototype.getJobApplicants,
+        ApplicationController,
+      ]);
+      assert.deepEqual(handlerRoles, ['RECRUITER']);
+    });
+
+    it('should allow RECRUITER role to access getJobApplicants', () => {
+      const guard = new RolesGuard(reflector);
+      const recruiterRequest = {
+        user: { userId: 'user-recruiter-1', role: 'RECRUITER' },
+      };
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => recruiterRequest,
+        }),
+        getHandler: () => ApplicationController.prototype.getJobApplicants,
+        getClass: () => ApplicationController,
+      };
+
+      const allowed = guard.canActivate(mockContext);
+      assert.equal(allowed, true);
+    });
+
+    it('should reject STUDENT role attempting to access getJobApplicants with 403 FORBIDDEN', () => {
+      const guard = new RolesGuard(reflector);
+      const studentRequest = {
+        user: { userId: 'user-student-1', role: 'STUDENT' },
+      };
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => studentRequest,
+        }),
+        getHandler: () => ApplicationController.prototype.getJobApplicants,
+        getClass: () => ApplicationController,
+      };
+
+      assert.throws(
+        () => guard.canActivate(mockContext),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message ===
+            'Insufficient role permissions for this resource'
+      );
+    });
+
+    it('should reject ADMIN role attempting to access getJobApplicants with 403 FORBIDDEN', () => {
+      const guard = new RolesGuard(reflector);
+      const adminRequest = {
+        user: { userId: 'user-admin-1', role: 'ADMIN' },
+      };
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => adminRequest,
+        }),
+        getHandler: () => ApplicationController.prototype.getJobApplicants,
+        getClass: () => ApplicationController,
+      };
+
+      assert.throws(
+        () => guard.canActivate(mockContext),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message ===
+            'Insufficient role permissions for this resource'
+      );
+    });
+
+    it('should reject unauthenticated request with 403 FORBIDDEN', () => {
+      const guard = new RolesGuard(reflector);
+      const anonymousRequest = {};
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => anonymousRequest,
+        }),
+        getHandler: () => ApplicationController.prototype.getJobApplicants,
+        getClass: () => ApplicationController,
+      };
+
+      assert.throws(
+        () => guard.canActivate(mockContext),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message ===
+            'Insufficient role permissions for this resource'
+      );
+    });
+
+    it('should route getJobApplicants to applicationService and return 200 OK envelope', async () => {
+      const userId = 'recruiter-user-1';
+      const jobId = '33333333-3333-4333-8333-333333333333';
+      const query = { page: 1, limit: 10, status: 'APPLIED' };
+      const mockData = [
+        {
+          application_id: 'app-1',
+          student: {
+            id: 'stu-1',
+            first_name: 'Rahul',
+            last_name: 'Sharma',
+            university: 'State University',
+            degree: 'B.Tech',
+            graduation_year: 2025,
+            skills: ['React'],
+          },
+          resume: {
+            id: 'res-1',
+            file_url: 'https://example.com/res.pdf',
+          },
+          status: 'APPLIED',
+          applied_at: new Date('2024-02-10T14:30:00.000Z'),
+        },
+      ];
+      const mockMeta = {
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      };
+
+      let capturedUserId = null;
+      let capturedJobId = null;
+      let capturedQuery = null;
+
+      const mockService = {
+        getJobApplicants: async (uId, jId, q) => {
+          capturedUserId = uId;
+          capturedJobId = jId;
+          capturedQuery = q;
+          return {
+            data: mockData,
+            meta: mockMeta,
+          };
+        },
+      };
+
+      const controller = new ApplicationController(mockService);
+      const response = await controller.getJobApplicants(userId, jobId, query);
+
+      assert.equal(capturedUserId, userId);
+      assert.equal(capturedJobId, jobId);
+      assert.deepEqual(capturedQuery, query);
+      assert.deepEqual(response, {
+        success: true,
+        data: mockData,
+        meta: mockMeta,
+      });
+    });
+
+    it('should propagate getJobApplicants service errors cleanly', async () => {
+      const mockError = new Error('Service error');
+      const mockService = {
+        getJobApplicants: async () => {
+          throw mockError;
+        },
+      };
+
+      const controller = new ApplicationController(mockService);
+      await assert.rejects(
+        () =>
+          controller.getJobApplicants(
+            'recruiter-1',
+            '33333333-3333-4333-8333-333333333333',
+            {}
+          ),
+        (err) => err === mockError
+      );
+    });
+  });
 });

@@ -2,6 +2,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   applyJobSchema,
+  listJobApplicantsQuerySchema,
   listStudentApplicationsQuerySchema,
 } = require('@careerforge/validation');
 
@@ -143,5 +144,91 @@ describe('Student Application List Query Validation Test Suite (docs/API.md §2.
         (err) => err.name === 'ZodError'
       );
     }
+  });
+});
+
+describe('Recruiter Job Applicants List Query Validation Test Suite (docs/API.md §8.2)', () => {
+  it('should supply documented default pagination values when empty query provided', () => {
+    const parsed = listJobApplicantsQuerySchema.parse({});
+    assert.equal(parsed.page, 1);
+    assert.equal(parsed.limit, 10);
+    assert.equal(parsed.status, undefined);
+  });
+
+  it('should accept valid custom pagination and status filter', () => {
+    const parsed = listJobApplicantsQuerySchema.parse({
+      page: '2',
+      limit: '20',
+      status: 'SHORTLISTED',
+    });
+    assert.equal(parsed.page, 2);
+    assert.equal(parsed.limit, 20);
+    assert.equal(parsed.status, 'SHORTLISTED');
+
+    const appliedParsed = listJobApplicantsQuerySchema.parse({
+      status: 'APPLIED',
+    });
+    assert.equal(appliedParsed.status, 'APPLIED');
+
+    const rejectedParsed = listJobApplicantsQuerySchema.parse({
+      status: 'REJECTED',
+    });
+    assert.equal(rejectedParsed.status, 'REJECTED');
+  });
+
+  it('should reject invalid page values (< 1, 0, negative, non-numeric)', () => {
+    assert.throws(
+      () => listJobApplicantsQuerySchema.parse({ page: 0 }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobApplicantsQuerySchema.parse({ page: -1 }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobApplicantsQuerySchema.parse({ page: 'xyz' }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+
+  it('should reject invalid limit values (< 1, 0, > 50, non-numeric)', () => {
+    assert.throws(
+      () => listJobApplicantsQuerySchema.parse({ limit: 0 }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobApplicantsQuerySchema.parse({ limit: 51 }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () => listJobApplicantsQuerySchema.parse({ limit: 'abc' }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+
+  it('should reject invalid status values', () => {
+    const invalidStatuses = ['PENDING', 'ACTIVE', 'CANCELLED', 'shortlisted', ''];
+    for (const invalid of invalidStatuses) {
+      assert.throws(
+        () => listJobApplicantsQuerySchema.parse({ status: invalid }),
+        (err) => err.name === 'ZodError'
+      );
+    }
+  });
+
+  it('should strictly reject unknown query parameters', () => {
+    assert.throws(
+      () =>
+        listJobApplicantsQuerySchema.parse({
+          page: 1,
+          limit: 10,
+          unexpected_filter: 'val',
+        }),
+      (err) => err.name === 'ZodError'
+    );
   });
 });
