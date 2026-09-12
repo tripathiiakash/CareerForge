@@ -205,3 +205,42 @@ export const createJobSchema = z.object({
 });
 
 export type CreateJobInput = z.infer<typeof createJobSchema>;
+
+export const updateJobSchema = z
+  .object({
+    title: z
+      .string()
+      .trim()
+      .min(3, 'Title must be between 3 and 255 characters')
+      .max(255, 'Title cannot exceed 255 characters')
+      .optional(),
+    description: z
+      .string()
+      .trim()
+      .min(50, 'Description must be at least 50 characters')
+      .max(10000, 'Description cannot exceed 10000 characters')
+      .optional(),
+    required_skills: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1, 'Skill cannot be empty')
+          .max(50, 'Each skill cannot exceed 50 characters'),
+        { message: 'Required skills must be an array' }
+      )
+      .min(1, 'At least 1 required skill is required')
+      .max(20, 'Required skills cannot exceed 20 items')
+      .optional(),
+    employment_type: z
+      .enum(['INTERNSHIP', 'FULL_TIME'], {
+        message: "Employment type must be exactly 'INTERNSHIP' or 'FULL_TIME'",
+      })
+      .optional(),
+  })
+  .strict()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided for update',
+  });
+
+export type UpdateJobInput = z.infer<typeof updateJobSchema>;

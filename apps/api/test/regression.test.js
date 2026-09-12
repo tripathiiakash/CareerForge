@@ -7,6 +7,7 @@ const {
   updateRecruiterProfileSchema,
   createCompanySchema,
   createJobSchema,
+  updateJobSchema,
   aiResumeAnalysisOutputSchema,
 } = require('@careerforge/validation');
 const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
@@ -200,6 +201,25 @@ describe('Regression & Architecture Integrity Test Suite', () => {
 
       assert.throws(
         () => createJobSchema.parse({ ...valid, title: 'AB' }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+
+    it('should validate job update schema adhering to docs/API.md §5.4', () => {
+      const validUpdate = {
+        title: 'Junior Backend Developer (Updated)',
+        required_skills: ['Node.js', 'PostgreSQL', 'Docker'],
+      };
+      const parsed = updateJobSchema.parse(validUpdate);
+      assert.equal(parsed.title, 'Junior Backend Developer (Updated)');
+      assert.deepEqual(parsed.required_skills, [
+        'Node.js',
+        'PostgreSQL',
+        'Docker',
+      ]);
+
+      assert.throws(
+        () => updateJobSchema.parse({}),
         (err) => err.name === 'ZodError'
       );
     });

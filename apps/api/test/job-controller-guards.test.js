@@ -149,5 +149,110 @@ describe('Job Controller & Security Guards Test Suite (docs/API.md §5.1)', () =
         (err) => err === mockError && err.status === 400
       );
     });
+
+    it('should route updateJob to jobService and return 200 OK envelope with data', async () => {
+      const jobId = 'e42e476e-3607-4e68-9a2f-98eb413ce161';
+      const inputDto = {
+        title: 'Junior Backend Developer (Updated)',
+        required_skills: ['Node.js', 'PostgreSQL', 'Docker'],
+      };
+
+      const mockUpdatedData = {
+        id: jobId,
+        title: 'Junior Backend Developer (Updated)',
+        status: 'ACTIVE',
+        message: 'Job updated successfully.',
+      };
+
+      let capturedUserId = null;
+      let capturedJobId = null;
+      let capturedDto = null;
+      const mockService = {
+        updateJob: async (userId, id, dto) => {
+          capturedUserId = userId;
+          capturedJobId = id;
+          capturedDto = dto;
+          return mockUpdatedData;
+        },
+      };
+
+      const controller = new JobController(mockService);
+      const response = await controller.updateJob(
+        'user-recruiter-id',
+        jobId,
+        inputDto
+      );
+
+      assert.equal(capturedUserId, 'user-recruiter-id');
+      assert.equal(capturedJobId, jobId);
+      assert.deepEqual(capturedDto, inputDto);
+      assert.deepEqual(response, {
+        success: true,
+        data: mockUpdatedData,
+      });
+    });
+
+    it('should propagate updateJob service errors (e.g. 403 or 404) without swallowing', async () => {
+      const mockForbidden = new Error('Recruiter does not own this job');
+      mockForbidden.status = 403;
+
+      const mockService = {
+        updateJob: async () => {
+          throw mockForbidden;
+        },
+      };
+
+      const controller = new JobController(mockService);
+
+      await assert.rejects(
+        () =>
+          controller.updateJob('user-id', 'job-id', {
+            title: 'Updated',
+          }),
+        (err) => err === mockForbidden && err.status === 403
+      );
+    });
+
+    it('should route deleteJob to jobService and return 200 OK envelope with message', async () => {
+      const jobId = 'e42e476e-3607-4e68-9a2f-98eb413ce161';
+
+      let capturedUserId = null;
+      let capturedJobId = null;
+      const mockService = {
+        deleteJob: async (userId, id) => {
+          capturedUserId = userId;
+          capturedJobId = id;
+          return { message: 'Job deleted successfully.' };
+        },
+      };
+
+      const controller = new JobController(mockService);
+      const response = await controller.deleteJob('user-recruiter-id', jobId);
+
+      assert.equal(capturedUserId, 'user-recruiter-id');
+      assert.equal(capturedJobId, jobId);
+      assert.deepEqual(response, {
+        success: true,
+        message: 'Job deleted successfully.',
+      });
+    });
+
+    it('should propagate deleteJob service errors (e.g. 403 or 404) without swallowing', async () => {
+      const mockNotFound = new Error('Job does not exist');
+      mockNotFound.status = 404;
+
+      const mockService = {
+        deleteJob: async () => {
+          throw mockNotFound;
+        },
+      };
+
+      const controller = new JobController(mockService);
+
+      await assert.rejects(
+        () => controller.deleteJob('user-id', 'job-id'),
+        (err) => err === mockNotFound && err.status === 404
+      );
+    });
   });
 });
