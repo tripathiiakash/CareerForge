@@ -13,8 +13,9 @@ import {
   StudentJobsPage,
   StudentApplicationsPage,
   StudentResumePage,
-  StudentProfilePage,
 } from '@/pages/StudentPages';
+import { StudentDashboardPage } from '@/features/student/StudentDashboardPage';
+import { StudentProfilePage } from '@/features/student/StudentProfilePage';
 import {
   RecruiterDashboardPage,
   RecruiterJobsPage,
@@ -70,7 +71,11 @@ export const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <Navigate to="/student/jobs" replace />,
+            element: <Navigate to="/student/dashboard" replace />,
+          },
+          {
+            path: 'dashboard',
+            element: <StudentDashboardPage />,
           },
           {
             path: 'jobs',

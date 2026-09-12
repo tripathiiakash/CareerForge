@@ -25,7 +25,7 @@ export function isSafeRedirectPath(path: string | undefined): boolean {
 export function getRoleDefaultPath(role: UserRole | null): string {
   switch (role) {
     case 'STUDENT':
-      return '/student/jobs';
+      return '/student/dashboard';
     case 'RECRUITER':
       return '/recruiter/dashboard';
     case 'ADMIN':

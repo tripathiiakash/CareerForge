@@ -64,8 +64,7 @@ export const LoginPage: React.FC = () => {
         navigate(requestedDestination, { replace: true });
       } else {
         // Fallback to role-aware default portal
-        // State will update with the authenticated user; read token/user or use fallback
-        navigate('/student/jobs', { replace: true });
+        navigate('/student/dashboard', { replace: true });
       }
     } catch (err: unknown) {
       const parsed = extractApiError(err);

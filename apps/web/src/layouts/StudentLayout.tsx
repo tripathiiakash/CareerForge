@@ -1,6 +1,14 @@
 import React from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Briefcase, Send, User, Sparkles, LogOut, Compass } from 'lucide-react';
+import {
+  Briefcase,
+  Send,
+  User,
+  Sparkles,
+  LogOut,
+  Compass,
+  LayoutDashboard,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/auth/AuthContext';
@@ -16,6 +24,7 @@ export const StudentLayout: React.FC = () => {
   };
 
   const navItems = [
+    { label: 'Dashboard', path: '/student/dashboard', icon: LayoutDashboard },
     { label: 'Job Board', path: '/student/jobs', icon: Compass },
     { label: 'My Applications', path: '/student/applications', icon: Send },
     { label: 'AI Resume Review', path: '/student/resume', icon: Sparkles },
