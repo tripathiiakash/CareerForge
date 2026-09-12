@@ -9,11 +9,7 @@ import { NotFoundPage } from '@/pages/NotFoundPage';
 import { LoginPage, RegisterPage } from '@/pages/AuthPages';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { PublicOnlyRoute } from '@/components/auth/PublicOnlyRoute';
-import {
-  StudentJobsPage,
-  StudentApplicationsPage,
-  StudentResumePage,
-} from '@/pages/StudentPages';
+import { ResumePage } from '@/features/resumes/ResumePage';
 import { StudentDashboardPage } from '@/features/student/StudentDashboardPage';
 import { StudentProfilePage } from '@/features/student/StudentProfilePage';
 import { JobBoardPage } from '@/features/jobs/JobBoardPage';
@@ -94,7 +90,7 @@ export const router = createBrowserRouter([
           },
           {
             path: 'resume',
-            element: <StudentResumePage />,
+            element: <ResumePage />,
           },
           {
             path: 'profile',

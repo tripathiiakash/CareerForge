@@ -5,6 +5,7 @@ import {
   Send,
   User,
   Sparkles,
+  FileText,
   LogOut,
   Compass,
   LayoutDashboard,
@@ -27,7 +28,7 @@ export const StudentLayout: React.FC = () => {
     { label: 'Dashboard', path: '/student/dashboard', icon: LayoutDashboard },
     { label: 'Job Board', path: '/student/jobs', icon: Compass },
     { label: 'My Applications', path: '/student/applications', icon: Send },
-    { label: 'AI Resume Review', path: '/student/resume', icon: Sparkles },
+    { label: 'Resumes', path: '/student/resume', icon: FileText },
     { label: 'Profile', path: '/student/profile', icon: User },
   ];
 
