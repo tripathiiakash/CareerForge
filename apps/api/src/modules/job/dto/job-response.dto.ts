@@ -64,3 +64,26 @@ export interface ModerateJobStatusResponseDto {
   success: true;
   data: JobModeratedData;
 }
+
+export interface JobDetailCompany {
+  id: string;
+  name: string;
+  website: string | null;
+  logo_url: string | null;
+}
+
+export interface JobDetailData {
+  id: string;
+  title: string;
+  description: string;
+  required_skills: string[];
+  employment_type: string;
+  company: JobDetailCompany;
+  created_at: Date | string;
+  has_applied?: boolean;
+}
+
+export interface GetJobDetailResponseDto {
+  success: true;
+  data: JobDetailData;
+}

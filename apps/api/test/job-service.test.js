@@ -976,4 +976,261 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
       );
     });
   });
+
+  describe('getJobById (docs/API.md §5.3)', () => {
+    const validJobDetailFixture = {
+      id: validJobId,
+      recruiter_id: validRecruiterId,
+      company_id: validCompanyId,
+      title: 'Junior Backend Developer',
+      description:
+        'We are looking for a Node.js developer with experience in building REST APIs...',
+      required_skills: ['Node.js', 'PostgreSQL', 'REST APIs'],
+      employment_type: 'FULL_TIME',
+      status: 'ACTIVE',
+      created_at: new Date('2024-02-05T12:00:00.000Z'),
+      company: {
+        id: validCompanyId,
+        name: 'TechNova Solutions',
+        website: 'https://technova.example.com',
+        logo_url: 'https://technova.example.com/logo.png',
+      },
+      recruiter: {
+        user_id: validUserId,
+      },
+    };
+
+    it('1. validation: throws 400 when jobId is not a valid UUID', async () => {
+      await assert.rejects(
+        () => service.getJobById('not-a-valid-uuid'),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message.includes('valid UUID')
+      );
+    });
+
+    it('2. not found: throws 404 when job does not exist in database', async () => {
+      mockPrisma.job.findUnique = async () => null;
+
+      await assert.rejects(
+        () => service.getJobById(validJobId),
+        (err) => err.status === 404 && err.response.code === 'NOT_FOUND'
+      );
+    });
+
+    it('3. public access: allows retrieving ACTIVE job without authentication', async () => {
+      mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
+
+      const result = await service.getJobById(validJobId);
+
+      assert.equal(result.id, validJobId);
+      assert.equal(result.title, 'Junior Backend Developer');
+      assert.equal(result.description, validJobDetailFixture.description);
+      assert.deepEqual(result.required_skills, ['Node.js', 'PostgreSQL', 'REST APIs']);
+      assert.equal(result.employment_type, 'FULL_TIME');
+      assert.deepEqual(result.company, {
+        id: validCompanyId,
+        name: 'TechNova Solutions',
+        website: 'https://technova.example.com',
+        logo_url: 'https://technova.example.com/logo.png',
+      });
+      assert.equal(result.has_applied, undefined);
+    });
+
+    it('4. public access: throws 404 when unauthenticated user requests PENDING job', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        ...validJobDetailFixture,
+        status: 'PENDING',
+      });
+
+      await assert.rejects(
+        () => service.getJobById(validJobId),
+        (err) => err.status === 404 && err.response.code === 'NOT_FOUND'
+      );
+    });
+
+    it('5. public access: throws 404 when unauthenticated user requests REJECTED job', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        ...validJobDetailFixture,
+        status: 'REJECTED',
+      });
+
+      await assert.rejects(
+        () => service.getJobById(validJobId),
+        (err) => err.status === 404 && err.response.code === 'NOT_FOUND'
+      );
+    });
+
+    it('6. student access: returns has_applied: false when student has not applied', async () => {
+      mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
+      mockPrisma.application = {
+        findFirst: async () => null,
+      };
+
+      const studentUser = {
+        userId: 'student-user-1111',
+        email: 'student@example.com',
+        role: 'STUDENT',
+      };
+
+      const result = await service.getJobById(validJobId, studentUser);
+
+      assert.equal(result.id, validJobId);
+      assert.equal(result.has_applied, false);
+    });
+
+    it('7. student access: returns has_applied: true when student has an existing application', async () => {
+      mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
+      mockPrisma.application = {
+        findFirst: async () => ({ id: 'app-uuid-9999' }),
+      };
+
+      const studentUser = {
+        userId: 'student-user-1111',
+        email: 'student@example.com',
+        role: 'STUDENT',
+      };
+
+      const result = await service.getJobById(validJobId, studentUser);
+
+      assert.equal(result.id, validJobId);
+      assert.equal(result.has_applied, true);
+    });
+
+    it('8. student access: throws 404 when student attempts to access non-active job', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        ...validJobDetailFixture,
+        status: 'PENDING',
+      });
+
+      const studentUser = {
+        userId: 'student-user-1111',
+        email: 'student@example.com',
+        role: 'STUDENT',
+      };
+
+      await assert.rejects(
+        () => service.getJobById(validJobId, studentUser),
+        (err) => err.status === 404 && err.response.code === 'NOT_FOUND'
+      );
+    });
+
+    it('9. recruiter access: allows owning recruiter to access their own ACTIVE job', async () => {
+      mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
+
+      const ownerUser = {
+        userId: validUserId,
+        email: 'sarah@example.com',
+        role: 'RECRUITER',
+      };
+
+      const result = await service.getJobById(validJobId, ownerUser);
+      assert.equal(result.id, validJobId);
+      assert.equal(result.has_applied, undefined);
+    });
+
+    it('10. recruiter access: allows owning recruiter to access their own PENDING job', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        ...validJobDetailFixture,
+        status: 'PENDING',
+      });
+
+      const ownerUser = {
+        userId: validUserId,
+        email: 'sarah@example.com',
+        role: 'RECRUITER',
+      };
+
+      const result = await service.getJobById(validJobId, ownerUser);
+      assert.equal(result.id, validJobId);
+    });
+
+    it('11. recruiter access: allows owning recruiter to access their own REJECTED job', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        ...validJobDetailFixture,
+        status: 'REJECTED',
+      });
+
+      const ownerUser = {
+        userId: validUserId,
+        email: 'sarah@example.com',
+        role: 'RECRUITER',
+      };
+
+      const result = await service.getJobById(validJobId, ownerUser);
+      assert.equal(result.id, validJobId);
+    });
+
+    it('12. recruiter access: throws 404 when recruiter attempts to access another recruiter non-active job', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        ...validJobDetailFixture,
+        status: 'PENDING',
+      });
+
+      const otherRecruiterUser = {
+        userId: 'other-user-9999',
+        email: 'other@example.com',
+        role: 'RECRUITER',
+      };
+
+      await assert.rejects(
+        () => service.getJobById(validJobId, otherRecruiterUser),
+        (err) => err.status === 404 && err.response.code === 'NOT_FOUND'
+      );
+    });
+
+    it('13. recruiter access: allows non-owning recruiter to access another recruiter ACTIVE job', async () => {
+      mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
+
+      const otherRecruiterUser = {
+        userId: 'other-user-9999',
+        email: 'other@example.com',
+        role: 'RECRUITER',
+      };
+
+      const result = await service.getJobById(validJobId, otherRecruiterUser);
+      assert.equal(result.id, validJobId);
+    });
+
+    it('14. admin access: allows admin to access ACTIVE, PENDING, and REJECTED jobs', async () => {
+      const adminUser = {
+        userId: 'admin-user-0000',
+        email: 'admin@example.com',
+        role: 'ADMIN',
+      };
+
+      // ACTIVE
+      mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
+      const activeResult = await service.getJobById(validJobId, adminUser);
+      assert.equal(activeResult.id, validJobId);
+
+      // PENDING
+      mockPrisma.job.findUnique = async () => ({
+        ...validJobDetailFixture,
+        status: 'PENDING',
+      });
+      const pendingResult = await service.getJobById(validJobId, adminUser);
+      assert.equal(pendingResult.id, validJobId);
+
+      // REJECTED
+      mockPrisma.job.findUnique = async () => ({
+        ...validJobDetailFixture,
+        status: 'REJECTED',
+      });
+      const rejectedResult = await service.getJobById(validJobId, adminUser);
+      assert.equal(rejectedResult.id, validJobId);
+    });
+
+    it('15. security: response does not expose recruiter_id, recruiter object, or status', async () => {
+      mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
+
+      const result = await service.getJobById(validJobId);
+
+      assert.equal(result.recruiter_id, undefined);
+      assert.equal(result.recruiter, undefined);
+      assert.equal(result.status, undefined);
+      assert.equal(result.updated_at, undefined);
+    });
+  });
 });

@@ -25,10 +25,12 @@ import { Roles } from '../../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
 import { RolesGuard } from '../../core/guards/roles.guard';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
+import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateJobDto } from './dto/create-job.dto';
 import {
   CreateJobResponseDto,
   DeleteJobResponseDto,
+  GetJobDetailResponseDto,
   ListJobsResponseDto,
   UpdateJobResponseDto,
 } from './dto/job-response.dto';
@@ -74,6 +76,35 @@ export class JobController {
       success: true,
       data,
       meta,
+    };
+  }
+
+  /**
+   * 5.3 Get Job Details
+   * GET /api/v1/jobs/:id
+   */
+  @Get(':id')
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  async getJob(
+    @Param(
+      'id',
+      new ParseUUIDPipe({
+        version: '4',
+        exceptionFactory: () =>
+          new BadRequestException({
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid id format (must be a valid UUID)',
+          }),
+      })
+    )
+    id: string,
+    @CurrentUser() user?: AuthenticatedUser
+  ): Promise<GetJobDetailResponseDto> {
+    const data = await this.jobService.getJobById(id, user);
+    return {
+      success: true,
+      data,
     };
   }
 

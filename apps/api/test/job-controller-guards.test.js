@@ -2,12 +2,13 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { Reflector } = require('@nestjs/core');
 const { RolesGuard } = require('../dist/core/guards/roles.guard');
+const { JwtAuthGuard } = require('../dist/core/guards/jwt-auth.guard');
 const { JobController } = require('../dist/modules/job/job.controller');
 const { AdminJobController } = require('../dist/modules/job/admin-job.controller');
 const { ROLES_KEY } = require('../dist/core/decorators/roles.decorator');
 const { IS_PUBLIC_KEY } = require('../dist/core/decorators/public.decorator');
 
-describe('Job Controller & Security Guards Test Suite (docs/API.md §5.1, §5.2, §5.4, §5.5)', () => {
+describe('Job Controller & Security Guards Test Suite (docs/API.md §5.1, §5.2, §5.3, §5.4, §5.5)', () => {
   describe('RolesGuard with RECRUITER Role', () => {
     const reflector = new Reflector();
 
@@ -107,6 +108,67 @@ describe('Job Controller & Security Guards Test Suite (docs/API.md §5.1, §5.2,
       const allowed = guard.canActivate(mockContext);
       assert.equal(allowed, true);
     });
+
+    it('should attach user in JwtAuthGuard when valid token is provided to a @Public() route', async () => {
+      const mockTokenService = {
+        verifyToken: async (token) => {
+          if (token === 'student-token') {
+            return {
+              sub: 'student-user-uuid',
+              email: 'student@example.com',
+              role: 'STUDENT',
+            };
+          }
+          throw new Error('Invalid token');
+        },
+      };
+
+      const guard = new JwtAuthGuard(mockTokenService, reflector);
+      const mockHandler = () => {};
+      class MockJobController {}
+      Reflect.defineMetadata(IS_PUBLIC_KEY, true, mockHandler);
+
+      const requestWithToken = {
+        headers: { authorization: 'Bearer student-token' },
+      };
+
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => requestWithToken,
+        }),
+        getHandler: () => mockHandler,
+        getClass: () => MockJobController,
+      };
+
+      const allowed = await guard.canActivate(mockContext);
+      assert.equal(allowed, true);
+      assert.deepEqual(requestWithToken.user, {
+        userId: 'student-user-uuid',
+        email: 'student@example.com',
+        role: 'STUDENT',
+      });
+    });
+
+    it('should allow request without user in JwtAuthGuard when no token is provided to a @Public() route', async () => {
+      const guard = new JwtAuthGuard({}, reflector);
+      const mockHandler = () => {};
+      class MockJobController {}
+      Reflect.defineMetadata(IS_PUBLIC_KEY, true, mockHandler);
+
+      const anonymousRequest = { headers: {} };
+
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => anonymousRequest,
+        }),
+        getHandler: () => mockHandler,
+        getClass: () => MockJobController,
+      };
+
+      const allowed = await guard.canActivate(mockContext);
+      assert.equal(allowed, true);
+      assert.equal(anonymousRequest.user, undefined);
+    });
   });
 
   describe('JobController', () => {
@@ -123,6 +185,62 @@ describe('Job Controller & Security Guards Test Suite (docs/API.md §5.1, §5.2,
         JobController.prototype.listJobs
       );
       assert.equal(isPublic, true);
+    });
+
+    it('should have @Public() metadata defined on getJob handler', () => {
+      const reflector = new Reflector();
+      const isPublic = reflector.get(
+        IS_PUBLIC_KEY,
+        JobController.prototype.getJob
+      );
+      assert.equal(isPublic, true);
+    });
+
+    it('should route getJob to jobService.getJobById and return 200 OK envelope', async () => {
+      const mockJobDetail = {
+        id: 'e42e476e-3607-4e68-9a2f-98eb413ce161',
+        title: 'Junior Backend Developer',
+        description: 'We are looking for a developer...',
+        required_skills: ['Node.js'],
+        employment_type: 'FULL_TIME',
+        company: {
+          id: 'comp-uuid',
+          name: 'TechNova Solutions',
+          website: 'https://technova.example.com',
+          logo_url: null,
+        },
+        has_applied: false,
+        created_at: new Date('2024-02-05T12:00:00.000Z'),
+      };
+
+      let capturedId = null;
+      let capturedUser = null;
+      const mockService = {
+        getJobById: async (id, user) => {
+          capturedId = id;
+          capturedUser = user;
+          return mockJobDetail;
+        },
+      };
+
+      const controller = new JobController(mockService);
+      const studentUser = {
+        userId: 'student-id',
+        email: 'student@example.com',
+        role: 'STUDENT',
+      };
+
+      const response = await controller.getJob(
+        'e42e476e-3607-4e68-9a2f-98eb413ce161',
+        studentUser
+      );
+
+      assert.equal(capturedId, 'e42e476e-3607-4e68-9a2f-98eb413ce161');
+      assert.deepEqual(capturedUser, studentUser);
+      assert.deepEqual(response, {
+        success: true,
+        data: mockJobDetail,
+      });
     });
 
     it('should route createJob to jobService and return 201 Created envelope', async () => {

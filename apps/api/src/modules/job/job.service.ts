@@ -4,12 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { EmploymentType, JobStatus, Prisma } from '@prisma/client';
+import { EmploymentType, JobStatus, Prisma, UserRole } from '@prisma/client';
 import { sanitizeHtml } from '../../core/utils/sanitize-html.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateJobDto } from './dto/create-job.dto';
 import {
   JobCreatedData,
+  JobDetailData,
   JobListItem,
   JobModeratedData,
   JobUpdatedData,
@@ -396,5 +398,98 @@ export class JobService {
       status: updatedJob.status,
       message,
     };
+  }
+
+  /**
+   * 5.3 Get Job Details
+   * GET /api/v1/jobs/:id
+   * - Public access for ACTIVE jobs.
+   * - Owning recruiter may view own job regardless of status.
+   * - Admin may view any job regardless of status.
+   * - Student requesting an active job receives has_applied: boolean.
+   * - Omits internal recruiter, moderation, and audit metadata.
+   */
+  async getJobById(
+    id: string,
+    user?: AuthenticatedUser
+  ): Promise<JobDetailData> {
+    this.validateUuid(id, 'id');
+
+    const job = await this.prisma.job.findUnique({
+      where: { id },
+      include: {
+        company: {
+          select: {
+            id: true,
+            name: true,
+            website: true,
+            logo_url: true,
+          },
+        },
+        recruiter: {
+          select: {
+            user_id: true,
+          },
+        },
+      },
+    });
+
+    if (!job) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Job does not exist',
+      });
+    }
+
+    const isOwnerRecruiter =
+      user?.role === UserRole.RECRUITER &&
+      job.recruiter?.user_id === user.userId;
+    const isAdmin = user?.role === UserRole.ADMIN;
+
+    if (job.status !== JobStatus.ACTIVE && !isOwnerRecruiter && !isAdmin) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Job does not exist',
+      });
+    }
+
+    let hasApplied: boolean | undefined = undefined;
+
+    if (user?.role === UserRole.STUDENT && this.prisma.application) {
+      const application = await this.prisma.application.findFirst({
+        where: {
+          job_id: id,
+          student: {
+            user_id: user.userId,
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      hasApplied = Boolean(application);
+    }
+
+    const data: JobDetailData = {
+      id: job.id,
+      title: job.title,
+      description: job.description,
+      required_skills: job.required_skills,
+      employment_type: job.employment_type,
+      company: {
+        id: job.company.id,
+        name: job.company.name,
+        website: job.company.website,
+        logo_url: job.company.logo_url,
+      },
+      created_at: job.created_at,
+    };
+
+    if (hasApplied !== undefined) {
+      data.has_applied = hasApplied;
+    }
+
+    return data;
   }
 }
