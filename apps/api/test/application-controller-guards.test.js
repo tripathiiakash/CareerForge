@@ -6,6 +6,9 @@ const {
   ApplicationController,
 } = require('../dist/modules/application/application.controller');
 const {
+  ApplicationStatusController,
+} = require('../dist/modules/application/application-status.controller');
+const {
   StudentController,
 } = require('../dist/modules/student/student.controller');
 const { ROLES_KEY } = require('../dist/core/decorators/roles.decorator');
@@ -432,6 +435,154 @@ describe('Application Controller & Security Guards Test Suite (docs/API.md §8.1
             'recruiter-1',
             '33333333-3333-4333-8333-333333333333',
             {}
+          ),
+        (err) => err === mockError
+      );
+    });
+  });
+
+  describe('ApplicationStatusController Guard & Routing (docs/API.md §8.3)', () => {
+    const reflector = new Reflector();
+
+    it('should have RECRUITER role metadata on ApplicationStatusController class', () => {
+      const classRoles = reflector.get(ROLES_KEY, ApplicationStatusController);
+      assert.deepEqual(classRoles, ['RECRUITER']);
+    });
+
+    it('should allow RECRUITER role to access updateApplicationStatus', () => {
+      const guard = new RolesGuard(reflector);
+      const recruiterRequest = {
+        user: { userId: 'user-recruiter-1', role: 'RECRUITER' },
+      };
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => recruiterRequest,
+        }),
+        getHandler: () => ApplicationStatusController.prototype.updateApplicationStatus,
+        getClass: () => ApplicationStatusController,
+      };
+
+      const allowed = guard.canActivate(mockContext);
+      assert.equal(allowed, true);
+    });
+
+    it('should reject STUDENT role attempting to access updateApplicationStatus with 403 FORBIDDEN', () => {
+      const guard = new RolesGuard(reflector);
+      const studentRequest = {
+        user: { userId: 'user-student-1', role: 'STUDENT' },
+      };
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => studentRequest,
+        }),
+        getHandler: () => ApplicationStatusController.prototype.updateApplicationStatus,
+        getClass: () => ApplicationStatusController,
+      };
+
+      assert.throws(
+        () => guard.canActivate(mockContext),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message ===
+            'Insufficient role permissions for this resource'
+      );
+    });
+
+    it('should reject ADMIN role attempting to access updateApplicationStatus with 403 FORBIDDEN', () => {
+      const guard = new RolesGuard(reflector);
+      const adminRequest = {
+        user: { userId: 'user-admin-1', role: 'ADMIN' },
+      };
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => adminRequest,
+        }),
+        getHandler: () => ApplicationStatusController.prototype.updateApplicationStatus,
+        getClass: () => ApplicationStatusController,
+      };
+
+      assert.throws(
+        () => guard.canActivate(mockContext),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message ===
+            'Insufficient role permissions for this resource'
+      );
+    });
+
+    it('should reject unauthenticated caller with 403 FORBIDDEN', () => {
+      const guard = new RolesGuard(reflector);
+      const anonymousRequest = {};
+      const mockContext = {
+        switchToHttp: () => ({
+          getRequest: () => anonymousRequest,
+        }),
+        getHandler: () => ApplicationStatusController.prototype.updateApplicationStatus,
+        getClass: () => ApplicationStatusController,
+      };
+
+      assert.throws(
+        () => guard.canActivate(mockContext),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message ===
+            'Insufficient role permissions for this resource'
+      );
+    });
+
+    it('should route updateApplicationStatus to applicationService and return 200 OK envelope', async () => {
+      const userId = 'recruiter-user-1';
+      const applicationId = '55555555-5555-4555-8555-555555555555';
+      const dto = { status: 'SHORTLISTED' };
+      const mockData = {
+        application_id: applicationId,
+        status: 'SHORTLISTED',
+        updated_at: new Date('2024-02-12T09:15:00.000Z'),
+      };
+
+      let capturedUserId = null;
+      let capturedId = null;
+      let capturedDto = null;
+
+      const mockService = {
+        updateApplicationStatus: async (uId, id, d) => {
+          capturedUserId = uId;
+          capturedId = id;
+          capturedDto = d;
+          return mockData;
+        },
+      };
+
+      const controller = new ApplicationStatusController(mockService);
+      const response = await controller.updateApplicationStatus(userId, applicationId, dto);
+
+      assert.equal(capturedUserId, userId);
+      assert.equal(capturedId, applicationId);
+      assert.deepEqual(capturedDto, dto);
+      assert.deepEqual(response, {
+        success: true,
+        data: mockData,
+      });
+    });
+
+    it('should propagate updateApplicationStatus service errors cleanly', async () => {
+      const mockError = new Error('Database write error');
+      const mockService = {
+        updateApplicationStatus: async () => {
+          throw mockError;
+        },
+      };
+
+      const controller = new ApplicationStatusController(mockService);
+      await assert.rejects(
+        () =>
+          controller.updateApplicationStatus(
+            'recruiter-1',
+            '55555555-5555-4555-8555-555555555555',
+            { status: 'REJECTED' }
           ),
         (err) => err === mockError
       );

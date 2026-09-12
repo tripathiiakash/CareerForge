@@ -9,6 +9,7 @@ import { ApplicationStatus, JobStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   ApplicationCreatedData,
+  ApplicationStatusUpdatedData,
   JobApplicantItem,
   ListJobApplicantsMeta,
   ListStudentApplicationsPaginationMeta,
@@ -17,6 +18,7 @@ import {
 import { ApplyJobDto } from './dto/apply-job.dto';
 import { ListJobApplicantsQueryDto } from './dto/list-job-applicants-query.dto';
 import { ListStudentApplicationsQueryDto } from './dto/list-student-applications-query.dto';
+import { UpdateApplicationStatusDto } from './dto/update-application-status.dto';
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -329,6 +331,91 @@ export class ApplicationService {
         limit,
         totalPages,
       },
+    };
+  }
+
+  /**
+   * Updates an application status adhering to docs/API.md §8.3.
+   * - Derives recruiter profile from authenticated userId.
+   * - Resolves application and its parent job.
+   * - Enforces parent job ownership: requesting recruiter must own the job (BOLA/IDOR protection).
+   * - Enforces allowed status transitions:
+   *     APPLIED -> SHORTLISTED
+   *     APPLIED -> REJECTED
+   *     SHORTLISTED -> REJECTED
+   *   Rejects terminal state transitions and no-op transitions with 400 VALIDATION_ERROR.
+   * - Updates status and returns documented response envelope.
+   */
+  async updateApplicationStatus(
+    userId: string,
+    id: string,
+    dto: UpdateApplicationStatusDto
+  ): Promise<ApplicationStatusUpdatedData> {
+    this.validateUuid(id, 'id');
+
+    const recruiter = await this.prisma.recruiter.findUnique({
+      where: { user_id: userId },
+    });
+
+    if (!recruiter) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Recruiter profile does not exist',
+      });
+    }
+
+    const application = await this.prisma.application.findUnique({
+      where: { id },
+      include: {
+        job: true,
+      },
+    });
+
+    if (!application) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Application does not exist',
+      });
+    }
+
+    if (application.job.recruiter_id !== recruiter.id) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Recruiter does not own the parent job',
+      });
+    }
+
+    const ALLOWED_TRANSITIONS: Record<ApplicationStatus, ApplicationStatus[]> =
+      {
+        APPLIED: [ApplicationStatus.SHORTLISTED, ApplicationStatus.REJECTED],
+        SHORTLISTED: [ApplicationStatus.REJECTED],
+        REJECTED: [],
+      };
+
+    const allowed = ALLOWED_TRANSITIONS[application.status] || [];
+    if (!allowed.includes(dto.status as ApplicationStatus)) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: `Cannot transition application status from ${application.status} to ${dto.status}`,
+      });
+    }
+
+    const updated = await this.prisma.application.update({
+      where: { id },
+      data: {
+        status: dto.status as ApplicationStatus,
+      },
+      select: {
+        id: true,
+        status: true,
+        updated_at: true,
+      },
+    });
+
+    return {
+      application_id: updated.id,
+      status: updated.status as 'SHORTLISTED' | 'REJECTED',
+      updated_at: updated.updated_at,
     };
   }
 }

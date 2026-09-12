@@ -4,6 +4,7 @@ const {
   applyJobSchema,
   listJobApplicantsQuerySchema,
   listStudentApplicationsQuerySchema,
+  updateApplicationStatusSchema,
 } = require('@careerforge/validation');
 
 describe('Application Validation Test Suite (docs/API.md §8.1)', () => {
@@ -227,6 +228,73 @@ describe('Recruiter Job Applicants List Query Validation Test Suite (docs/API.md
           page: 1,
           limit: 10,
           unexpected_filter: 'val',
+        }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+});
+
+describe('Update Application Status Validation Test Suite (docs/API.md §8.3)', () => {
+  it('should accept valid SHORTLISTED status', () => {
+    const parsed = updateApplicationStatusSchema.parse({ status: 'SHORTLISTED' });
+    assert.equal(parsed.status, 'SHORTLISTED');
+  });
+
+  it('should accept valid REJECTED status', () => {
+    const parsed = updateApplicationStatusSchema.parse({ status: 'REJECTED' });
+    assert.equal(parsed.status, 'REJECTED');
+  });
+
+  it('should reject invalid or arbitrary status values', () => {
+    const invalidStatuses = ['APPLIED', 'PENDING', 'ACTIVE', 'CANCELLED', 'shortlisted', 'rejected', ''];
+    for (const invalid of invalidStatuses) {
+      assert.throws(
+        () => updateApplicationStatusSchema.parse({ status: invalid }),
+        (err) => err.name === 'ZodError'
+      );
+    }
+  });
+
+  it('should reject empty payload or missing status', () => {
+    assert.throws(
+      () => updateApplicationStatusSchema.parse({}),
+      (err) => err.name === 'ZodError'
+    );
+  });
+
+  it('should strictly reject unexpected extra fields (tampering prevention)', () => {
+    assert.throws(
+      () =>
+        updateApplicationStatusSchema.parse({
+          status: 'SHORTLISTED',
+          student_id: 'a0f3d611-9a74-4b53-b09e-012b186b51e2',
+        }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () =>
+        updateApplicationStatusSchema.parse({
+          status: 'REJECTED',
+          job_id: 'e42e476e-3607-4e68-9a2f-98eb413ce161',
+        }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () =>
+        updateApplicationStatusSchema.parse({
+          status: 'SHORTLISTED',
+          recruiter_id: 'b1f3d611-9a74-4b53-b09e-012b186b51e2',
+        }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () =>
+        updateApplicationStatusSchema.parse({
+          status: 'SHORTLISTED',
+          applied_at: '2024-02-10T14:30:00.000Z',
         }),
       (err) => err.name === 'ZodError'
     );

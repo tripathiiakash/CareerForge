@@ -334,3 +334,15 @@ export const listJobApplicantsQuerySchema = z
 export type ListJobApplicantsQueryInput = z.infer<
   typeof listJobApplicantsQuerySchema
 >;
+
+export const updateApplicationStatusSchema = z
+  .object({
+    status: z.enum(['SHORTLISTED', 'REJECTED'], {
+      message: "Status must be exactly 'SHORTLISTED' or 'REJECTED'",
+    }),
+  })
+  .strict();
+
+export type UpdateApplicationStatusInput = z.infer<
+  typeof updateApplicationStatusSchema
+>;

@@ -73,3 +73,14 @@ export interface ListJobApplicantsResponseDto {
   data: JobApplicantItem[];
   meta: ListJobApplicantsMeta;
 }
+
+export interface ApplicationStatusUpdatedData {
+  application_id: string;
+  status: 'SHORTLISTED' | 'REJECTED';
+  updated_at: Date | string;
+}
+
+export interface UpdateApplicationStatusResponseDto {
+  success: true;
+  data: ApplicationStatusUpdatedData;
+}

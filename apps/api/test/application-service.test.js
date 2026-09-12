@@ -56,6 +56,11 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           status: data.status,
           applied_at: new Date('2024-02-10T14:30:00.000Z'),
         }),
+        update: async ({ where, data }) => ({
+          id: where.id,
+          status: data.status,
+          updated_at: new Date('2024-02-12T09:15:00.000Z'),
+        }),
       },
     };
 
@@ -707,6 +712,278 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
 
       await assert.rejects(
         () => service.getJobApplicants(validRecruiterUserId, validJobId, {}),
+        (err) => err === dbError
+      );
+    });
+  });
+
+  describe('updateApplicationStatus (Phase 4.4.4 - docs/API.md §8.3)', () => {
+    const validApplication = {
+      id: validApplicationId,
+      job_id: validJobId,
+      student_id: validStudentId,
+      resume_id: validResumeId,
+      status: 'APPLIED',
+      applied_at: new Date('2024-02-10T14:30:00.000Z'),
+      updated_at: new Date('2024-02-10T14:30:00.000Z'),
+      job: {
+        id: validJobId,
+        recruiter_id: validRecruiterId,
+      },
+    };
+
+    it('1. rejects with 400 VALIDATION_ERROR when application id is invalid UUID', async () => {
+      await assert.rejects(
+        () =>
+          service.updateApplicationStatus(
+            validRecruiterUserId,
+            'invalid-uuid',
+            { status: 'SHORTLISTED' }
+          ),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message === 'Invalid id format (must be a valid UUID)'
+      );
+    });
+
+    it('2. rejects with 404 NOT_FOUND when recruiter profile does not exist', async () => {
+      mockPrisma.recruiter.findUnique = async () => null;
+
+      await assert.rejects(
+        () =>
+          service.updateApplicationStatus(
+            validRecruiterUserId,
+            validApplicationId,
+            { status: 'SHORTLISTED' }
+          ),
+        (err) =>
+          err.status === 404 &&
+          err.response.code === 'NOT_FOUND' &&
+          err.response.message === 'Recruiter profile does not exist'
+      );
+    });
+
+    it('3. rejects with 404 NOT_FOUND when application does not exist', async () => {
+      mockPrisma.application.findUnique = async () => null;
+
+      await assert.rejects(
+        () =>
+          service.updateApplicationStatus(
+            validRecruiterUserId,
+            validApplicationId,
+            { status: 'SHORTLISTED' }
+          ),
+        (err) =>
+          err.status === 404 &&
+          err.response.code === 'NOT_FOUND' &&
+          err.response.message === 'Application does not exist'
+      );
+    });
+
+    it('4. rejects with 403 FORBIDDEN when recruiter does not own the parent job (BOLA/IDOR protection)', async () => {
+      mockPrisma.application.findUnique = async () => ({
+        ...validApplication,
+        job: {
+          id: validJobId,
+          recruiter_id: 'different-recruiter-id-888',
+        },
+      });
+
+      await assert.rejects(
+        () =>
+          service.updateApplicationStatus(
+            validRecruiterUserId,
+            validApplicationId,
+            { status: 'SHORTLISTED' }
+          ),
+        (err) =>
+          err.status === 403 &&
+          err.response.code === 'FORBIDDEN' &&
+          err.response.message === 'Recruiter does not own the parent job'
+      );
+    });
+
+    it('5. successfully transitions application from APPLIED to SHORTLISTED', async () => {
+      mockPrisma.application.findUnique = async () => ({
+        ...validApplication,
+        status: 'APPLIED',
+      });
+
+      let updatedArgs = null;
+      mockPrisma.application.update = async (args) => {
+        updatedArgs = args;
+        return {
+          id: validApplicationId,
+          status: args.data.status,
+          updated_at: new Date('2024-02-12T09:15:00.000Z'),
+        };
+      };
+
+      const result = await service.updateApplicationStatus(
+        validRecruiterUserId,
+        validApplicationId,
+        { status: 'SHORTLISTED' }
+      );
+
+      assert.equal(result.application_id, validApplicationId);
+      assert.equal(result.status, 'SHORTLISTED');
+      assert.ok(result.updated_at);
+      assert.equal(updatedArgs.where.id, validApplicationId);
+      assert.equal(updatedArgs.data.status, 'SHORTLISTED');
+    });
+
+    it('6. successfully transitions application from APPLIED to REJECTED', async () => {
+      mockPrisma.application.findUnique = async () => ({
+        ...validApplication,
+        status: 'APPLIED',
+      });
+
+      mockPrisma.application.update = async ({ data }) => ({
+        id: validApplicationId,
+        status: data.status,
+        updated_at: new Date('2024-02-12T09:15:00.000Z'),
+      });
+
+      const result = await service.updateApplicationStatus(
+        validRecruiterUserId,
+        validApplicationId,
+        { status: 'REJECTED' }
+      );
+
+      assert.equal(result.application_id, validApplicationId);
+      assert.equal(result.status, 'REJECTED');
+    });
+
+    it('7. successfully transitions application from SHORTLISTED to REJECTED', async () => {
+      mockPrisma.application.findUnique = async () => ({
+        ...validApplication,
+        status: 'SHORTLISTED',
+      });
+
+      mockPrisma.application.update = async ({ data }) => ({
+        id: validApplicationId,
+        status: data.status,
+        updated_at: new Date('2024-02-12T09:15:00.000Z'),
+      });
+
+      const result = await service.updateApplicationStatus(
+        validRecruiterUserId,
+        validApplicationId,
+        { status: 'REJECTED' }
+      );
+
+      assert.equal(result.application_id, validApplicationId);
+      assert.equal(result.status, 'REJECTED');
+    });
+
+    it('8. rejects invalid transition from SHORTLISTED to SHORTLISTED (no duplicate)', async () => {
+      mockPrisma.application.findUnique = async () => ({
+        ...validApplication,
+        status: 'SHORTLISTED',
+      });
+
+      await assert.rejects(
+        () =>
+          service.updateApplicationStatus(
+            validRecruiterUserId,
+            validApplicationId,
+            { status: 'SHORTLISTED' }
+          ),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message ===
+            'Cannot transition application status from SHORTLISTED to SHORTLISTED'
+      );
+    });
+
+    it('9. rejects transition from REJECTED to SHORTLISTED (terminal state protection)', async () => {
+      mockPrisma.application.findUnique = async () => ({
+        ...validApplication,
+        status: 'REJECTED',
+      });
+
+      await assert.rejects(
+        () =>
+          service.updateApplicationStatus(
+            validRecruiterUserId,
+            validApplicationId,
+            { status: 'SHORTLISTED' }
+          ),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message ===
+            'Cannot transition application status from REJECTED to SHORTLISTED'
+      );
+    });
+
+    it('10. rejects transition from REJECTED to REJECTED (terminal state protection)', async () => {
+      mockPrisma.application.findUnique = async () => ({
+        ...validApplication,
+        status: 'REJECTED',
+      });
+
+      await assert.rejects(
+        () =>
+          service.updateApplicationStatus(
+            validRecruiterUserId,
+            validApplicationId,
+            { status: 'REJECTED' }
+          ),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message ===
+            'Cannot transition application status from REJECTED to REJECTED'
+      );
+    });
+
+    it('11. prevents tampering with student_id, job_id, resume_id, or applied_at', async () => {
+      mockPrisma.application.findUnique = async () => ({
+        ...validApplication,
+        status: 'APPLIED',
+      });
+
+      let updatePayload = null;
+      mockPrisma.application.update = async ({ data }) => {
+        updatePayload = data;
+        return {
+          id: validApplicationId,
+          status: data.status,
+          updated_at: new Date('2024-02-12T09:15:00.000Z'),
+        };
+      };
+
+      await service.updateApplicationStatus(
+        validRecruiterUserId,
+        validApplicationId,
+        { status: 'SHORTLISTED' }
+      );
+
+      // Only status is modified
+      assert.deepEqual(updatePayload, { status: 'SHORTLISTED' });
+    });
+
+    it('12. propagates database errors cleanly', async () => {
+      mockPrisma.application.findUnique = async () => ({
+        ...validApplication,
+        status: 'APPLIED',
+      });
+
+      const dbError = new Error('Database write failure');
+      mockPrisma.application.update = async () => {
+        throw dbError;
+      };
+
+      await assert.rejects(
+        () =>
+          service.updateApplicationStatus(
+            validRecruiterUserId,
+            validApplicationId,
+            { status: 'SHORTLISTED' }
+          ),
         (err) => err === dbError
       );
     });

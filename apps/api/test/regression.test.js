@@ -13,6 +13,7 @@ const {
   applyJobSchema,
   listStudentApplicationsQuerySchema,
   listJobApplicantsQuerySchema,
+  updateApplicationStatusSchema,
   aiResumeAnalysisOutputSchema,
 } = require('@careerforge/validation');
 const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
@@ -366,6 +367,35 @@ describe('Regression & Architecture Integrity Test Suite', () => {
       );
     });
 
+    it('should validate update application status schema adhering to docs/API.md §8.3', () => {
+      const parsedShortlisted = updateApplicationStatusSchema.parse({
+        status: 'SHORTLISTED',
+      });
+      assert.equal(parsedShortlisted.status, 'SHORTLISTED');
+
+      const parsedRejected = updateApplicationStatusSchema.parse({
+        status: 'REJECTED',
+      });
+      assert.equal(parsedRejected.status, 'REJECTED');
+
+      assert.throws(
+        () => updateApplicationStatusSchema.parse({ status: 'APPLIED' }),
+        (err) => err.name === 'ZodError'
+      );
+      assert.throws(
+        () => updateApplicationStatusSchema.parse({}),
+        (err) => err.name === 'ZodError'
+      );
+      assert.throws(
+        () =>
+          updateApplicationStatusSchema.parse({
+            status: 'SHORTLISTED',
+            extra: 'field',
+          }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+
     it('should correctly expose Application module components', () => {
       const {
         ApplicationModule,
@@ -374,11 +404,15 @@ describe('Regression & Architecture Integrity Test Suite', () => {
         ApplicationController,
       } = require('../dist/modules/application/application.controller');
       const {
+        ApplicationStatusController,
+      } = require('../dist/modules/application/application-status.controller');
+      const {
         ApplicationService,
       } = require('../dist/modules/application/application.service');
 
       assert.ok(ApplicationModule);
       assert.ok(ApplicationController);
+      assert.ok(ApplicationStatusController);
       assert.ok(ApplicationService);
     });
   });
