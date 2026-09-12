@@ -7,8 +7,13 @@ import {
 } from '@nestjs/common';
 import { ApplicationStatus, JobStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { ApplicationCreatedData } from './dto/application-response.dto';
+import {
+  ApplicationCreatedData,
+  ListStudentApplicationsPaginationMeta,
+  StudentApplicationItem,
+} from './dto/application-response.dto';
 import { ApplyJobDto } from './dto/apply-job.dto';
+import { ListStudentApplicationsQueryDto } from './dto/list-student-applications-query.dto';
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -133,5 +138,86 @@ export class ApplicationService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Retrieves a paginated list of applications for the authenticated student adhering to docs/API.md §2.3.
+   * - Derives student profile from authenticated userId.
+   * - Filters strictly by student_id to prevent BOLA/IDOR leakage.
+   * - Supports optional status filter ('APPLIED' | 'SHORTLISTED' | 'REJECTED').
+   * - Orders newest applications first (applied_at desc).
+   * - Includes job summary and company_name without leaking internal recruiter/student fields.
+   */
+  async getStudentApplications(
+    userId: string,
+    query: ListStudentApplicationsQueryDto
+  ): Promise<{
+    data: StudentApplicationItem[];
+    meta: ListStudentApplicationsPaginationMeta;
+  }> {
+    const student = await this.prisma.student.findUnique({
+      where: { user_id: userId },
+    });
+
+    if (!student) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Student profile does not exist',
+      });
+    }
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.ApplicationWhereInput = {
+      student_id: student.id,
+    };
+
+    if (query.status) {
+      where.status = query.status as ApplicationStatus;
+    }
+
+    const [total, applications] = await Promise.all([
+      this.prisma.application.count({ where }),
+      this.prisma.application.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { applied_at: 'desc' },
+        include: {
+          job: {
+            include: {
+              company: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    const totalPages = total === 0 ? 0 : Math.ceil(total / limit);
+
+    const data: StudentApplicationItem[] = applications.map((app) => ({
+      application_id: app.id,
+      status: app.status,
+      applied_at: app.applied_at,
+      updated_at: app.updated_at,
+      job: {
+        id: app.job.id,
+        title: app.job.title,
+        employment_type: app.job.employment_type,
+        company_name: app.job.company.name,
+      },
+    }));
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
+    };
   }
 }

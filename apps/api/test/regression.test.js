@@ -11,6 +11,7 @@ const {
   listJobsQuerySchema,
   moderateJobStatusSchema,
   applyJobSchema,
+  listStudentApplicationsQuerySchema,
   aiResumeAnalysisOutputSchema,
 } = require('@careerforge/validation');
 const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
@@ -314,6 +315,27 @@ describe('Regression & Architecture Integrity Test Suite', () => {
             resume_id: valid.resume_id,
             unexpected: 'property',
           }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+
+    it('should validate student applications list query schema adhering to docs/API.md §2.3', () => {
+      const defaultParsed = listStudentApplicationsQuerySchema.parse({});
+      assert.equal(defaultParsed.page, 1);
+      assert.equal(defaultParsed.limit, 10);
+      assert.equal(defaultParsed.status, undefined);
+
+      const customParsed = listStudentApplicationsQuerySchema.parse({
+        page: '2',
+        limit: '20',
+        status: 'SHORTLISTED',
+      });
+      assert.equal(customParsed.page, 2);
+      assert.equal(customParsed.limit, 20);
+      assert.equal(customParsed.status, 'SHORTLISTED');
+
+      assert.throws(
+        () => listStudentApplicationsQuerySchema.parse({ limit: 100 }),
         (err) => err.name === 'ZodError'
       );
     });

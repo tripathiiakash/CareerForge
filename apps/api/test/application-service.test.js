@@ -37,6 +37,8 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
       },
       application: {
         findUnique: async () => null,
+        count: async () => 0,
+        findMany: async () => [],
         create: async ({ data }) => ({
           id: validApplicationId,
           job_id: data.job_id,
@@ -285,6 +287,173 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           service.applyToJob(validUserId, validJobId, {
             resume_id: validResumeId,
           }),
+        (err) => err === dbError
+      );
+    });
+  });
+
+  describe('getStudentApplications (Phase 4.4.2 - docs/API.md §2.3)', () => {
+    const mockDbApplications = [
+      {
+        id: 'app-1',
+        student_id: validStudentId,
+        resume_id: validResumeId,
+        job_id: validJobId,
+        status: 'SHORTLISTED',
+        applied_at: new Date('2024-02-10T14:30:00.000Z'),
+        updated_at: new Date('2024-02-12T09:15:00.000Z'),
+        job: {
+          id: validJobId,
+          title: 'Junior Backend Developer',
+          employment_type: 'FULL_TIME',
+          recruiter_id: 'recruiter-999', // internal field
+          company: {
+            id: 'company-888',
+            name: 'TechNova Solutions',
+          },
+        },
+      },
+    ];
+
+    it('1. successful retrieval: returns student applications with default pagination and newest first', async () => {
+      let capturedFindManyArgs = null;
+      mockPrisma.application.count = async ({ where }) => {
+        assert.equal(where.student_id, validStudentId);
+        return 1;
+      };
+
+      mockPrisma.application.findMany = async (args) => {
+        capturedFindManyArgs = args;
+        return mockDbApplications;
+      };
+
+      const result = await service.getStudentApplications(validUserId, {});
+
+      assert.equal(capturedFindManyArgs.where.student_id, validStudentId);
+      assert.equal(capturedFindManyArgs.skip, 0);
+      assert.equal(capturedFindManyArgs.take, 10);
+      assert.deepEqual(capturedFindManyArgs.orderBy, { applied_at: 'desc' });
+
+      assert.equal(result.meta.total, 1);
+      assert.equal(result.meta.page, 1);
+      assert.equal(result.meta.limit, 10);
+      assert.equal(result.meta.totalPages, 1);
+      assert.equal(result.data.length, 1);
+    });
+
+    it('2. ownership isolation: filters strictly by student_id and never returns another student applications', async () => {
+      let capturedWhere = null;
+      mockPrisma.application.count = async ({ where }) => {
+        capturedWhere = where;
+        return 0;
+      };
+      mockPrisma.application.findMany = async ({ where }) => {
+        capturedWhere = where;
+        return [];
+      };
+
+      await service.getStudentApplications(validUserId, {});
+
+      assert.equal(capturedWhere.student_id, validStudentId);
+    });
+
+    it('3. status filter: correctly applies status filter when specified', async () => {
+      let capturedWhere = null;
+      mockPrisma.application.count = async ({ where }) => {
+        capturedWhere = where;
+        return 1;
+      };
+      mockPrisma.application.findMany = async ({ where }) => {
+        capturedWhere = where;
+        return mockDbApplications;
+      };
+
+      await service.getStudentApplications(validUserId, {
+        status: 'SHORTLISTED',
+      });
+
+      assert.equal(capturedWhere.student_id, validStudentId);
+      assert.equal(capturedWhere.status, 'SHORTLISTED');
+    });
+
+    it('4. custom pagination: skip, take, and totalPages calculated accurately', async () => {
+      let capturedArgs = null;
+      mockPrisma.application.count = async () => 25;
+      mockPrisma.application.findMany = async (args) => {
+        capturedArgs = args;
+        return mockDbApplications;
+      };
+
+      const result = await service.getStudentApplications(validUserId, {
+        page: 2,
+        limit: 10,
+      });
+
+      assert.equal(capturedArgs.skip, 10);
+      assert.equal(capturedArgs.take, 10);
+      assert.equal(result.meta.total, 25);
+      assert.equal(result.meta.page, 2);
+      assert.equal(result.meta.limit, 10);
+      assert.equal(result.meta.totalPages, 3);
+    });
+
+    it('5. empty result set: returns empty array with total=0 and totalPages=0 for student with no applications', async () => {
+      mockPrisma.application.count = async () => 0;
+      mockPrisma.application.findMany = async () => [];
+
+      const result = await service.getStudentApplications(validUserId, {});
+
+      assert.deepEqual(result.data, []);
+      assert.equal(result.meta.total, 0);
+      assert.equal(result.meta.totalPages, 0);
+    });
+
+    it('6. response shape: returns exact documented fields without internal data leakage', async () => {
+      mockPrisma.application.count = async () => 1;
+      mockPrisma.application.findMany = async () => mockDbApplications;
+
+      const result = await service.getStudentApplications(validUserId, {});
+      const item = result.data[0];
+
+      assert.deepEqual(item, {
+        application_id: 'app-1',
+        status: 'SHORTLISTED',
+        applied_at: new Date('2024-02-10T14:30:00.000Z'),
+        updated_at: new Date('2024-02-12T09:15:00.000Z'),
+        job: {
+          id: validJobId,
+          title: 'Junior Backend Developer',
+          employment_type: 'FULL_TIME',
+          company_name: 'TechNova Solutions',
+        },
+      });
+
+      // Assert internal properties are omitted
+      assert.equal(item.student_id, undefined);
+      assert.equal(item.resume_id, undefined);
+      assert.equal(item.job.recruiter_id, undefined);
+    });
+
+    it('7. rejects with 404 NOT_FOUND when student profile does not exist', async () => {
+      mockPrisma.student.findUnique = async () => null;
+
+      await assert.rejects(
+        () => service.getStudentApplications(validUserId, {}),
+        (err) =>
+          err.status === 404 &&
+          err.response.code === 'NOT_FOUND' &&
+          err.response.message === 'Student profile does not exist'
+      );
+    });
+
+    it('8. propagates database errors cleanly', async () => {
+      const dbError = new Error('Database connection failed');
+      mockPrisma.application.findMany = async () => {
+        throw dbError;
+      };
+
+      await assert.rejects(
+        () => service.getStudentApplications(validUserId, {}),
         (err) => err === dbError
       );
     });

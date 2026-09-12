@@ -285,3 +285,26 @@ export const applyJobSchema = z
   .strict();
 
 export type ApplyJobInput = z.infer<typeof applyJobSchema>;
+
+export const listStudentApplicationsQuerySchema = z.object({
+  page: z.coerce
+    .number({ message: 'Page must be a valid number' })
+    .int('Page must be an integer')
+    .min(1, 'Page must be at least 1')
+    .default(1),
+  limit: z.coerce
+    .number({ message: 'Limit must be a valid number' })
+    .int('Limit must be an integer')
+    .min(1, 'Limit must be at least 1')
+    .max(50, 'Limit cannot exceed 50')
+    .default(10),
+  status: z
+    .enum(['APPLIED', 'SHORTLISTED', 'REJECTED'], {
+      message: "Status must be exactly 'APPLIED', 'SHORTLISTED', or 'REJECTED'",
+    })
+    .optional(),
+});
+
+export type ListStudentApplicationsQueryInput = z.infer<
+  typeof listStudentApplicationsQuerySchema
+>;
