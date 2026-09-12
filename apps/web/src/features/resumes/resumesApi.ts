@@ -1,7 +1,12 @@
+import axios from 'axios';
 import { apiClient } from '@/lib/api';
 import {
+  GetAnalysisData,
+  GetAnalysisResponseDto,
   StudentResumeItem,
   StudentResumesResponse,
+  TriggerAnalysisData,
+  TriggerAnalysisResponseDto,
   UploadResumeData,
   UploadResumeResponse,
   UploadValidationResult,
@@ -152,4 +157,38 @@ export async function uploadStudentResume(
   );
 
   return response.data.data;
+}
+
+/**
+ * Triggers AI analysis for a specific resume.
+ * Adheres to docs/API.md §7.1.
+ */
+export async function triggerResumeAnalysis(
+  resumeId: string
+): Promise<TriggerAnalysisData> {
+  const response = await apiClient.post<TriggerAnalysisResponseDto>(
+    `/resumes/${resumeId}/analyze`
+  );
+  return response.data.data;
+}
+
+/**
+ * Retrieves the current AI analysis status and result for a specific resume.
+ * Returns null if analysis has never been triggered for this resume (404 NOT_FOUND).
+ * Adheres to docs/API.md §7.2.
+ */
+export async function getResumeAnalysis(
+  resumeId: string
+): Promise<GetAnalysisData | null> {
+  try {
+    const response = await apiClient.get<GetAnalysisResponseDto>(
+      `/resumes/${resumeId}/analysis`
+    );
+    return response.data.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   FileText,
   ExternalLink,
@@ -6,19 +6,32 @@ import {
   Sparkles,
   Clock,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { StudentResumeItem } from '../types';
 import { formatResumeDate, getResumeFileName } from '../resumesApi';
+import { ResumeAnalysisView } from './ResumeAnalysisView';
 
 export interface ResumeCardProps {
   resume: StudentResumeItem;
+  defaultExpanded?: boolean;
 }
 
-export const ResumeCard: React.FC<ResumeCardProps> = ({ resume }) => {
+export const ResumeCard: React.FC<ResumeCardProps> = ({
+  resume,
+  defaultExpanded,
+}) => {
   const fileName = getResumeFileName(resume.file_url);
   const formattedDate = formatResumeDate(resume.created_at);
+
+  // Expand by default if requested or if primary resume with existing analysis
+  const [isAnalysisExpanded, setIsAnalysisExpanded] = useState<boolean>(
+    defaultExpanded ?? Boolean(resume.is_primary && resume.has_analysis)
+  );
 
   return (
     <Card
@@ -29,7 +42,7 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({ resume }) => {
           : 'border-border/60 hover:border-border/90'
       }`}
     >
-      <CardContent className="p-5">
+      <CardContent className="p-5 space-y-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5">
             {/* File Icon */}
@@ -67,10 +80,15 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({ resume }) => {
                 </span>
 
                 {resume.has_analysis ? (
-                  <span className="flex items-center gap-1 text-purple-400 font-medium">
+                  <button
+                    type="button"
+                    onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+                    className="flex items-center gap-1 text-purple-400 hover:text-purple-300 font-medium transition-colors cursor-pointer"
+                    title="Click to view AI Analysis"
+                  >
                     <Sparkles className="h-3.5 w-3.5" />
-                    AI Analysis Ready
-                  </span>
+                    <span>AI Analysis Ready</span>
+                  </button>
                 ) : (
                   <span className="flex items-center gap-1 text-muted-foreground/80">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
@@ -87,8 +105,8 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({ resume }) => {
             </div>
           </div>
 
-          {/* Action Link to view / download PDF */}
-          <div className="flex items-center gap-2 self-end sm:self-center w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40">
+          {/* Action Links & Buttons */}
+          <div className="flex flex-wrap items-center gap-2 self-end sm:self-center w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40">
             {resume.file_url && (
               <a
                 href={resume.file_url}
@@ -101,8 +119,40 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({ resume }) => {
                 <span>View PDF</span>
               </a>
             )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+              className={`text-xs h-8 gap-1.5 transition-all ${
+                isAnalysisExpanded
+                  ? 'bg-purple-500/10 border-purple-500/40 text-purple-300'
+                  : 'hover:border-purple-500/40 hover:text-purple-300'
+              }`}
+            >
+              <Sparkles className="h-3.5 w-3.5 text-purple-400" />
+              <span>
+                {resume.has_analysis ? 'AI Analysis' : 'Analyze with AI'}
+              </span>
+              {isAnalysisExpanded ? (
+                <ChevronUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+            </Button>
           </div>
         </div>
+
+        {/* Expandable AI Analysis Panel */}
+        {isAnalysisExpanded && (
+          <div className="pt-2 border-t border-border/50">
+            <ResumeAnalysisView
+              resumeId={resume.id}
+              hasAnalysis={resume.has_analysis}
+              isPrimary={resume.is_primary}
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   );

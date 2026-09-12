@@ -32,3 +32,50 @@ export interface UploadValidationResult {
   valid: boolean;
   error?: string;
 }
+
+/**
+ * AI Resume Analysis types adhering to docs/API.md §7.1 & §7.2
+ * and backend ResumeAnalysisService / DTOs.
+ */
+
+export interface AnalysisDetailDto {
+  score: number;
+  missing_skills: string[];
+  formatting_tips: string[];
+  created_at: string;
+}
+
+export interface AnalysisProcessingData {
+  status: 'PROCESSING';
+  analysis: null;
+}
+
+export interface AnalysisCompletedData {
+  status: 'COMPLETED';
+  analysis: AnalysisDetailDto;
+}
+
+export interface AnalysisFailedData {
+  status: 'FAILED';
+  error_message: string;
+  analysis: null;
+}
+
+export type GetAnalysisData =
+  AnalysisProcessingData | AnalysisCompletedData | AnalysisFailedData;
+
+export interface GetAnalysisResponseDto {
+  success: true;
+  data: GetAnalysisData;
+}
+
+export interface TriggerAnalysisData {
+  resume_id: string;
+  status: 'PROCESSING';
+  message: string;
+}
+
+export interface TriggerAnalysisResponseDto {
+  success: true;
+  data: TriggerAnalysisData;
+}
