@@ -10,6 +10,7 @@ const {
   updateJobSchema,
   listJobsQuerySchema,
   moderateJobStatusSchema,
+  applyJobSchema,
   aiResumeAnalysisOutputSchema,
 } = require('@careerforge/validation');
 const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
@@ -286,6 +287,51 @@ describe('Regression & Architecture Integrity Test Suite', () => {
       assert.ok(JobController);
       assert.ok(AdminJobController);
       assert.ok(JobService);
+    });
+  });
+
+  describe('Application Validation & Module Integrity', () => {
+    it('should validate application creation schema adhering to docs/API.md §8.1', () => {
+      const valid = {
+        resume_id: '7823f95e-141a-4d43-8ceb-bf6a666245e3',
+      };
+      const parsed = applyJobSchema.parse(valid);
+      assert.equal(parsed.resume_id, valid.resume_id);
+
+      assert.throws(
+        () => applyJobSchema.parse({}),
+        (err) => err.name === 'ZodError'
+      );
+
+      assert.throws(
+        () => applyJobSchema.parse({ resume_id: 'not-a-uuid' }),
+        (err) => err.name === 'ZodError'
+      );
+
+      assert.throws(
+        () =>
+          applyJobSchema.parse({
+            resume_id: valid.resume_id,
+            unexpected: 'property',
+          }),
+        (err) => err.name === 'ZodError'
+      );
+    });
+
+    it('should correctly expose Application module components', () => {
+      const {
+        ApplicationModule,
+      } = require('../dist/modules/application/application.module');
+      const {
+        ApplicationController,
+      } = require('../dist/modules/application/application.controller');
+      const {
+        ApplicationService,
+      } = require('../dist/modules/application/application.service');
+
+      assert.ok(ApplicationModule);
+      assert.ok(ApplicationController);
+      assert.ok(ApplicationService);
     });
   });
 

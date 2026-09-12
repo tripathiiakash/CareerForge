@@ -277,3 +277,11 @@ export const moderateJobStatusSchema = z
   .strict();
 
 export type ModerateJobStatusInput = z.infer<typeof moderateJobStatusSchema>;
+
+export const applyJobSchema = z
+  .object({
+    resume_id: z.string().uuid('Must be a valid UUID format'),
+  })
+  .strict();
+
+export type ApplyJobInput = z.infer<typeof applyJobSchema>;

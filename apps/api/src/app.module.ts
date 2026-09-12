@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { ConfigModule } from './core/config/config.module';
 import { QueueModule } from './core/queue/queue.module';
+import { ApplicationModule } from './modules/application/application.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CompanyModule } from './modules/company/company.module';
 import { JobModule } from './modules/job/job.module';
@@ -27,6 +28,7 @@ import { PrismaModule } from './prisma/prisma.module';
     RecruiterModule,
     CompanyModule,
     JobModule,
+    ApplicationModule,
   ],
   controllers: [AppController],
   providers: [],
