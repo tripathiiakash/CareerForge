@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { useCachedJob, useJobDetail } from './hooks';
 import { isValidUuid } from './jobsApi';
 import { formatPostedDate } from './components/JobCard';
+import { JobApplyAction } from './components/JobApplyAction';
 
 export const JobDetailsPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -347,14 +348,22 @@ export const JobDetailsPage: React.FC = () => {
                   <span className="text-foreground font-medium">
                     {activeJob.required_skills.join(', ')}
                   </span>
-                  . Application workflows and direct resume submission will be
-                  connected in subsequent phases.
+                  . Review the required technical skills and submit your
+                  application below.
                 </p>
               </div>
             )}
           </div>
         </CardContent>
       </Card>
+
+      {/* Student Application Submission Action */}
+      <JobApplyAction
+        jobId={activeJob.id}
+        jobTitle={activeJob.title}
+        companyName={activeJob.company.name}
+        hasApplied={hasApplied}
+      />
     </div>
   );
 };

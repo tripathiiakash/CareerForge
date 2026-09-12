@@ -1,13 +1,22 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getJobById, isValidUuid, listJobs } from './jobsApi';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  applyToJob,
+  getJobById,
+  getStudentResumes,
+  isValidUuid,
+  listJobs,
+} from './jobsApi';
+import {
+  ApplicationCreatedData,
   JobDetail,
   JobFilterParams,
   JobListItem,
   JobsPaginationMeta,
+  StudentResumeItem,
 } from './types';
 
 export const JOBS_QUERY_KEY = ['jobs'] as const;
+export const STUDENT_RESUMES_QUERY_KEY = ['student', 'resumes'] as const;
 
 /**
  * Hook to retrieve active jobs list with filtering and pagination.
@@ -58,4 +67,50 @@ export function useCachedJob(
   }
 
   return undefined;
+}
+
+/**
+ * Hook to retrieve the authenticated student's uploaded resumes.
+ */
+export function useStudentResumes(enabled: boolean = true) {
+  return useQuery<StudentResumeItem[], Error>({
+    queryKey: STUDENT_RESUMES_QUERY_KEY,
+    queryFn: getStudentResumes,
+    enabled,
+    staleTime: 60 * 1000,
+    retry: 1,
+  });
+}
+
+/**
+ * Mutation hook to submit a student job application adhering to docs/API.md §8.1.
+ * Updates the job detail cache to reflect has_applied: true immediately upon success.
+ */
+export function useApplyToJob(jobId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation<ApplicationCreatedData, Error, { resumeId: string }>({
+    mutationFn: ({ resumeId }) => applyToJob(jobId, resumeId),
+    onSuccess: () => {
+      // 1. Definitively update JobDetail cache so UI updates without waiting for reload
+      queryClient.setQueryData<JobDetail>(
+        [...JOBS_QUERY_KEY, 'detail', jobId],
+        (oldData) => {
+          if (!oldData) return oldData;
+          return {
+            ...oldData,
+            has_applied: true,
+          };
+        }
+      );
+
+      // 2. Invalidate queries for fresh synchronization
+      queryClient.invalidateQueries({
+        queryKey: [...JOBS_QUERY_KEY, 'detail', jobId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['student', 'applications'],
+      });
+    },
+  });
 }

@@ -1,11 +1,15 @@
 import { apiClient } from '@/lib/api';
 import {
+  ApplicationCreatedData,
+  ApplyJobResponse,
   JobDetail,
   JobDetailResponse,
   JobFilterParams,
   JobListItem,
   JobsPaginationMeta,
   ListJobsResponse,
+  StudentResumeItem,
+  StudentResumesResponse,
 } from './types';
 
 export const UUID_REGEX =
@@ -92,4 +96,33 @@ export async function getJobById(jobId: string): Promise<JobDetail> {
     `/jobs/${encodeURIComponent(jobId)}`
   );
   return response.data.data;
+}
+
+/**
+ * Submits a job application for the authenticated student adhering to docs/API.md §8.1.
+ */
+export async function applyToJob(
+  jobId: string,
+  resumeId: string
+): Promise<ApplicationCreatedData> {
+  if (!isValidUuid(jobId)) {
+    throw new Error('Invalid job ID format. Must be a valid UUID.');
+  }
+  if (!isValidUuid(resumeId)) {
+    throw new Error('Invalid resume ID format. Must be a valid UUID.');
+  }
+
+  const response = await apiClient.post<ApplyJobResponse>(
+    `/jobs/${encodeURIComponent(jobId)}/apply`,
+    { resume_id: resumeId }
+  );
+  return response.data.data;
+}
+
+/**
+ * Fetches the authenticated student's uploaded resumes adhering to docs/API.md §6.2.
+ */
+export async function getStudentResumes(): Promise<StudentResumeItem[]> {
+  const response = await apiClient.get<StudentResumesResponse>('/resumes/me');
+  return response.data.data || [];
 }
