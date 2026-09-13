@@ -3,6 +3,7 @@ import { AppController } from './app.controller';
 import { ConfigModule } from './core/config/config.module';
 import { QueueModule } from './core/queue/queue.module';
 import { ApplicationModule } from './modules/application/application.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CompanyModule } from './modules/company/company.module';
 import { JobModule } from './modules/job/job.module';
@@ -14,7 +15,7 @@ import { PrismaModule } from './prisma/prisma.module';
 /**
  * Root application module.
  * ConfigModule and PrismaModule are registered globally here so all domain
- * feature modules (Auth, Profiles, Jobs, Applications, AI, Resumes) can inject ConfigService
+ * feature modules (Auth, Profiles, Jobs, Applications, AI, Resumes, Admin) can inject ConfigService
  * and PrismaService directly.
  */
 @Module({
@@ -29,6 +30,7 @@ import { PrismaModule } from './prisma/prisma.module';
     CompanyModule,
     JobModule,
     ApplicationModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [],

@@ -1373,7 +1373,27 @@ Manages platform moderation, user management, and overview metrics. All admin en
       "email": "student@university.edu",
       "role": "STUDENT",
       "is_banned": false,
-      "created_at": "2024-01-15T08:00:00.000Z"
+      "created_at": "2024-01-15T08:00:00.000Z",
+      "student": {
+        "first_name": "Jane",
+        "last_name": "Doe"
+      },
+      "recruiter": null
+    },
+    {
+      "id": "a81feb4d-2b7d-4bad-9bdd-1b0d7b3dcb5c",
+      "email": "recruiter@technova.example.com",
+      "role": "RECRUITER",
+      "is_banned": false,
+      "created_at": "2024-01-16T09:00:00.000Z",
+      "student": null,
+      "recruiter": {
+        "first_name": "Sarah",
+        "last_name": "Connor",
+        "company": {
+          "name": "TechNova Solutions"
+        }
+      }
     }
   ],
   "meta": {
@@ -1389,6 +1409,7 @@ Manages platform moderation, user management, and overview metrics. All admin en
 
 | Status | Code | Condition |
 |--------|------|-----------|
+| 400 | `VALIDATION_ERROR` | Query parameter failed validation (invalid page, limit > 50, invalid role, or unrecognized property) |
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 403 | `FORBIDDEN` | Role is not `ADMIN` |
 

@@ -366,3 +366,31 @@ export const listPendingJobsQuerySchema = z
 export type ListPendingJobsQueryInput = z.infer<
   typeof listPendingJobsQuerySchema
 >;
+
+export const listUsersQuerySchema = z
+  .object({
+    page: z.coerce
+      .number({ message: 'Page must be a valid number' })
+      .int('Page must be an integer')
+      .min(1, 'Page must be at least 1')
+      .default(1),
+    limit: z.coerce
+      .number({ message: 'Limit must be a valid number' })
+      .int('Limit must be an integer')
+      .min(1, 'Limit must be at least 1')
+      .max(50, 'Limit cannot exceed 50')
+      .default(20),
+    role: z
+      .enum(['STUDENT', 'RECRUITER'], {
+        message: "Role must be exactly 'STUDENT' or 'RECRUITER'",
+      })
+      .optional(),
+    search: z
+      .string()
+      .trim()
+      .max(255, 'Search query cannot exceed 255 characters')
+      .optional(),
+  })
+  .strict();
+
+export type ListUsersQueryInput = z.infer<typeof listUsersQuerySchema>;
