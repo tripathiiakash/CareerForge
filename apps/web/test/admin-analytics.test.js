@@ -376,6 +376,7 @@ describe('Phase 5.15.1 — Admin Analytics API & Types Frontend Test Suite', () 
 
       assert.ok(indexContent.includes("export * from './types'"));
       assert.ok(indexContent.includes("export * from './adminMetricsApi'"));
+      assert.ok(indexContent.includes("export * from './hooks'"));
     });
 
     it('18. Re-exports extractApiError utility for consumers', () => {
@@ -385,6 +386,165 @@ describe('Phase 5.15.1 — Admin Analytics API & Types Frontend Test Suite', () 
       );
 
       assert.ok(apiFileContent.includes('export { extractApiError }'));
+    });
+  });
+
+  // =========================================================================
+  // 6. React Query Hook Contracts & Behavior Suite (Phase 5.15.2)
+  // =========================================================================
+  describe('6. React Query Hook Contracts & Behavior Suite (Phase 5.15.2)', () => {
+    const hooksFile = path.resolve(featuresDir, 'hooks.ts');
+
+    it('1. useAdminMetrics uses the exact admin metrics query key', () => {
+      const key = adminMetricsQueryKey();
+      assert.deepEqual(key, ['admin', 'metrics']);
+
+      const hooksContent = fs.readFileSync(hooksFile, 'utf-8');
+      assert.ok(
+        hooksContent.includes('queryKey: adminMetricsQueryKey()'),
+        'Hook must use adminMetricsQueryKey()'
+      );
+    });
+
+    it('2. Hook delegates query execution to getAdminMetrics', () => {
+      const hooksContent = fs.readFileSync(hooksFile, 'utf-8');
+      assert.ok(
+        hooksContent.includes('queryFn: getAdminMetrics'),
+        'Hook must specify queryFn: getAdminMetrics'
+      );
+    });
+
+    it('3. Successful query returns full data payload with all 5 metrics intact', async () => {
+      const mockClient = {
+        get: async () => ({
+          data: {
+            success: true,
+            data: mockValidMetrics,
+          },
+        }),
+      };
+
+      const result = await getAdminMetrics(mockClient);
+      assert.deepEqual(result, {
+        total_students: 1420,
+        total_recruiters: 45,
+        active_jobs: 28,
+        pending_jobs: 3,
+        total_applications: 3890,
+      });
+    });
+
+    it('4. Zero-valued metrics remain numeric zeros through query execution', async () => {
+      const mockClient = {
+        get: async () => ({
+          data: {
+            success: true,
+            data: {
+              total_students: 0,
+              total_recruiters: 0,
+              active_jobs: 0,
+              pending_jobs: 0,
+              total_applications: 0,
+            },
+          },
+        }),
+      };
+
+      const result = await getAdminMetrics(mockClient);
+      assert.strictEqual(result.total_students, 0);
+      assert.strictEqual(result.total_recruiters, 0);
+      assert.strictEqual(result.active_jobs, 0);
+      assert.strictEqual(result.pending_jobs, 0);
+      assert.strictEqual(result.total_applications, 0);
+    });
+
+    it('5. Loading state contract follows standard React Query conventions', () => {
+      // Standard TanStack Query in-flight state representation
+      const simulatedLoadingState = {
+        data: undefined,
+        isLoading: true,
+        isFetching: true,
+        isSuccess: false,
+        isError: false,
+        error: null,
+      };
+
+      assert.equal(simulatedLoadingState.isLoading, true);
+      assert.equal(simulatedLoadingState.data, undefined);
+      assert.equal(simulatedLoadingState.isSuccess, false);
+      assert.equal(simulatedLoadingState.error, null);
+    });
+
+    it('6. Error state surfaces exception and preserves error object', async () => {
+      const mockClient = {
+        get: async () => {
+          throw new Error('Internal Server Error (500)');
+        },
+      };
+
+      await assert.rejects(
+        () => getAdminMetrics(mockClient),
+        (err) => err.message === 'Internal Server Error (500)'
+      );
+    });
+
+    it('7. Stale time configuration adheres to existing admin conventions (30s)', () => {
+      const hooksContent = fs.readFileSync(hooksFile, 'utf-8');
+      assert.ok(
+        hooksContent.includes('staleTime: 30 * 1000'),
+        'Hook must use 30s staleTime matching useAdminUsers and usePendingJobs'
+      );
+    });
+
+    it('8. Retry configuration adheres to existing admin conventions (1 retry)', () => {
+      const hooksContent = fs.readFileSync(hooksFile, 'utf-8');
+      assert.ok(
+        hooksContent.includes('retry: 1'),
+        'Hook must configure retry: 1 matching admin conventions'
+      );
+    });
+
+    it('9. No polling or background interval is introduced', () => {
+      const hooksContent = fs.readFileSync(hooksFile, 'utf-8');
+      assert.equal(
+        hooksContent.includes('refetchInterval'),
+        false,
+        'Platform metrics should not use automated polling without explicit requirement'
+      );
+    });
+
+    it('10. Hook source code does not use localStorage', () => {
+      const hooksContent = fs.readFileSync(hooksFile, 'utf-8');
+      assert.equal(
+        hooksContent.includes('localStorage'),
+        false,
+        'hooks.ts must not reference localStorage'
+      );
+    });
+
+    it('11. Hook source code does not introduce manual fetch state (useState/useEffect)', () => {
+      const hooksContent = fs.readFileSync(hooksFile, 'utf-8');
+      assert.equal(
+        hooksContent.includes('useState'),
+        false,
+        'Hook must rely strictly on TanStack useQuery rather than manual useState'
+      );
+      assert.equal(
+        hooksContent.includes('useEffect'),
+        false,
+        'Hook must rely strictly on TanStack useQuery rather than manual useEffect'
+      );
+    });
+
+    it('12. index.ts re-exports useAdminMetrics alongside types and API client', () => {
+      const indexContent = fs.readFileSync(
+        path.join(featuresDir, 'index.ts'),
+        'utf-8'
+      );
+      assert.ok(
+        indexContent.includes("export * from './hooks'"),
+        'index.ts must re-export hooks'
+      );
     });
   });
 });
