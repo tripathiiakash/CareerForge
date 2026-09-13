@@ -16,8 +16,11 @@ import {
   JobModeratedData,
   JobUpdatedData,
   ListJobsPaginationMeta,
+  ListPendingJobsPaginationMeta,
+  PendingJobListItem,
 } from './dto/job-response.dto';
 import { ListJobsQueryDto } from './dto/list-jobs-query.dto';
+import { ListPendingJobsQueryDto } from './dto/list-pending-jobs-query.dto';
 import { ModerateJobStatusDto } from './dto/moderate-job-status.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 
@@ -495,5 +498,94 @@ export class JobService {
     }
 
     return data;
+  }
+
+  /**
+   * 9.1 List Pending Jobs for Moderation
+   * GET /api/v1/admin/jobs/pending
+   * - Restricts returned jobs strictly to status = PENDING.
+   * - Orders newest first (created_at DESC).
+   * - Enforces server-side pagination (skip/take).
+   * - Calculates total and totalPages accurately.
+   * - Projections include recruiter (first_name, last_name, user.email) and company (name).
+   * - Excludes internal fields (recruiter_id, company_id, password_hash, etc.).
+   */
+  async listPendingJobs(query: ListPendingJobsQueryDto): Promise<{
+    data: PendingJobListItem[];
+    meta: ListPendingJobsPaginationMeta;
+  }> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 10;
+    const skip = (page - 1) * limit;
+    const take = limit;
+
+    const where: Prisma.JobWhereInput = {
+      status: JobStatus.PENDING,
+    };
+
+    const [jobs, total] = await Promise.all([
+      this.prisma.job.findMany({
+        where,
+        orderBy: {
+          created_at: 'desc',
+        },
+        skip,
+        take,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          required_skills: true,
+          employment_type: true,
+          created_at: true,
+          recruiter: {
+            select: {
+              first_name: true,
+              last_name: true,
+              user: {
+                select: {
+                  email: true,
+                },
+              },
+            },
+          },
+          company: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      }),
+      this.prisma.job.count({ where }),
+    ]);
+
+    const data: PendingJobListItem[] = jobs.map((job) => ({
+      id: job.id,
+      title: job.title,
+      description: job.description,
+      required_skills: job.required_skills,
+      employment_type: job.employment_type,
+      recruiter: {
+        first_name: job.recruiter?.first_name ?? '',
+        last_name: job.recruiter?.last_name ?? '',
+        email: job.recruiter?.user?.email ?? '',
+      },
+      company: {
+        name: job.company?.name ?? '',
+      },
+      created_at: job.created_at,
+    }));
+
+    const totalPages = Math.ceil(total / limit);
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+      },
+    };
   }
 }

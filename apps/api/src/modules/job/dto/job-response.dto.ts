@@ -88,3 +88,37 @@ export interface GetJobDetailResponseDto {
   success: true;
   data: JobDetailData;
 }
+
+export interface PendingJobRecruiterSummary {
+  first_name: string;
+  last_name: string;
+  email: string;
+}
+
+export interface PendingJobCompanySummary {
+  name: string;
+}
+
+export interface PendingJobListItem {
+  id: string;
+  title: string;
+  description: string;
+  required_skills: string[];
+  employment_type: string;
+  recruiter: PendingJobRecruiterSummary;
+  company: PendingJobCompanySummary;
+  created_at: Date | string;
+}
+
+export interface ListPendingJobsPaginationMeta {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface ListPendingJobsResponseDto {
+  success: true;
+  data: PendingJobListItem[];
+  meta: ListPendingJobsPaginationMeta;
+}

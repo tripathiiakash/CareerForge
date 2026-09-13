@@ -5,6 +5,7 @@ const {
   updateJobSchema,
   listJobsQuerySchema,
   moderateJobStatusSchema,
+  listPendingJobsQuerySchema,
 } = require('@careerforge/validation');
 
 describe('Job Validation Test Suite (docs/API.md §5.1)', () => {
@@ -504,3 +505,75 @@ describe('Job Status Moderation Validation Test Suite (docs/API.md §9.2)', () =
     );
   });
 });
+
+describe('Admin Pending Jobs Query Validation Test Suite (docs/API.md §9.1)', () => {
+  it('should supply documented default pagination values when empty query provided', () => {
+    const parsed = listPendingJobsQuerySchema.parse({});
+    assert.equal(parsed.page, 1);
+    assert.equal(parsed.limit, 10);
+  });
+
+  it('should accept valid custom pagination and coerce string parameters', () => {
+    const parsed = listPendingJobsQuerySchema.parse({
+      page: '2',
+      limit: '20',
+    });
+    assert.equal(parsed.page, 2);
+    assert.equal(parsed.limit, 20);
+  });
+
+  it('should reject invalid page values (< 1, 0, negative, non-numeric)', () => {
+    assert.throws(
+      () => listPendingJobsQuerySchema.parse({ page: 0 }),
+      (err) => err.name === 'ZodError'
+    );
+    assert.throws(
+      () => listPendingJobsQuerySchema.parse({ page: -1 }),
+      (err) => err.name === 'ZodError'
+    );
+    assert.throws(
+      () => listPendingJobsQuerySchema.parse({ page: 'abc' }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+
+  it('should reject invalid limit values (< 1, 0, > 50, non-numeric)', () => {
+    assert.throws(
+      () => listPendingJobsQuerySchema.parse({ limit: 0 }),
+      (err) => err.name === 'ZodError'
+    );
+    assert.throws(
+      () => listPendingJobsQuerySchema.parse({ limit: 51 }),
+      (err) => err.name === 'ZodError'
+    );
+    assert.throws(
+      () => listPendingJobsQuerySchema.parse({ limit: -5 }),
+      (err) => err.name === 'ZodError'
+    );
+    assert.throws(
+      () => listPendingJobsQuerySchema.parse({ limit: 'xyz' }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+
+  it('should strictly reject unexpected query parameters (.strict())', () => {
+    assert.throws(
+      () =>
+        listPendingJobsQuerySchema.parse({
+          page: 1,
+          limit: 10,
+          status: 'PENDING',
+        }),
+      (err) => err.name === 'ZodError'
+    );
+
+    assert.throws(
+      () =>
+        listPendingJobsQuerySchema.parse({
+          unknownField: 'value',
+        }),
+      (err) => err.name === 'ZodError'
+    );
+  });
+});
+

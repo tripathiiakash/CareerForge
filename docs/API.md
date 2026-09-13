@@ -1244,8 +1244,9 @@ Manages platform moderation, user management, and overview metrics. All admin en
 
 **Validation Rules:**
 
-- `page`: Optional query parameter. Integer, default `1`.
-- `limit`: Optional query parameter. Integer, default `20`, max `50`.
+- `page`: Optional query parameter. Integer, min `1`, default `1`.
+- `limit`: Optional query parameter. Integer, min `1`, default `10`, max `50`.
+- Unexpected query parameters: Rejected with `400 VALIDATION_ERROR` (strict mode).
 
 **Request Body:** None
 
@@ -1275,7 +1276,7 @@ Manages platform moderation, user management, and overview metrics. All admin en
   "meta": {
     "total": 1,
     "page": 1,
-    "limit": 20,
+    "limit": 10,
     "totalPages": 1
   }
 }
@@ -1285,6 +1286,7 @@ Manages platform moderation, user management, and overview metrics. All admin en
 
 | Status | Code | Condition |
 |--------|------|-----------|
+| 400 | `VALIDATION_ERROR` | Query parameter failed validation (invalid page, limit > 50, or unrecognized property) |
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 403 | `FORBIDDEN` | Role is not `ADMIN` |
 

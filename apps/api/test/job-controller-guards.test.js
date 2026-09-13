@@ -632,5 +632,70 @@ describe('Job Controller & Security Guards Test Suite (docs/API.md §5.1, §5.2,
         (err) => err === mockError
       );
     });
+
+    it('should route listPendingJobs to jobService and return 200 OK envelope (docs/API.md §9.1)', async () => {
+      const mockResult = {
+        data: [
+          {
+            id: 'job-1',
+            title: 'Junior Backend Developer',
+            description: 'Node.js developer...',
+            required_skills: ['Node.js'],
+            employment_type: 'FULL_TIME',
+            recruiter: {
+              first_name: 'Sarah',
+              last_name: 'Connor',
+              email: 'sarah@technova.example.com',
+            },
+            company: {
+              name: 'TechNova Solutions',
+            },
+            created_at: new Date('2026-09-10T12:00:00.000Z'),
+          },
+        ],
+        meta: {
+          total: 1,
+          page: 1,
+          limit: 10,
+          totalPages: 1,
+        },
+      };
+
+      let capturedQuery = null;
+      const mockService = {
+        listPendingJobs: async (query) => {
+          capturedQuery = query;
+          return mockResult;
+        },
+      };
+
+      const controller = new AdminJobController(mockService);
+      const query = { page: 1, limit: 10 };
+      const response = await controller.listPendingJobs(query);
+
+      assert.deepEqual(capturedQuery, query);
+      assert.deepEqual(response, {
+        success: true,
+        data: mockResult.data,
+        meta: mockResult.meta,
+      });
+    });
+
+    it('should propagate listPendingJobs service errors without swallowing', async () => {
+      const mockError = new Error('Database connection failed');
+      const mockService = {
+        listPendingJobs: async () => {
+          throw mockError;
+        },
+      };
+
+      const controller = new AdminJobController(mockService);
+
+      await assert.rejects(
+        () => controller.listPendingJobs({ page: 1, limit: 10 }),
+        (err) => err === mockError
+      );
+    });
   });
 });
+
