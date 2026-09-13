@@ -6,3 +6,4 @@ export {
   RecruiterJobsPage,
   RecruiterJobFormPage,
 } from '@/features/recruiterJobs';
+export { RecruiterApplicantsPage } from '@/features/recruiterApplicants';

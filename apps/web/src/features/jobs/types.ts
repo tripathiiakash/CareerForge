@@ -28,6 +28,7 @@ export interface JobDetail {
   required_skills: string[];
   employment_type: EmploymentType;
   company: JobCompany;
+  status?: string;
   has_applied?: boolean;
   created_at: string;
 }

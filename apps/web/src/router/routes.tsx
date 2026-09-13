@@ -20,6 +20,7 @@ import {
   RecruiterProfilePage,
   RecruiterJobsPage,
   RecruiterJobFormPage,
+  RecruiterApplicantsPage,
 } from '@/pages/RecruiterPages';
 import { AdminModerationPage, AdminAnalyticsPage } from '@/pages/AdminPages';
 
@@ -129,6 +130,10 @@ export const router = createBrowserRouter([
           {
             path: 'jobs/:jobId/edit',
             element: <RecruiterJobFormPage mode="edit" />,
+          },
+          {
+            path: 'jobs/:jobId/applicants',
+            element: <RecruiterApplicantsPage />,
           },
           {
             path: 'profile',

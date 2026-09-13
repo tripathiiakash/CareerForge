@@ -9,6 +9,7 @@ import {
   AlertCircle,
   Edit3,
   Trash2,
+  Users,
 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -103,6 +104,18 @@ export const RecruiterJobCard: React.FC<RecruiterJobCardProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center gap-2 shrink-0 pt-1 sm:pt-0">
+            <Link to={`/recruiter/jobs/${job.id}/applicants`}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 border-emerald-500/40 hover:border-emerald-500/80 hover:bg-emerald-500/10"
+                aria-label={`View applicants for ${job.title}`}
+              >
+                <Users className="h-3.5 w-3.5" />
+                <span>View Applicants</span>
+              </Button>
+            </Link>
+
             <Link to={`/recruiter/jobs/${job.id}/edit`}>
               <Button
                 variant="outline"
