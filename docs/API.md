@@ -487,13 +487,9 @@ Manages the hiring manager's profile data.
 
 **Authorization Requirements:** Bearer Token, Role: `RECRUITER`
 
-**Purpose:** Recruiter dashboard view showing all jobs they have posted, with applicant counts per job.
+**Purpose:** Recruiter dashboard view showing all jobs posted by the authenticated recruiter with live status and company details.
 
-**Validation Rules:**
-
-- `page`: Optional query parameter. Integer, default `1`.
-- `limit`: Optional query parameter. Integer, default `10`, max `50`.
-- `status`: Optional query parameter. Enum filter: `'PENDING'`, `'ACTIVE'`, or `'REJECTED'`.
+**Validation Rules:** N/A (Resolves recruiter identity from JWT).
 
 **Request Body:** None
 
@@ -506,18 +502,19 @@ Manages the hiring manager's profile data.
     {
       "id": "e42e476e-3607-4e68-9a2f-98eb413ce161",
       "title": "Junior Backend Developer",
+      "description": "We are looking for a Node.js developer with experience in building REST APIs and working with PostgreSQL databases...",
+      "required_skills": ["Node.js", "PostgreSQL", "REST APIs"],
       "employment_type": "FULL_TIME",
       "status": "ACTIVE",
-      "applicant_count": 14,
+      "company": {
+        "id": "1d8b67b1-419b-43d8-a53c-ebc4d32fbb47",
+        "name": "TechNova Solutions",
+        "website": "https://technova.example.com",
+        "logo_url": "https://s3.amazonaws.com/bucket/logo.png"
+      },
       "created_at": "2024-02-05T12:00:00.000Z"
     }
-  ],
-  "meta": {
-    "total": 3,
-    "page": 1,
-    "limit": 10,
-    "totalPages": 1
-  }
+  ]
 }
 ```
 
@@ -526,8 +523,10 @@ Manages the hiring manager's profile data.
 | Status | Code | Condition |
 |--------|------|-----------|
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Authenticated user is not a `RECRUITER` |
+| 404 | `NOT_FOUND` | Recruiter profile does not exist |
 
-**Database Entities:** `jobs`, `applications` (aggregated count)
+**Database Entities:** `recruiters`, `jobs`, `companies`
 
 ---
 
@@ -697,6 +696,7 @@ Manages job postings.
 
 **Notes:**
 - `has_applied` is only included when a valid `STUDENT` token is provided. Otherwise it is omitted.
+- `status` (`'PENDING'`, `'ACTIVE'`, or `'REJECTED'`) is conditionally included when the authenticated requester is the owning recruiter or an admin. It is omitted for anonymous users, students, and non-owning recruiters.
 - Recruiters who own the job and admins can view jobs regardless of status.
 
 ---

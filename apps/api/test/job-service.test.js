@@ -1019,7 +1019,7 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
       );
     });
 
-    it('3. public access: allows retrieving ACTIVE job without authentication', async () => {
+    it('3. public access: allows retrieving ACTIVE job without authentication (omits status)', async () => {
       mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
 
       const result = await service.getJobById(validJobId);
@@ -1036,6 +1036,7 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
         logo_url: 'https://technova.example.com/logo.png',
       });
       assert.equal(result.has_applied, undefined);
+      assert.equal(result.status, undefined);
     });
 
     it('4. public access: throws 404 when unauthenticated user requests PENDING job', async () => {
@@ -1062,7 +1063,7 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
       );
     });
 
-    it('6. student access: returns has_applied: false when student has not applied', async () => {
+    it('6. student access: returns has_applied: false and omits status when student has not applied', async () => {
       mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
       mockPrisma.application = {
         findFirst: async () => null,
@@ -1078,6 +1079,7 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
 
       assert.equal(result.id, validJobId);
       assert.equal(result.has_applied, false);
+      assert.equal(result.status, undefined);
     });
 
     it('7. student access: returns has_applied: true when student has an existing application', async () => {
@@ -1096,6 +1098,7 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
 
       assert.equal(result.id, validJobId);
       assert.equal(result.has_applied, true);
+      assert.equal(result.status, undefined);
     });
 
     it('8. student access: throws 404 when student attempts to access non-active job', async () => {
@@ -1116,7 +1119,7 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
       );
     });
 
-    it('9. recruiter access: allows owning recruiter to access their own ACTIVE job', async () => {
+    it('9. recruiter access: allows owning recruiter to access their own ACTIVE job and includes status', async () => {
       mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
 
       const ownerUser = {
@@ -1127,10 +1130,11 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
 
       const result = await service.getJobById(validJobId, ownerUser);
       assert.equal(result.id, validJobId);
+      assert.equal(result.status, 'ACTIVE');
       assert.equal(result.has_applied, undefined);
     });
 
-    it('10. recruiter access: allows owning recruiter to access their own PENDING job', async () => {
+    it('10. recruiter access: allows owning recruiter to access their own PENDING job and includes status', async () => {
       mockPrisma.job.findUnique = async () => ({
         ...validJobDetailFixture,
         status: 'PENDING',
@@ -1144,9 +1148,10 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
 
       const result = await service.getJobById(validJobId, ownerUser);
       assert.equal(result.id, validJobId);
+      assert.equal(result.status, 'PENDING');
     });
 
-    it('11. recruiter access: allows owning recruiter to access their own REJECTED job', async () => {
+    it('11. recruiter access: allows owning recruiter to access their own REJECTED job and includes status', async () => {
       mockPrisma.job.findUnique = async () => ({
         ...validJobDetailFixture,
         status: 'REJECTED',
@@ -1160,6 +1165,7 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
 
       const result = await service.getJobById(validJobId, ownerUser);
       assert.equal(result.id, validJobId);
+      assert.equal(result.status, 'REJECTED');
     });
 
     it('12. recruiter access: throws 404 when recruiter attempts to access another recruiter non-active job', async () => {
@@ -1180,7 +1186,7 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
       );
     });
 
-    it('13. recruiter access: allows non-owning recruiter to access another recruiter ACTIVE job', async () => {
+    it('13. recruiter access: allows non-owning recruiter to access another recruiter ACTIVE job but omits status', async () => {
       mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
 
       const otherRecruiterUser = {
@@ -1191,9 +1197,10 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
 
       const result = await service.getJobById(validJobId, otherRecruiterUser);
       assert.equal(result.id, validJobId);
+      assert.equal(result.status, undefined);
     });
 
-    it('14. admin access: allows admin to access ACTIVE, PENDING, and REJECTED jobs', async () => {
+    it('14. admin access: allows admin to access ACTIVE, PENDING, and REJECTED jobs and includes status', async () => {
       const adminUser = {
         userId: 'admin-user-0000',
         email: 'admin@example.com',
@@ -1204,6 +1211,7 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
       mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
       const activeResult = await service.getJobById(validJobId, adminUser);
       assert.equal(activeResult.id, validJobId);
+      assert.equal(activeResult.status, 'ACTIVE');
 
       // PENDING
       mockPrisma.job.findUnique = async () => ({
@@ -1212,6 +1220,7 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
       });
       const pendingResult = await service.getJobById(validJobId, adminUser);
       assert.equal(pendingResult.id, validJobId);
+      assert.equal(pendingResult.status, 'PENDING');
 
       // REJECTED
       mockPrisma.job.findUnique = async () => ({
@@ -1220,17 +1229,18 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
       });
       const rejectedResult = await service.getJobById(validJobId, adminUser);
       assert.equal(rejectedResult.id, validJobId);
+      assert.equal(rejectedResult.status, 'REJECTED');
     });
 
-    it('15. security: response does not expose recruiter_id, recruiter object, or status', async () => {
+    it('15. security: response does not expose recruiter_id, recruiter object, or internal DB fields', async () => {
       mockPrisma.job.findUnique = async () => ({ ...validJobDetailFixture });
 
       const result = await service.getJobById(validJobId);
 
       assert.equal(result.recruiter_id, undefined);
       assert.equal(result.recruiter, undefined);
-      assert.equal(result.status, undefined);
       assert.equal(result.updated_at, undefined);
+      assert.equal(result.status, undefined);
     });
   });
 });

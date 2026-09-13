@@ -1,6 +1,12 @@
 import React from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Briefcase, User, LogOut, LayoutDashboard } from 'lucide-react';
+import {
+  Briefcase,
+  User,
+  LogOut,
+  LayoutDashboard,
+  PlusCircle,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/auth/AuthContext';
@@ -17,6 +23,8 @@ export const RecruiterLayout: React.FC = () => {
 
   const navItems = [
     { label: 'Dashboard', path: '/recruiter/dashboard', icon: LayoutDashboard },
+    { label: 'Manage Jobs', path: '/recruiter/jobs', icon: Briefcase },
+    { label: 'Post a Job', path: '/recruiter/jobs/new', icon: PlusCircle },
     { label: 'Profile', path: '/recruiter/profile', icon: User },
   ];
 

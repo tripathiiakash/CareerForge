@@ -81,6 +81,7 @@ export interface JobDetailData {
   company: JobDetailCompany;
   created_at: Date | string;
   has_applied?: boolean;
+  status?: string;
 }
 
 export interface GetJobDetailResponseDto {

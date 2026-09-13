@@ -486,6 +486,10 @@ export class JobService {
       created_at: job.created_at,
     };
 
+    if (isOwnerRecruiter || isAdmin) {
+      data.status = job.status;
+    }
+
     if (hasApplied !== undefined) {
       data.has_applied = hasApplied;
     }

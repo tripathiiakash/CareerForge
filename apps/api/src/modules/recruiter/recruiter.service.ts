@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RecruiterJobItem } from './dto/recruiter-jobs-response.dto';
 import { RecruiterProfileData } from './dto/recruiter-profile-response.dto';
 import { UpdateRecruiterProfileDto } from './dto/update-recruiter-profile.dto';
 
@@ -101,5 +102,63 @@ export class RecruiterService {
       is_approved: updated.is_approved,
       company: updated.company,
     };
+  }
+
+  /**
+   * Retrieves all jobs posted by the recruiter associated with the given user ID.
+   * Adheres to docs/API.md §4.3.
+   * - Scoped strictly to the authenticated recruiter's recruiter_id.
+   * - Returns live status from the database.
+   * - Does not expose internal audit or recruiter ID fields.
+   */
+  async getJobsByUserId(userId: string): Promise<RecruiterJobItem[]> {
+    const recruiter = await this.prisma.recruiter.findUnique({
+      where: { user_id: userId },
+    });
+
+    if (!recruiter) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Recruiter profile does not exist',
+      });
+    }
+
+    const jobs = await this.prisma.job.findMany({
+      where: { recruiter_id: recruiter.id },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        required_skills: true,
+        employment_type: true,
+        status: true,
+        created_at: true,
+        company: {
+          select: {
+            id: true,
+            name: true,
+            website: true,
+            logo_url: true,
+          },
+        },
+      },
+    });
+
+    return jobs.map((job) => ({
+      id: job.id,
+      title: job.title,
+      description: job.description,
+      required_skills: job.required_skills,
+      employment_type: job.employment_type,
+      status: job.status,
+      company: {
+        id: job.company.id,
+        name: job.company.name,
+        website: job.company.website,
+        logo_url: job.company.logo_url,
+      },
+      created_at: job.created_at,
+    }));
   }
 }

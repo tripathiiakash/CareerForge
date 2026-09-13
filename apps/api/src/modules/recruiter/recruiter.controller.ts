@@ -14,6 +14,7 @@ import { Roles } from '../../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
 import { RolesGuard } from '../../core/guards/roles.guard';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
+import { RecruiterJobsResponseDto } from './dto/recruiter-jobs-response.dto';
 import { RecruiterProfileResponseDto } from './dto/recruiter-profile-response.dto';
 import { UpdateRecruiterProfileDto } from './dto/update-recruiter-profile.dto';
 import { RecruiterService } from './recruiter.service';
@@ -51,6 +52,22 @@ export class RecruiterController {
     dto: UpdateRecruiterProfileDto
   ): Promise<RecruiterProfileResponseDto> {
     const data = await this.recruiterService.updateProfileByUserId(userId, dto);
+    return {
+      success: true,
+      data,
+    };
+  }
+
+  /**
+   * 4.3 List Recruiter's Own Jobs
+   * GET /api/v1/recruiters/me/jobs
+   */
+  @Get('me/jobs')
+  @HttpCode(HttpStatus.OK)
+  async getMyJobs(
+    @CurrentUser('userId') userId: string
+  ): Promise<RecruiterJobsResponseDto> {
+    const data = await this.recruiterService.getJobsByUserId(userId);
     return {
       success: true,
       data,

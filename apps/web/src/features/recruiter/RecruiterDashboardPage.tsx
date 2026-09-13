@@ -25,6 +25,7 @@ import {
   AlertCircle,
   Loader2,
   Mail,
+  PlusCircle,
 } from 'lucide-react';
 
 export const RecruiterDashboardPage: React.FC = () => {
@@ -143,71 +144,81 @@ export const RecruiterDashboardPage: React.FC = () => {
       </div>
 
       {/* Quick Action / Feature Highlights */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Recruiter Profile Quick Action */}
-        <Link to="/recruiter/profile" className="group">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Manage Openings Quick Action */}
+        <Link to="/recruiter/jobs" className="group">
           <Card
             glass
             className="h-full group-hover:border-emerald-500/50 group-hover:scale-[1.01] transition-all"
           >
             <CardHeader className="space-y-3 pb-3">
               <div className="h-10 w-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <User className="h-5 w-5" />
+                <Briefcase className="h-5 w-5" />
               </div>
-              <CardTitle className="text-lg">Recruiter Profile</CardTitle>
+              <CardTitle className="text-lg">Manage Openings</CardTitle>
               <CardDescription className="text-xs">
-                View and edit your personal recruiter profile, view your
-                organization link, and manage hiring credentials.
+                View, edit, or remove your job postings and monitor review
+                statuses.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
               <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 group-hover:translate-x-1 transition-transform">
-                <span>Manage Profile</span>
+                <span>View Job Openings</span>
                 <ArrowRight className="h-3.5 w-3.5" />
               </div>
             </CardContent>
           </Card>
         </Link>
 
-        {/* Verification Overview */}
-        <Card glass className="h-full">
-          <CardHeader className="space-y-3 pb-3">
-            <div className="h-10 w-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center">
-              <Building2 className="h-5 w-5" />
-            </div>
-            <CardTitle className="text-lg">Company Representation</CardTitle>
-            <CardDescription className="text-xs">
-              Review corporate affiliation and registered company profile
-              details.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0 space-y-2">
-            <div className="text-xs text-muted-foreground">
-              {profile?.company?.website ? (
-                <a
-                  href={profile.company.website}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-emerald-400 hover:underline"
-                >
-                  <Globe className="h-3.5 w-3.5" />
-                  <span>{profile.company.website}</span>
-                  <ExternalLink className="h-3 w-3" />
-                </a>
-              ) : (
-                <span>No website registered</span>
-              )}
-            </div>
-            <div className="pt-1">
-              <Link to="/recruiter/profile">
-                <Button variant="outline" size="sm" className="text-xs gap-1.5">
-                  <span>View Details</span>
-                  <ArrowRight className="h-3 w-3" />
-                </Button>
-              </Link>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Post a Job Quick Action */}
+        <Link to="/recruiter/jobs/new" className="group">
+          <Card
+            glass
+            className="h-full group-hover:border-teal-500/50 group-hover:scale-[1.01] transition-all"
+          >
+            <CardHeader className="space-y-3 pb-3">
+              <div className="h-10 w-10 rounded-xl bg-teal-500/20 text-teal-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <PlusCircle className="h-5 w-5" />
+              </div>
+              <CardTitle className="text-lg">Post a Role</CardTitle>
+              <CardDescription className="text-xs">
+                Publish tech internships or full-time roles with required skill
+                competencies.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-teal-400 group-hover:translate-x-1 transition-transform">
+                <span>Create Requisition</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+
+        {/* Recruiter Profile Quick Action */}
+        <Link to="/recruiter/profile" className="group">
+          <Card
+            glass
+            className="h-full group-hover:border-sky-500/50 group-hover:scale-[1.01] transition-all"
+          >
+            <CardHeader className="space-y-3 pb-3">
+              <div className="h-10 w-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <User className="h-5 w-5" />
+              </div>
+              <CardTitle className="text-lg">Recruiter Profile</CardTitle>
+              <CardDescription className="text-xs">
+                View and edit your personal recruiter profile and organization
+                link.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-sky-400 group-hover:translate-x-1 transition-transform">
+                <span>Manage Profile</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Profile & Organization Snapshot */}
@@ -297,7 +308,7 @@ export const RecruiterDashboardPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Coming Next / Future Job Management Readiness */}
+      {/* Job Management Hub */}
       <Card glass className="border-border/60">
         <CardHeader>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -308,8 +319,8 @@ export const RecruiterDashboardPage: React.FC = () => {
             Recruiter Job & Pipeline Management
           </CardTitle>
           <CardDescription>
-            Recruiter job posting, active position management, and candidate
-            applicant pipelines launch in Phase 5.11.
+            Manage active requisitions, review candidate profiles, and track
+            recruitment workflows.
           </CardDescription>
         </CardHeader>
         <CardContent>

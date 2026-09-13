@@ -18,6 +18,8 @@ import { ApplicationsPage } from '@/features/applications/ApplicationsPage';
 import {
   RecruiterDashboardPage,
   RecruiterProfilePage,
+  RecruiterJobsPage,
+  RecruiterJobFormPage,
 } from '@/pages/RecruiterPages';
 import { AdminModerationPage, AdminAnalyticsPage } from '@/pages/AdminPages';
 
@@ -115,6 +117,18 @@ export const router = createBrowserRouter([
           {
             path: 'dashboard',
             element: <RecruiterDashboardPage />,
+          },
+          {
+            path: 'jobs',
+            element: <RecruiterJobsPage />,
+          },
+          {
+            path: 'jobs/new',
+            element: <RecruiterJobFormPage mode="create" />,
+          },
+          {
+            path: 'jobs/:jobId/edit',
+            element: <RecruiterJobFormPage mode="edit" />,
           },
           {
             path: 'profile',
