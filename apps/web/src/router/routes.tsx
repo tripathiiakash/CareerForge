@@ -22,7 +22,11 @@ import {
   RecruiterJobFormPage,
   RecruiterApplicantsPage,
 } from '@/pages/RecruiterPages';
-import { AdminModerationPage, AdminAnalyticsPage } from '@/pages/AdminPages';
+import {
+  AdminModerationPage,
+  AdminUsersPage,
+  AdminAnalyticsPage,
+} from '@/pages/AdminPages';
 
 export const router = createBrowserRouter([
   // Public routes
@@ -160,6 +164,10 @@ export const router = createBrowserRouter([
           {
             path: 'moderation',
             element: <AdminModerationPage />,
+          },
+          {
+            path: 'users',
+            element: <AdminUsersPage />,
           },
           {
             path: 'analytics',

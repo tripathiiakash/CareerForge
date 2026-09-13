@@ -1,6 +1,12 @@
 import React from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { ShieldCheck, CheckSquare, BarChart3, LogOut } from 'lucide-react';
+import {
+  ShieldCheck,
+  CheckSquare,
+  Users,
+  BarChart3,
+  LogOut,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/auth/AuthContext';
@@ -17,6 +23,7 @@ export const AdminLayout: React.FC = () => {
 
   const navItems = [
     { label: 'Job Moderation', path: '/admin/moderation', icon: CheckSquare },
+    { label: 'Users', path: '/admin/users', icon: Users },
     { label: 'Analytics', path: '/admin/analytics', icon: BarChart3 },
   ];
 

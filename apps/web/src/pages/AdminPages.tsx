@@ -9,6 +9,7 @@ import {
 import { BarChart3 } from 'lucide-react';
 
 export { AdminModerationPage } from '@/features/adminModeration';
+export { AdminUsersPage } from '@/features/adminUsers';
 
 export const AdminAnalyticsPage: React.FC = () => (
   <div className="space-y-6">
