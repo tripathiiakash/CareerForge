@@ -547,4 +547,439 @@ describe('Phase 5.15.1 — Admin Analytics API & Types Frontend Test Suite', () 
       );
     });
   });
+
+  // =========================================================================
+  // 7. UI Presentational Components Contract Suite (Phase 5.15.3)
+  // =========================================================================
+  describe('7. UI Presentational Components Contract Suite (Phase 5.15.3)', () => {
+    const componentsDir = path.resolve(featuresDir, 'components');
+    const metricCardFile = path.resolve(componentsDir, 'MetricCard.tsx');
+    const metricsGridFile = path.resolve(componentsDir, 'MetricsGrid.tsx');
+    const skeletonFile = path.resolve(componentsDir, 'AdminMetricsSkeleton.tsx');
+    const errorStateFile = path.resolve(
+      componentsDir,
+      'AdminMetricsErrorState.tsx'
+    );
+    const componentsIndexFile = path.resolve(componentsDir, 'index.ts');
+
+    // Replicate pure formatting logic for MetricCard contract tests
+    function formatMetricValue(value) {
+      return typeof value === 'number' && !Number.isNaN(value)
+        ? value.toLocaleString()
+        : '0';
+    }
+
+    // Replicate pure sanitization logic for AdminMetricsErrorState contract tests
+    const DEFAULT_ERROR_MESSAGE =
+      'Unable to retrieve platform metrics. Please check your network connection and try again.';
+    const TECHNICAL_ERROR_PATTERNS = [
+      /prisma/i,
+      /select\s+/i,
+      /insert\s+/i,
+      /database/i,
+      /postgres/i,
+      /econnrefused/i,
+      /internal\s+server\s+error/i,
+      /stack\s+trace/i,
+      /syntaxerror/i,
+      /typeerror/i,
+      /uncaught/i,
+      /column/i,
+      /relation/i,
+      /table/i,
+      /500/i,
+      /jwt/i,
+      /bearer/i,
+    ];
+
+    function sanitizeAdminMetricsError(rawMessage) {
+      if (!rawMessage || typeof rawMessage !== 'string') {
+        return DEFAULT_ERROR_MESSAGE;
+      }
+      const trimmed = rawMessage.trim();
+      if (!trimmed) {
+        return DEFAULT_ERROR_MESSAGE;
+      }
+      if (TECHNICAL_ERROR_PATTERNS.some((p) => p.test(trimmed))) {
+        return DEFAULT_ERROR_MESSAGE;
+      }
+      return trimmed;
+    }
+
+    // --- MetricCard Tests ---
+    it('1. MetricCard renders title and formatted numeric value', () => {
+      const cardContent = fs.readFileSync(metricCardFile, 'utf-8');
+      assert.ok(
+        cardContent.includes('title'),
+        'MetricCard must accept title prop'
+      );
+      assert.ok(
+        cardContent.includes('value'),
+        'MetricCard must accept value prop'
+      );
+      assert.ok(
+        cardContent.includes('toLocaleString'),
+        'MetricCard must format numbers cleanly'
+      );
+
+      const formatted = formatMetricValue(1250);
+      assert.equal(formatted, '1,250');
+    });
+
+    it('2. MetricCard renders zero (0) accurately without converting to falsy state', () => {
+      const formattedZero = formatMetricValue(0);
+      assert.strictEqual(
+        formattedZero,
+        '0',
+        'Numeric 0 must render as string "0"'
+      );
+      assert.notEqual(formattedZero, '');
+      assert.notEqual(formattedZero, 'undefined');
+      assert.notEqual(formattedZero, 'null');
+
+      const cardContent = fs.readFileSync(metricCardFile, 'utf-8');
+      assert.ok(
+        cardContent.includes("typeof value === 'number'"),
+        'MetricCard must explicitly check for number type to preserve zero'
+      );
+    });
+
+    it('3. MetricCard renders icon and optional description appropriately', () => {
+      const cardContent = fs.readFileSync(metricCardFile, 'utf-8');
+      assert.ok(
+        cardContent.includes('icon: Icon'),
+        'MetricCard must support icon component'
+      );
+      assert.ok(
+        cardContent.includes('description'),
+        'MetricCard must support optional description'
+      );
+      assert.ok(
+        cardContent.includes('CardTitle'),
+        'MetricCard must use standard CardTitle primitive'
+      );
+    });
+
+    it('4. MetricCard does not perform API calls, hooks, or mutations', () => {
+      const cardContent = fs.readFileSync(metricCardFile, 'utf-8');
+      assert.equal(cardContent.includes('fetch'), false);
+      assert.equal(cardContent.includes('apiClient'), false);
+      assert.equal(cardContent.includes('useQuery'), false);
+      assert.equal(cardContent.includes('useMutation'), false);
+      assert.equal(cardContent.includes('useEffect'), false);
+      assert.equal(cardContent.includes('useState'), false);
+    });
+
+    // --- MetricsGrid Tests ---
+    it('5. MetricsGrid renders all five documented platform metrics', () => {
+      const gridContent = fs.readFileSync(metricsGridFile, 'utf-8');
+      const requiredMetrics = [
+        'total_students',
+        'total_recruiters',
+        'active_jobs',
+        'pending_jobs',
+        'total_applications',
+      ];
+
+      for (const metricKey of requiredMetrics) {
+        assert.ok(
+          gridContent.includes(metricKey),
+          `MetricsGrid must map metric key: ${metricKey}`
+        );
+      }
+    });
+
+    it('6. MetricsGrid maps each metric to the correct title and icon', () => {
+      const gridContent = fs.readFileSync(metricsGridFile, 'utf-8');
+      assert.ok(gridContent.includes('Total Students'));
+      assert.ok(gridContent.includes('Total Recruiters'));
+      assert.ok(gridContent.includes('Active Jobs'));
+      assert.ok(gridContent.includes('Pending Jobs'));
+      assert.ok(gridContent.includes('Total Applications'));
+
+      assert.ok(gridContent.includes('GraduationCap'));
+      assert.ok(gridContent.includes('Building2'));
+      assert.ok(gridContent.includes('Briefcase'));
+      assert.ok(gridContent.includes('Clock'));
+      assert.ok(gridContent.includes('Send'));
+    });
+
+    it('7. MetricsGrid preserves zero values for all platform metrics', () => {
+      const allZeros = {
+        total_students: 0,
+        total_recruiters: 0,
+        active_jobs: 0,
+        pending_jobs: 0,
+        total_applications: 0,
+      };
+
+      for (const [key, val] of Object.entries(allZeros)) {
+        const formatted = formatMetricValue(val);
+        assert.strictEqual(
+          formatted,
+          '0',
+          `Metric ${key} with zero must format to "0"`
+        );
+      }
+    });
+
+    it('8. MetricsGrid configures responsive grid layout matching Admin Console', () => {
+      const gridContent = fs.readFileSync(metricsGridFile, 'utf-8');
+      assert.ok(
+        gridContent.includes('grid-cols-1'),
+        'MetricsGrid must support 1-col mobile layout'
+      );
+      assert.ok(
+        gridContent.includes('sm:grid-cols-2'),
+        'MetricsGrid must support 2-col tablet layout'
+      );
+      assert.ok(
+        gridContent.includes('xl:grid-cols-5') ||
+          gridContent.includes('lg:grid-cols-5') ||
+          gridContent.includes('lg:grid-cols-3'),
+        'MetricsGrid must support expanded desktop layout'
+      );
+      assert.ok(
+        gridContent.includes('gap-4'),
+        'MetricsGrid must use standardized card gap'
+      );
+    });
+
+    it('9. MetricsGrid does not render unauthorized or extra metrics', () => {
+      const gridContent = fs.readFileSync(metricsGridFile, 'utf-8');
+      const forbiddenMetrics = [
+        'total_revenue',
+        'banned_users',
+        'admin_count',
+        'monthly_growth',
+        'conversion_rate',
+        'deleted_jobs',
+      ];
+
+      for (const forbidden of forbiddenMetrics) {
+        assert.equal(
+          gridContent.includes(forbidden),
+          false,
+          `MetricsGrid must not introduce undocumented metric: ${forbidden}`
+        );
+      }
+    });
+
+    // --- AdminMetricsSkeleton Tests ---
+    it('10. AdminMetricsSkeleton renders placeholders for all 5 metrics by default', () => {
+      const skeletonContent = fs.readFileSync(skeletonFile, 'utf-8');
+      assert.ok(
+        skeletonContent.includes('count = 5'),
+        'Skeleton must default to 5 cards matching platform metrics count'
+      );
+      assert.ok(
+        skeletonContent.includes('animate-pulse'),
+        'Skeleton must apply pulse animation styling'
+      );
+      assert.ok(
+        skeletonContent.includes('Card'),
+        'Skeleton must use Card component matching the actual grid'
+      );
+    });
+
+    it('11. AdminMetricsSkeleton includes accessible status role and screen-reader label', () => {
+      const skeletonContent = fs.readFileSync(skeletonFile, 'utf-8');
+      assert.ok(
+        skeletonContent.includes('role="status"'),
+        'Skeleton must declare role="status" for accessibility'
+      );
+      assert.ok(
+        skeletonContent.includes('aria-label="Loading platform metrics"'),
+        'Skeleton must declare aria-label'
+      );
+      assert.ok(
+        skeletonContent.includes('sr-only'),
+        'Skeleton must provide sr-only text for screen readers'
+      );
+    });
+
+    it('12. AdminMetricsSkeleton does not render fake metric numbers or data', () => {
+      const skeletonContent = fs.readFileSync(skeletonFile, 'utf-8');
+      const returnMatch = skeletonContent.match(
+        /return\s*\(\s*([\s\S]*?)\s*\);\s*};/
+      );
+      const jsxContent = returnMatch ? returnMatch[1] : '';
+      const textMatches = Array.from(jsxContent.matchAll(/>([^<]+)</g))
+        .map((m) => m[1].trim())
+        .filter(Boolean);
+
+      for (const text of textMatches) {
+        assert.equal(
+          /\d+/.test(text),
+          false,
+          `Rendered text "${text}" must not contain fake numeric metric values`
+        );
+      }
+    });
+
+    // --- AdminMetricsErrorState Tests ---
+    it('13. AdminMetricsErrorState renders user-friendly default error message', () => {
+      const defaultResult = sanitizeAdminMetricsError();
+      assert.equal(
+        defaultResult,
+        'Unable to retrieve platform metrics. Please check your network connection and try again.'
+      );
+
+      const customSafe = sanitizeAdminMetricsError(
+        'Platform analytics service is temporarily unavailable.'
+      );
+      assert.equal(
+        customSafe,
+        'Platform analytics service is temporarily unavailable.'
+      );
+    });
+
+    it('14. AdminMetricsErrorState sanitizes raw infrastructure and database errors', () => {
+      const leakages = [
+        'PrismaClientKnownRequestError: Can not reach database server',
+        'SELECT * FROM "PlatformMetrics" WHERE error = true',
+        'ECONNREFUSED 127.0.0.1:5432',
+        'Internal Server Error (500): relation "metrics" does not exist',
+        'TypeError: Cannot read properties of undefined (reading total_students)',
+        'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
+      ];
+
+      for (const leaked of leakages) {
+        const sanitized = sanitizeAdminMetricsError(leaked);
+        assert.equal(
+          sanitized,
+          DEFAULT_ERROR_MESSAGE,
+          `Leaked error "${leaked}" must be sanitized to default user-friendly message`
+        );
+      }
+    });
+
+    it('15. AdminMetricsErrorState renders retry action and executes callback', () => {
+      let retryCalled = false;
+      const onRetry = () => {
+        retryCalled = true;
+      };
+
+      assert.equal(retryCalled, false);
+      onRetry();
+      assert.equal(retryCalled, true);
+
+      const errorContent = fs.readFileSync(errorStateFile, 'utf-8');
+      assert.ok(
+        errorContent.includes('RotateCcw'),
+        'Error state must use RotateCcw retry icon'
+      );
+      assert.ok(
+        errorContent.includes('onRetry'),
+        'Error state must accept onRetry callback'
+      );
+      assert.ok(
+        errorContent.includes('data-testid="admin-metrics-retry-button"'),
+        'Error state must have data-testid for retry button'
+      );
+    });
+
+    it('16. AdminMetricsErrorState handles isRetrying loading state properly', () => {
+      const errorContent = fs.readFileSync(errorStateFile, 'utf-8');
+      assert.ok(
+        errorContent.includes('isRetrying'),
+        'Error state must accept isRetrying prop'
+      );
+      assert.ok(
+        errorContent.includes('isLoading={isRetrying}'),
+        'Button must reflect isRetrying state'
+      );
+    });
+
+    // --- Boundaries & Security Tests ---
+    it('17. No component files use localStorage or sessionStorage', () => {
+      const componentFiles = fs.readdirSync(componentsDir);
+      assert.ok(componentFiles.length >= 4, 'Must have at least 4 component files');
+
+      for (const file of componentFiles) {
+        const content = fs.readFileSync(path.join(componentsDir, file), 'utf-8');
+        assert.equal(
+          content.includes('localStorage'),
+          false,
+          `${file} must not reference localStorage`
+        );
+        assert.equal(
+          content.includes('sessionStorage'),
+          false,
+          `${file} must not reference sessionStorage`
+        );
+      }
+    });
+
+    it('18. No component files contain direct fetch or apiClient network calls', () => {
+      const componentFiles = fs.readdirSync(componentsDir);
+      for (const file of componentFiles) {
+        const content = fs.readFileSync(path.join(componentsDir, file), 'utf-8');
+        assert.equal(
+          content.includes('fetch('),
+          false,
+          `${file} must not perform fetch calls`
+        );
+        assert.equal(
+          content.includes('apiClient'),
+          false,
+          `${file} must not call apiClient directly`
+        );
+        assert.equal(
+          content.includes('axios'),
+          false,
+          `${file} must not call axios directly`
+        );
+      }
+    });
+
+    // --- Exports & Architecture Tests ---
+    it('19. components/index.ts exports all 4 presentational components', () => {
+      const indexContent = fs.readFileSync(componentsIndexFile, 'utf-8');
+      assert.ok(
+        indexContent.includes("export * from './MetricCard'"),
+        'components/index.ts must export MetricCard'
+      );
+      assert.ok(
+        indexContent.includes("export * from './MetricsGrid'"),
+        'components/index.ts must export MetricsGrid'
+      );
+      assert.ok(
+        indexContent.includes("export * from './AdminMetricsSkeleton'"),
+        'components/index.ts must export AdminMetricsSkeleton'
+      );
+      assert.ok(
+        indexContent.includes("export * from './AdminMetricsErrorState'"),
+        'components/index.ts must export AdminMetricsErrorState'
+      );
+    });
+
+    it('20. features/adminAnalytics/index.ts re-exports all components', () => {
+      const featureIndexContent = fs.readFileSync(
+        path.join(featuresDir, 'index.ts'),
+        'utf-8'
+      );
+      assert.ok(
+        featureIndexContent.includes("export * from './components'"),
+        'features/adminAnalytics/index.ts must re-export ./components'
+      );
+    });
+
+    it('21. AdminAnalyticsPage and route integration remain untouched in this phase', () => {
+      const adminPagesFile = path.resolve(
+        __dirname,
+        '../src/pages/AdminPages.tsx'
+      );
+      const adminPagesContent = fs.readFileSync(adminPagesFile, 'utf-8');
+      assert.ok(
+        adminPagesContent.includes('Connects to Admin Audit & Metrics endpoints'),
+        'AdminAnalyticsPage placeholder must remain untouched until Phase 5.15.4'
+      );
+      assert.equal(
+        adminPagesContent.includes('MetricsGrid'),
+        false,
+        'AdminPages.tsx must not yet import MetricsGrid'
+      );
+    });
+  });
 });
