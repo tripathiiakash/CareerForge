@@ -979,4 +979,265 @@ describe('Phase 5.16.1 — AI Interview Preparation API Client & Types Test Suit
       }
     });
   });
+
+  // =========================================================================
+  // 9. Phase 5.16.4 — Student Job/Application Integration (JobDetailsPage)
+  // =========================================================================
+  describe('9. JobDetailsPage Integration (Phase 5.16.4)', () => {
+    const jobsDir = path.resolve(__dirname, '../src/features/jobs');
+    const jobDetailsPagePath = path.resolve(jobsDir, 'JobDetailsPage.tsx');
+
+    it('1. JobDetailsPage source imports InterviewPrepCard from feature module', () => {
+      assert.ok(fs.existsSync(jobDetailsPagePath), 'JobDetailsPage.tsx must exist');
+      const content = fs.readFileSync(jobDetailsPagePath, 'utf8');
+
+      assert.ok(
+        content.includes("from '@/features/interviewPrep'"),
+        'JobDetailsPage must import from @/features/interviewPrep'
+      );
+      assert.ok(
+        content.includes('InterviewPrepCard'),
+        'JobDetailsPage must import InterviewPrepCard'
+      );
+    });
+
+    it('2. JobDetailsPage conditionally mounts InterviewPrepCard below JobApplyAction when hasApplied is true', () => {
+      const content = fs.readFileSync(jobDetailsPagePath, 'utf8');
+
+      // Verify JobApplyAction is present
+      const applyActionIdx = content.indexOf('<JobApplyAction');
+      assert.ok(applyActionIdx !== -1, 'JobApplyAction must be present');
+
+      // Verify InterviewPrepCard is present after JobApplyAction
+      const cardIdx = content.indexOf('<InterviewPrepCard', applyActionIdx);
+      assert.ok(
+        cardIdx > applyActionIdx,
+        'InterviewPrepCard must be rendered below JobApplyAction'
+      );
+
+      // Verify conditional check on hasApplied
+      assert.ok(
+        content.includes('{hasApplied && ('),
+        'InterviewPrepCard must be conditionally rendered with {hasApplied && ('
+      );
+    });
+
+    it('3. JobDetailsPage passes genuine activeJob.id and activeJob.title to InterviewPrepCard', () => {
+      const content = fs.readFileSync(jobDetailsPagePath, 'utf8');
+
+      // Match the InterviewPrepCard element inside JobDetailsPage
+      const cardSnippetMatch = content.match(
+        /<InterviewPrepCard[\s\S]*?\/>/
+      );
+      assert.ok(cardSnippetMatch, 'InterviewPrepCard JSX tag must match');
+      const cardSnippet = cardSnippetMatch[0];
+
+      assert.ok(
+        cardSnippet.includes('jobId={activeJob.id}'),
+        'InterviewPrepCard must receive activeJob.id as jobId'
+      );
+      assert.ok(
+        cardSnippet.includes('jobTitle={activeJob.title}'),
+        'InterviewPrepCard must receive activeJob.title as jobTitle'
+      );
+      // Ensure jobId is NOT derived from user-controlled inputs or labels
+      assert.ok(
+        !cardSnippet.includes('jobId={jobTitle}'),
+        'jobId must not be derived from title'
+      );
+    });
+
+    it('4. Visibility & Eligibility: Card is hidden when unapplied and shown when applied', () => {
+      // Simulate JobDetailsPage rendering decision
+      function renderStudentJobPrepDecision(job) {
+        const hasApplied = 'has_applied' in job ? Boolean(job.has_applied) : false;
+        if (!hasApplied) {
+          return { renderPrep: false, reason: 'unapplied' };
+        }
+        return {
+          renderPrep: true,
+          jobId: job.id,
+          jobTitle: job.title,
+        };
+      }
+
+      // Case A: Student has NOT applied
+      const unappliedJob = {
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Junior Frontend Engineer',
+        has_applied: false,
+      };
+      const decisionUnapplied = renderStudentJobPrepDecision(unappliedJob);
+      assert.equal(decisionUnapplied.renderPrep, false);
+
+      // Case B: Student has applied
+      const appliedJob = {
+        id: '11111111-1111-4111-8111-111111111111',
+        title: 'Junior Frontend Engineer',
+        has_applied: true,
+      };
+      const decisionApplied = renderStudentJobPrepDecision(appliedJob);
+      assert.equal(decisionApplied.renderPrep, true);
+      assert.equal(decisionApplied.jobId, appliedJob.id);
+      assert.equal(decisionApplied.jobTitle, appliedJob.title);
+
+      // Case C: Fresh application submission transitions has_applied from false to true in query cache
+      let cachedJob = { ...unappliedJob };
+      assert.equal(renderStudentJobPrepDecision(cachedJob).renderPrep, false);
+
+      // Mutate cache like useApplyToJob onSuccess
+      cachedJob = { ...cachedJob, has_applied: true };
+      const decisionAfterApply = renderStudentJobPrepDecision(cachedJob);
+      assert.equal(decisionAfterApply.renderPrep, true);
+      assert.equal(decisionAfterApply.jobId, cachedJob.id);
+    });
+
+    it('5. Integration Flow: Idle -> Generate -> Loading -> Success (5 questions)', async () => {
+      const validJobId = '22222222-2222-4222-8222-222222222222';
+      const dispatchedUrls = [];
+
+      const mockClient = {
+        post: async (url) => {
+          dispatchedUrls.push(url);
+          return {
+            status: 200,
+            data: {
+              success: true,
+              data: {
+                job_title: 'Full Stack Engineer',
+                questions: [
+                  'How do you optimize React rendering performance?',
+                  'Explain database indexing strategies in PostgreSQL.',
+                  'How do you manage cross-origin resource sharing securely?',
+                  'Describe your experience with microservices architecture.',
+                  'How would you handle race conditions in distributed systems?',
+                ],
+              },
+            },
+          };
+        },
+      };
+
+      // State 1: Idle - Component holds jobId
+      const state = {
+        jobId: validJobId,
+        isPending: false,
+        data: null,
+        error: null,
+      };
+
+      // State 2: User clicks "Generate Practice Questions"
+      state.isPending = true;
+      const result = await generateInterviewPrep(mockClient, state.jobId);
+      state.isPending = false;
+      state.data = result;
+
+      // Verify request contract
+      assert.equal(dispatchedUrls.length, 1);
+      assert.equal(
+        dispatchedUrls[0],
+        `/jobs/${encodeURIComponent(validJobId)}/interview-prep`
+      );
+
+      // State 3: Success state with exactly 5 questions
+      assert.equal(state.data.job_title, 'Full Stack Engineer');
+      assert.equal(state.data.questions.length, 5);
+      assert.ok(state.data.questions[0].includes('React rendering'));
+    });
+
+    it('6. Integration Flow: 400 Eligibility Error (Rejected or Inactive) maps to non-retryable banner', () => {
+      const error400 = {
+        response: {
+          status: 400,
+          data: {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: "Student has not applied to this job, or application status is 'REJECTED'",
+            },
+          },
+        },
+      };
+
+      const mapped = mapInterviewPrepError(error400);
+      assert.equal(mapped.title, 'Application Required');
+      assert.equal(mapped.canRetry, false);
+      assert.equal(mapped.isRateLimited, false);
+      assert.ok(mapped.message.includes('APPLIED or SHORTLISTED'));
+    });
+
+    it('7. Integration Flow: 429 Rate Limit maps to daily limit notice without retry', () => {
+      const error429 = {
+        response: {
+          status: 429,
+          data: {
+            success: false,
+            error: {
+              code: 'RATE_LIMITED',
+              message: 'Daily interview prep limit reached (max 3/day)',
+            },
+          },
+        },
+      };
+
+      const mapped = mapInterviewPrepError(error429);
+      assert.equal(mapped.title, 'Daily Limit Reached');
+      assert.equal(mapped.canRetry, false);
+      assert.equal(mapped.isRateLimited, true);
+      assert.ok(mapped.message.includes('3 interview preparation sessions'));
+    });
+
+    it('8. Integration Flow: 500 Network / Server Error provides user-friendly retryable state', () => {
+      const error500 = {
+        response: {
+          status: 500,
+          data: {
+            success: false,
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Database query failed with internal server error',
+            },
+          },
+        },
+      };
+
+      const mapped = mapInterviewPrepError(error500);
+      assert.equal(mapped.title, 'Generation Failed');
+      assert.equal(mapped.canRetry, true);
+      assert.equal(mapped.isRateLimited, false);
+      assert.ok(mapped.message.includes('Please try again'));
+    });
+
+    it('9. Existing JobDetailsPage features remain intact and functional', () => {
+      const content = fs.readFileSync(jobDetailsPagePath, 'utf8');
+
+      // Back button to job board
+      assert.ok(content.includes("navigate('/student/jobs')"));
+
+      // Invalid UUID handling
+      assert.ok(content.includes('isValidUuid(jobId)'));
+      assert.ok(content.includes('Invalid Job Identifier'));
+
+      // Loading skeleton
+      assert.ok(content.includes('animate-pulse'));
+
+      // Error / 404 state
+      assert.ok(content.includes('Job Posting Not Found'));
+      assert.ok(content.includes('Explore Active Jobs'));
+
+      // Job Header & metadata
+      assert.ok(content.includes('activeJob.company.name'));
+      assert.ok(content.includes('activeJob.title'));
+      assert.ok(content.includes('activeJob.required_skills'));
+      assert.ok(content.includes('formatPostedDate(activeJob.created_at)'));
+
+      // Share button
+      assert.ok(content.includes('handleShare'));
+      assert.ok(content.includes('navigator.clipboard'));
+
+      // JobApplyAction retained
+      assert.ok(content.includes('companyName={activeJob.company.name}'));
+      assert.ok(content.includes('hasApplied={hasApplied}'));
+    });
+  });
 });

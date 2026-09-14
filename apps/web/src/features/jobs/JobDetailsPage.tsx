@@ -20,6 +20,7 @@ import { useCachedJob, useJobDetail } from './hooks';
 import { isValidUuid } from './jobsApi';
 import { formatPostedDate } from './components/JobCard';
 import { JobApplyAction } from './components/JobApplyAction';
+import { InterviewPrepCard } from '@/features/interviewPrep';
 
 export const JobDetailsPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -364,6 +365,11 @@ export const JobDetailsPage: React.FC = () => {
         companyName={activeJob.company.name}
         hasApplied={hasApplied}
       />
+
+      {/* AI Interview Preparation for Applied Roles */}
+      {hasApplied && (
+        <InterviewPrepCard jobId={activeJob.id} jobTitle={activeJob.title} />
+      )}
     </div>
   );
 };
