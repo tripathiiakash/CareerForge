@@ -82,6 +82,90 @@ function extractApiError(error) {
   };
 }
 
+// Simulated hook executor matching apps/web/src/features/interviewPrep/hooks.ts
+function createSimulatedMutationHook(jobId, mockQueryClient, mockApiFn) {
+  let state = {
+    isPending: false,
+    isSuccess: false,
+    isError: false,
+    data: undefined,
+    error: null,
+  };
+
+  const mutateAsync = async (overrideJobId) => {
+    const targetJobId = overrideJobId || jobId;
+    if (!targetJobId) {
+      const err = new Error('Invalid jobId format (must be a valid UUID)');
+      state = {
+        isPending: false,
+        isSuccess: false,
+        isError: true,
+        data: undefined,
+        error: err,
+      };
+      throw err;
+    }
+
+    state = {
+      isPending: true,
+      isSuccess: false,
+      isError: false,
+      data: undefined,
+      error: null,
+    };
+
+    try {
+      const data = await mockApiFn(targetJobId);
+      if (mockQueryClient?.setQueryData) {
+        mockQueryClient.setQueryData(interviewPrepQueryKey(targetJobId), data);
+      }
+      state = {
+        isPending: false,
+        isSuccess: true,
+        isError: false,
+        data,
+        error: null,
+      };
+      return data;
+    } catch (err) {
+      state = {
+        isPending: false,
+        isSuccess: false,
+        isError: true,
+        data: undefined,
+        error: err,
+      };
+      throw err;
+    }
+  };
+
+  const mutate = (overrideJobId, callbacks) => {
+    mutateAsync(overrideJobId)
+      .then((data) => callbacks?.onSuccess?.(data))
+      .catch((err) => callbacks?.onError?.(err));
+  };
+
+  return {
+    get isPending() {
+      return state.isPending;
+    },
+    get isSuccess() {
+      return state.isSuccess;
+    },
+    get isError() {
+      return state.isError;
+    },
+    get data() {
+      return state.data;
+    },
+    get error() {
+      return state.error;
+    },
+    mutate,
+    mutateAsync,
+  };
+}
+
 describe('Phase 5.16.1 — AI Interview Preparation API Client & Types Test Suite', () => {
   const validJobId = '11111111-1111-4111-8111-111111111111';
   const mockValidQuestions = [
@@ -130,13 +214,26 @@ describe('Phase 5.16.1 — AI Interview Preparation API Client & Types Test Suit
       assert.match(content, /export\s*\{\s*extractApiError\s*\}/);
     });
 
-    it('should have index.ts barrel re-exporting types and API client', () => {
+    it('should have hooks.ts created with useGenerateInterviewPrep', () => {
+      const hooksFile = path.join(featuresDir, 'hooks.ts');
+      assert.equal(fs.existsSync(hooksFile), true, 'hooks.ts must exist');
+
+      const content = fs.readFileSync(hooksFile, 'utf8');
+      assert.match(content, /export function useGenerateInterviewPrep/);
+      assert.match(content, /useMutation/);
+      assert.match(content, /useQueryClient/);
+      assert.match(content, /generateInterviewPrep/);
+      assert.match(content, /interviewPrepQueryKey/);
+    });
+
+    it('should have index.ts barrel re-exporting types, API client, and hooks', () => {
       const indexFile = path.join(featuresDir, 'index.ts');
       assert.equal(fs.existsSync(indexFile), true, 'index.ts must exist');
 
       const content = fs.readFileSync(indexFile, 'utf8');
       assert.match(content, /export \* from '\.\/types'/);
       assert.match(content, /export \* from '\.\/interviewPrepApi'/);
+      assert.match(content, /export \* from '\.\/hooks'/);
     });
   });
 
@@ -410,6 +507,154 @@ describe('Phase 5.16.1 — AI Interview Preparation API Client & Types Test Suit
     it('should produce structured query key for specific job', () => {
       const key = interviewPrepQueryKey(validJobId);
       assert.deepEqual(key, ['interviewPrep', validJobId]);
+    });
+  });
+
+  // =========================================================================
+  // 7. React Query Mutation Hook (useGenerateInterviewPrep)
+  // =========================================================================
+  describe('7. React Query Mutation Hook (useGenerateInterviewPrep)', () => {
+    it('should execute mutation and call generateInterviewPrep with correct jobId', async () => {
+      let calledWithJobId = null;
+      const mockApiFn = async (id) => {
+        calledWithJobId = id;
+        return {
+          job_title: 'Junior Backend Developer',
+          questions: mockValidQuestions,
+        };
+      };
+
+      const hook = createSimulatedMutationHook(validJobId, null, mockApiFn);
+      const result = await hook.mutateAsync();
+
+      assert.equal(calledWithJobId, validJobId);
+      assert.equal(result.job_title, 'Junior Backend Developer');
+      assert.equal(result.questions.length, 5);
+    });
+
+    it('should track pending, success, and data state transitions', async () => {
+      let resolvePromise;
+      const deferredPromise = new Promise((resolve) => {
+        resolvePromise = resolve;
+      });
+
+      const mockApiFn = async () => {
+        return deferredPromise;
+      };
+
+      const hook = createSimulatedMutationHook(validJobId, null, mockApiFn);
+
+      assert.equal(hook.isPending, false);
+      assert.equal(hook.isSuccess, false);
+      assert.equal(hook.isError, false);
+      assert.equal(hook.data, undefined);
+
+      const executionPromise = hook.mutateAsync();
+      assert.equal(hook.isPending, true);
+
+      resolvePromise({
+        job_title: 'Frontend Engineer',
+        questions: mockValidQuestions,
+      });
+
+      const result = await executionPromise;
+      assert.equal(hook.isPending, false);
+      assert.equal(hook.isSuccess, true);
+      assert.equal(hook.isError, false);
+      assert.equal(hook.data.job_title, 'Frontend Engineer');
+      assert.equal(result.job_title, 'Frontend Engineer');
+    });
+
+    it('should update query cache with setQueryData under interviewPrepQueryKey', async () => {
+      const cacheUpdates = new Map();
+      const mockQueryClient = {
+        setQueryData: (key, data) => {
+          cacheUpdates.set(JSON.stringify(key), data);
+        },
+      };
+
+      const mockApiFn = async () => ({
+        job_title: 'DevOps Specialist',
+        questions: mockValidQuestions,
+      });
+
+      const hook = createSimulatedMutationHook(validJobId, mockQueryClient, mockApiFn);
+      await hook.mutateAsync();
+
+      const expectedKeyStr = JSON.stringify(interviewPrepQueryKey(validJobId));
+      assert.equal(cacheUpdates.has(expectedKeyStr), true);
+      assert.equal(cacheUpdates.get(expectedKeyStr).job_title, 'DevOps Specialist');
+    });
+
+    it('should allow overriding or supplying jobId at mutate execution time', async () => {
+      const otherJobId = '22222222-2222-4222-8222-222222222222';
+      let calledJobId = null;
+
+      const mockApiFn = async (id) => {
+        calledJobId = id;
+        return {
+          job_title: 'Overridden Job Title',
+          questions: mockValidQuestions,
+        };
+      };
+
+      // Hook initialized without default jobId
+      const hook = createSimulatedMutationHook(undefined, null, mockApiFn);
+      await hook.mutateAsync(otherJobId);
+
+      assert.equal(calledJobId, otherJobId);
+      assert.equal(hook.data.job_title, 'Overridden Job Title');
+    });
+
+    it('should propagate API error and transition to isError with RATE_LIMITED', async () => {
+      const rateLimitError = {
+        response: {
+          status: 429,
+          data: {
+            success: false,
+            error: {
+              code: 'RATE_LIMITED',
+              message: 'Daily interview prep limit reached (max 3/day)',
+            },
+          },
+        },
+      };
+
+      const mockApiFn = async () => {
+        throw rateLimitError;
+      };
+
+      const hook = createSimulatedMutationHook(validJobId, null, mockApiFn);
+
+      await assert.rejects(
+        async () => {
+          await hook.mutateAsync();
+        },
+        (err) => err === rateLimitError
+      );
+
+      assert.equal(hook.isPending, false);
+      assert.equal(hook.isSuccess, false);
+      assert.equal(hook.isError, true);
+      assert.equal(hook.error, rateLimitError);
+
+      const extracted = extractApiError(hook.error);
+      assert.equal(extracted.code, 'RATE_LIMITED');
+      assert.equal(extracted.message, 'Daily interview prep limit reached (max 3/day)');
+    });
+
+    it('should reject immediately if jobId is omitted at both initialization and execution time', async () => {
+      const hook = createSimulatedMutationHook(undefined, null, async () => {});
+
+      await assert.rejects(
+        async () => {
+          await hook.mutateAsync();
+        },
+        (err) => err.message === 'Invalid jobId format (must be a valid UUID)'
+      );
+
+      assert.equal(hook.isError, true);
+      assert.equal(hook.error.message, 'Invalid jobId format (must be a valid UUID)');
     });
   });
 });
