@@ -965,21 +965,295 @@ describe('Phase 5.15.1 — Admin Analytics API & Types Frontend Test Suite', () 
       );
     });
 
-    it('21. AdminAnalyticsPage and route integration remain untouched in this phase', () => {
-      const adminPagesFile = path.resolve(
-        __dirname,
-        '../src/pages/AdminPages.tsx'
+    it('21. Presentational components are cleanly decoupled from page layout', () => {
+      const componentFiles = fs.readdirSync(componentsDir);
+      for (const file of componentFiles) {
+        const content = fs.readFileSync(
+          path.join(componentsDir, file),
+          'utf-8'
+        );
+        assert.equal(
+          content.includes('AdminAnalyticsPage'),
+          false,
+          `${file} must not reference AdminAnalyticsPage`
+        );
+        assert.equal(
+          content.includes('react-router-dom'),
+          false,
+          `${file} must not couple to react-router-dom`
+        );
+      }
+    });
+  });
+
+  // =========================================================================
+  // 8. Admin Analytics Page & Route Integration Suite (Phase 5.15.4)
+  // =========================================================================
+  describe('8. Admin Analytics Page & Route Integration Suite (Phase 5.15.4)', () => {
+    const pageFile = path.resolve(featuresDir, 'AdminAnalyticsPage.tsx');
+    const adminPagesFile = path.resolve(
+      __dirname,
+      '../src/pages/AdminPages.tsx'
+    );
+    const routesFile = path.resolve(__dirname, '../src/router/routes.tsx');
+    const layoutFile = path.resolve(__dirname, '../src/layouts/AdminLayout.tsx');
+
+    it('1. real AdminAnalyticsPage is exported from features and re-exported in index.ts', () => {
+      assert.ok(fs.existsSync(pageFile), 'AdminAnalyticsPage.tsx must exist');
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.ok(
+        pageContent.includes('export const AdminAnalyticsPage'),
+        'AdminAnalyticsPage must be exported'
       );
+
+      const featureIndexContent = fs.readFileSync(
+        path.join(featuresDir, 'index.ts'),
+        'utf-8'
+      );
+      assert.ok(
+        featureIndexContent.includes("export * from './AdminAnalyticsPage'"),
+        'features/adminAnalytics/index.ts must re-export AdminAnalyticsPage'
+      );
+    });
+
+    it('2. AdminPages.tsx re-exports real AdminAnalyticsPage from @/features/adminAnalytics', () => {
       const adminPagesContent = fs.readFileSync(adminPagesFile, 'utf-8');
       assert.ok(
-        adminPagesContent.includes('Connects to Admin Audit & Metrics endpoints'),
-        'AdminAnalyticsPage placeholder must remain untouched until Phase 5.15.4'
+        adminPagesContent.includes(
+          "export { AdminAnalyticsPage } from '@/features/adminAnalytics';"
+        ),
+        'AdminPages.tsx must export AdminAnalyticsPage from feature package'
       );
       assert.equal(
-        adminPagesContent.includes('MetricsGrid'),
+        adminPagesContent.includes(
+          'Connects to Admin Audit & Metrics endpoints'
+        ),
         false,
-        'AdminPages.tsx must not yet import MetricsGrid'
+        'Placeholder must be completely removed from AdminPages.tsx'
       );
+    });
+
+    it('3. page calls useAdminMetrics hook for data retrieval', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.ok(
+        pageContent.includes('useAdminMetrics()'),
+        'Page must invoke useAdminMetrics()'
+      );
+      assert.ok(
+        pageContent.includes("import { useAdminMetrics } from './hooks';") ||
+          pageContent.includes('useAdminMetrics'),
+        'Page must import useAdminMetrics'
+      );
+    });
+
+    it('4. page does not make direct fetch, apiClient, or axios calls', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.equal(/\bfetch\s*\(/.test(pageContent), false);
+      assert.equal(pageContent.includes('apiClient'), false);
+      assert.equal(pageContent.includes('axios'), false);
+    });
+
+    it('5. page does not use useEffect or useState for data fetching', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.equal(pageContent.includes('useEffect'), false);
+      assert.equal(pageContent.includes('useState'), false);
+    });
+
+    it('6. page displays consistent Admin Console title and description', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.ok(
+        pageContent.includes('System Analytics'),
+        'Page must display System Analytics header'
+      );
+      assert.ok(
+        pageContent.includes('High-level platform metrics'),
+        'Page must include platform metrics description'
+      );
+      assert.ok(
+        pageContent.includes('max-w-5xl mx-auto'),
+        'Page must use standard Admin Console max-width container'
+      );
+    });
+
+    it('7. loading state renders AdminMetricsSkeleton when data is not yet available', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.ok(
+        pageContent.includes(
+          'isLoading && !metricsData && <AdminMetricsSkeleton'
+        ),
+        'Page must render skeleton when loading and data is absent'
+      );
+    });
+
+    it('8. error state renders AdminMetricsErrorState when initial query fails', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.ok(
+        pageContent.includes('isError && !metricsData &&'),
+        'Page must render error state when error and data is absent'
+      );
+      assert.ok(
+        pageContent.includes('<AdminMetricsErrorState'),
+        'Page must render AdminMetricsErrorState component'
+      );
+    });
+
+    it('9. retry action triggers React Query refetch', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.ok(
+        pageContent.includes('onRetry={() => refetch()}'),
+        'Error state onRetry must invoke refetch()'
+      );
+      assert.ok(
+        pageContent.includes('isRetrying={isFetching}'),
+        'Error state isRetrying must track isFetching'
+      );
+    });
+
+    it('10. successful query data renders MetricsGrid', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.ok(
+        pageContent.includes(
+          'metricsData && <MetricsGrid metrics={metricsData} />'
+        ),
+        'Page must render MetricsGrid with metricsData'
+      );
+    });
+
+    it('11. background refetching preserves visible metrics and does not flash full skeleton', () => {
+      const evaluateRenderedState = (state) => {
+        if (state.isLoading && !state.data) return 'SKELETON';
+        if (state.isError && !state.data) return 'ERROR';
+        if (state.data) return 'GRID';
+        return 'EMPTY';
+      };
+
+      assert.equal(
+        evaluateRenderedState({
+          isLoading: true,
+          isFetching: true,
+          data: undefined,
+        }),
+        'SKELETON'
+      );
+
+      const loadedData = {
+        total_students: 500,
+        total_recruiters: 20,
+        active_jobs: 15,
+        pending_jobs: 2,
+        total_applications: 1200,
+      };
+      assert.equal(
+        evaluateRenderedState({
+          isLoading: false,
+          isFetching: false,
+          data: loadedData,
+        }),
+        'GRID'
+      );
+
+      assert.equal(
+        evaluateRenderedState({
+          isLoading: false,
+          isFetching: true,
+          data: loadedData,
+        }),
+        'GRID'
+      );
+    });
+
+    it('12. background refetching displays subtle refreshing indicator and manual refresh action', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.ok(
+        pageContent.includes('isFetching && !isLoading &&'),
+        'Page must conditionally show refreshing indicator during background fetch'
+      );
+      assert.ok(
+        pageContent.includes('Refreshing...'),
+        'Page must display Refreshing... text indicator'
+      );
+      assert.ok(
+        pageContent.includes('data-testid="admin-metrics-refresh-button"'),
+        'Page must provide manual refresh button'
+      );
+    });
+
+    it('13. all 5 platform metrics and legitimate zero values reach the grid unchanged', () => {
+      const zeroMetrics = {
+        total_students: 0,
+        total_recruiters: 0,
+        active_jobs: 0,
+        pending_jobs: 0,
+        total_applications: 0,
+      };
+
+      assert.strictEqual(zeroMetrics.total_students, 0);
+      assert.strictEqual(zeroMetrics.total_recruiters, 0);
+      assert.strictEqual(zeroMetrics.active_jobs, 0);
+      assert.strictEqual(zeroMetrics.pending_jobs, 0);
+      assert.strictEqual(zeroMetrics.total_applications, 0);
+    });
+
+    it('14. raw infrastructure or database error strings are protected by error sanitization', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.ok(
+        pageContent.includes('message={error?.message}'),
+        'Page must pass error message to AdminMetricsErrorState for safe sanitization'
+      );
+    });
+
+    it('15. routes.tsx connects /admin/analytics to AdminAnalyticsPage under ADMIN protection', () => {
+      const routesContent = fs.readFileSync(routesFile, 'utf-8');
+      assert.ok(
+        routesContent.includes('AdminAnalyticsPage'),
+        'routes.tsx must reference AdminAnalyticsPage'
+      );
+      assert.ok(
+        routesContent.includes("path: 'analytics'"),
+        "routes.tsx must define path: 'analytics'"
+      );
+      assert.ok(
+        routesContent.includes("allowedRoles={['ADMIN']}"),
+        'Admin routes must be protected by ADMIN role guard'
+      );
+    });
+
+    it('16. routes.tsx contains no duplicate analytics routes', () => {
+      const routesContent = fs.readFileSync(routesFile, 'utf-8');
+      const matches = routesContent.match(/path:\s*['"`]analytics['"`]/g) || [];
+      assert.equal(
+        matches.length,
+        1,
+        'routes.tsx must contain exactly one analytics route definition'
+      );
+    });
+
+    it('17. AdminLayout.tsx navigation item points to /admin/analytics with Analytics label', () => {
+      const layoutContent = fs.readFileSync(layoutFile, 'utf-8');
+      assert.ok(
+        layoutContent.includes("path: '/admin/analytics'"),
+        'AdminLayout must navigate to /admin/analytics'
+      );
+      assert.ok(
+        layoutContent.includes("label: 'Analytics'"),
+        "AdminLayout nav item must be labeled 'Analytics'"
+      );
+      assert.ok(
+        layoutContent.includes('BarChart3'),
+        'AdminLayout must use BarChart3 icon for analytics'
+      );
+    });
+
+    it('18. no localStorage or sessionStorage is used in AdminAnalyticsPage', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.equal(pageContent.includes('localStorage'), false);
+      assert.equal(pageContent.includes('sessionStorage'), false);
+    });
+
+    it('19. no polling or interval loops are introduced in AdminAnalyticsPage', () => {
+      const pageContent = fs.readFileSync(pageFile, 'utf-8');
+      assert.equal(pageContent.includes('setInterval'), false);
+      assert.equal(pageContent.includes('refetchInterval'), false);
     });
   });
 });
