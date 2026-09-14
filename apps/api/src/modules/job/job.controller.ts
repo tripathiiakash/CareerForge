@@ -27,6 +27,7 @@ import { RolesGuard } from '../../core/guards/roles.guard';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateJobDto } from './dto/create-job.dto';
+import { InterviewPrepResponseDto } from './dto/interview-prep-response.dto';
 import {
   CreateJobResponseDto,
   DeleteJobResponseDto,
@@ -36,13 +37,17 @@ import {
 } from './dto/job-response.dto';
 import { ListJobsQueryDto } from './dto/list-jobs-query.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
+import { InterviewPrepService } from './interview-prep.service';
 import { JobService } from './job.service';
 
 @Controller('jobs')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.RECRUITER)
 export class JobController {
-  constructor(private readonly jobService: JobService) {}
+  constructor(
+    private readonly jobService: JobService,
+    private readonly interviewPrepService: InterviewPrepService
+  ) {}
 
   /**
    * 5.1 Create Job Posting
@@ -162,6 +167,38 @@ export class JobController {
     return {
       success: true,
       message: result.message,
+    };
+  }
+
+  /**
+   * 5.6 Generate AI Interview Preparation
+   * POST /api/v1/jobs/:jobId/interview-prep
+   */
+  @Post(':jobId/interview-prep')
+  @Roles(UserRole.STUDENT)
+  @HttpCode(HttpStatus.OK)
+  async generateInterviewPrep(
+    @CurrentUser('userId') userId: string,
+    @Param(
+      'jobId',
+      new ParseUUIDPipe({
+        version: '4',
+        exceptionFactory: () =>
+          new BadRequestException({
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid jobId format (must be a valid UUID)',
+          }),
+      })
+    )
+    jobId: string
+  ): Promise<InterviewPrepResponseDto> {
+    const data = await this.interviewPrepService.generateInterviewPrep(
+      userId,
+      jobId
+    );
+    return {
+      success: true,
+      data,
     };
   }
 }

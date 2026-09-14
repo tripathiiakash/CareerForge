@@ -394,3 +394,12 @@ export const listUsersQuerySchema = z
   .strict();
 
 export type ListUsersQueryInput = z.infer<typeof listUsersQuerySchema>;
+
+export const interviewPrepOutputSchema = z.object({
+  job_title: z.string().trim().min(1, 'Job title is required'),
+  questions: z
+    .array(z.string().trim().min(1, 'Question cannot be empty'))
+    .length(5, 'Interview prep must contain exactly 5 questions'),
+});
+
+export type InterviewPrepOutput = z.infer<typeof interviewPrepOutputSchema>;

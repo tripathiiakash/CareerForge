@@ -133,9 +133,10 @@ model Student {
   linkedin_url    String?  @db.VarChar(255)
 
   // Relations
-  user         User          @relation(fields: [user_id], references: [id])
-  resumes      Resume[]
-  applications Application[]
+  user                User               @relation(fields: [user_id], references: [id])
+  resumes             Resume[]
+  applications        Application[]
+  interview_prep_logs InterviewPrepLog[]
 
   @@map("students")
 }
@@ -202,9 +203,10 @@ model Job {
   updated_at      DateTime       @updatedAt
 
   // Relations
-  recruiter    Recruiter     @relation(fields: [recruiter_id], references: [id])
-  company      Company       @relation(fields: [company_id], references: [id])
-  applications Application[]
+  recruiter           Recruiter          @relation(fields: [recruiter_id], references: [id])
+  company             Company            @relation(fields: [company_id], references: [id])
+  applications        Application[]
+  interview_prep_logs InterviewPrepLog[]
 
   @@map("jobs")
 }
@@ -232,4 +234,22 @@ model Application {
   // Unique constraint: a student can only apply once per job
   @@unique([job_id, student_id])
   @@map("applications")
+}
+
+// ---------------------------------------------------------------------------
+// 9. Interview Prep Logs (Jobs/AI Module)
+// Tracks synchronous interview preparation calls per student for rate limiting.
+// ---------------------------------------------------------------------------
+model InterviewPrepLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  student_id String   @db.Uuid
+  job_id     String   @db.Uuid
+  created_at DateTime @default(now())
+
+  // Relations
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  job     Job     @relation(fields: [job_id], references: [id], onDelete: Cascade)
+
+  @@index([student_id, created_at])
+  @@map("interview_prep_logs")
 }
