@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const featuresDir = path.resolve(__dirname, '../src/features/interviewPrep');
+const componentsDir = path.resolve(featuresDir, 'components');
 
 // Helper mirrors matching apps/web/src/features/interviewPrep/interviewPrepApi.ts
 const UUID_REGEX =
@@ -166,6 +167,105 @@ function createSimulatedMutationHook(jobId, mockQueryClient, mockApiFn) {
   };
 }
 
+// Pure helper mirror for mapInterviewPrepError matching InterviewPrepError.tsx
+const TECHNICAL_ERROR_PATTERNS = [
+  /prisma/i,
+  /select\s+/i,
+  /insert\s+/i,
+  /database/i,
+  /postgres/i,
+  /econnrefused/i,
+  /internal\s+server\s+error/i,
+  /stack\s+trace/i,
+  /syntaxerror/i,
+  /typeerror/i,
+  /uncaught/i,
+  /column/i,
+  /relation/i,
+  /table/i,
+  /500/i,
+  /jwt/i,
+  /bearer/i,
+  /gemini/i,
+  /openai/i,
+];
+
+function mapInterviewPrepError(error) {
+  const extracted = extractApiError(error);
+  const code = extracted.code;
+  const rawMessage = (extracted.message || '').trim();
+
+  if (code === 'RATE_LIMITED' || rawMessage.toLowerCase().includes('max 3')) {
+    return {
+      title: 'Daily Limit Reached',
+      message:
+        'You have reached your limit of 3 interview preparation sessions for today. Please check back tomorrow (UTC) to generate new practice questions.',
+      isRateLimited: true,
+      canRetry: false,
+    };
+  }
+
+  if (
+    code === 'VALIDATION_ERROR' ||
+    rawMessage.toLowerCase().includes('not applied') ||
+    rawMessage.toLowerCase().includes('rejected')
+  ) {
+    return {
+      title: 'Application Required',
+      message:
+        'AI Interview Preparation is only available for jobs where you have an active application in APPLIED or SHORTLISTED status.',
+      isRateLimited: false,
+      canRetry: false,
+    };
+  }
+
+  if (code === 'UNAUTHORIZED' || rawMessage.toLowerCase().includes('unauthorized')) {
+    return {
+      title: 'Sign In Required',
+      message:
+        'Your session has expired or you are not signed in. Please sign in with your student account to access interview preparation.',
+      isRateLimited: false,
+      canRetry: false,
+    };
+  }
+
+  if (code === 'NOT_FOUND' || rawMessage.toLowerCase().includes('not found')) {
+    return {
+      title: 'Job Unavailable',
+      message:
+        'This job posting is no longer active or could not be found. Interview preparation questions can only be generated for active listings.',
+      isRateLimited: false,
+      canRetry: false,
+    };
+  }
+
+  if (code === 'NETWORK_ERROR') {
+    return {
+      title: 'Connection Issue',
+      message:
+        'Unable to connect to CareerForge. Please check your internet connection and try again.',
+      isRateLimited: false,
+      canRetry: true,
+    };
+  }
+
+  const hasLeakage = TECHNICAL_ERROR_PATTERNS.some((pattern) =>
+    pattern.test(rawMessage)
+  );
+
+  const safeMessage =
+    hasLeakage || !rawMessage
+      ? 'We were unable to generate your interview questions at this time. Please try again in a few moments.'
+      : rawMessage;
+
+  return {
+    title: 'Generation Failed',
+    message: safeMessage,
+    isRateLimited: false,
+    canRetry: true,
+  };
+}
+
 describe('Phase 5.16.1 — AI Interview Preparation API Client & Types Test Suite', () => {
   const validJobId = '11111111-1111-4111-8111-111111111111';
   const mockValidQuestions = [
@@ -226,7 +326,7 @@ describe('Phase 5.16.1 — AI Interview Preparation API Client & Types Test Suit
       assert.match(content, /interviewPrepQueryKey/);
     });
 
-    it('should have index.ts barrel re-exporting types, API client, and hooks', () => {
+    it('should have index.ts barrel re-exporting types, API client, hooks, and components', () => {
       const indexFile = path.join(featuresDir, 'index.ts');
       assert.equal(fs.existsSync(indexFile), true, 'index.ts must exist');
 
@@ -234,6 +334,7 @@ describe('Phase 5.16.1 — AI Interview Preparation API Client & Types Test Suit
       assert.match(content, /export \* from '\.\/types'/);
       assert.match(content, /export \* from '\.\/interviewPrepApi'/);
       assert.match(content, /export \* from '\.\/hooks'/);
+      assert.match(content, /export \* from '\.\/components'/);
     });
   });
 
@@ -655,6 +756,227 @@ describe('Phase 5.16.1 — AI Interview Preparation API Client & Types Test Suit
 
       assert.equal(hook.isError, true);
       assert.equal(hook.error.message, 'Invalid jobId format (must be a valid UUID)');
+    });
+  });
+
+  // =========================================================================
+  // 8. Interview Preparation UI Components (Phase 5.16.3)
+  // =========================================================================
+  describe('8. Interview Preparation UI Components (Phase 5.16.3)', () => {
+    it('1. should have all component files present with correct exports', () => {
+      const expectedFiles = [
+        'InterviewPrepCard.tsx',
+        'InterviewPrepIdle.tsx',
+        'InterviewPrepLoading.tsx',
+        'InterviewPrepQuestions.tsx',
+        'InterviewPrepError.tsx',
+        'index.ts',
+      ];
+
+      for (const file of expectedFiles) {
+        const filePath = path.join(componentsDir, file);
+        assert.equal(fs.existsSync(filePath), true, `Component file ${file} must exist`);
+      }
+
+      const indexContent = fs.readFileSync(path.join(componentsDir, 'index.ts'), 'utf8');
+      assert.ok(indexContent.includes("export * from './InterviewPrepCard'"));
+      assert.ok(indexContent.includes("export * from './InterviewPrepIdle'"));
+      assert.ok(indexContent.includes("export * from './InterviewPrepLoading'"));
+      assert.ok(indexContent.includes("export * from './InterviewPrepQuestions'"));
+      assert.ok(indexContent.includes("export * from './InterviewPrepError'"));
+    });
+
+    // --- InterviewPrepIdle Tests ---
+    it('2. InterviewPrepIdle articulates tailored AI practice and states 3 calls/day quota', () => {
+      const idleFile = path.join(componentsDir, 'InterviewPrepIdle.tsx');
+      const content = fs.readFileSync(idleFile, 'utf8');
+
+      assert.ok(content.includes('InterviewPrepIdleProps'));
+      assert.ok(content.includes('data-testid="interview-prep-idle"'));
+      assert.ok(content.includes('data-testid="interview-prep-generate-button"'));
+      assert.ok(content.includes('Generate Interview Questions'));
+      assert.ok(content.includes('Maximum 3 interview preparation sessions per student per day'));
+      assert.ok(content.includes('Sparkles'));
+      assert.ok(content.includes('<h3'));
+    });
+
+    // --- InterviewPrepLoading Tests ---
+    it('3. InterviewPrepLoading includes accessible role="status" and simulates 5 skeleton items', () => {
+      const loadingFile = path.join(componentsDir, 'InterviewPrepLoading.tsx');
+      const content = fs.readFileSync(loadingFile, 'utf8');
+
+      assert.ok(content.includes('InterviewPrepLoadingProps'));
+      assert.ok(content.includes('role="status"'));
+      assert.ok(content.includes('aria-label="Generating interview questions"'));
+      assert.ok(content.includes('data-testid="interview-prep-loading"'));
+      assert.ok(content.includes('data-testid="interview-prep-question-skeleton"'));
+      assert.ok(content.includes('length: 5'));
+      assert.ok(content.includes('Loader2'));
+      assert.ok(content.includes('AI Generating'));
+    });
+
+    // --- InterviewPrepQuestions Tests ---
+    it('4. InterviewPrepQuestions renders job title, 5 questions in ordered list, and footer tips', () => {
+      const questionsFile = path.join(componentsDir, 'InterviewPrepQuestions.tsx');
+      const content = fs.readFileSync(questionsFile, 'utf8');
+
+      assert.ok(content.includes('InterviewPrepQuestionsProps'));
+      assert.ok(content.includes('data-testid="interview-prep-questions"'));
+      assert.ok(content.includes('data-testid="interview-prep-job-title"'));
+      assert.ok(content.includes('data-testid="interview-prep-questions-list"'));
+      assert.ok(content.includes('interview-prep-question-item-'));
+      assert.ok(content.includes('data-testid="interview-prep-regenerate-button"'));
+      assert.ok(content.includes('STAR method'));
+      assert.ok(content.includes('Max 3 calls/day'));
+      assert.ok(content.includes('AI Tailored'));
+    });
+
+    // --- Error Mapping & InterviewPrepError Tests ---
+    it('5. mapInterviewPrepError properly formats 400 VALIDATION_ERROR without retry', () => {
+      const error400 = {
+        response: {
+          status: 400,
+          data: {
+            success: false,
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: "Student has not applied to this job, or application status is 'REJECTED'",
+            },
+          },
+        },
+      };
+
+      const mapped = mapInterviewPrepError(error400);
+      assert.equal(mapped.title, 'Application Required');
+      assert.equal(mapped.isRateLimited, false);
+      assert.equal(mapped.canRetry, false);
+      assert.ok(mapped.message.includes('APPLIED or SHORTLISTED status'));
+    });
+
+    it('6. mapInterviewPrepError properly formats 401 UNAUTHORIZED without retry', () => {
+      const error401 = {
+        response: {
+          status: 401,
+          data: {
+            success: false,
+            error: { code: 'UNAUTHORIZED', message: 'Token missing' },
+          },
+        },
+      };
+
+      const mapped = mapInterviewPrepError(error401);
+      assert.equal(mapped.title, 'Sign In Required');
+      assert.equal(mapped.isRateLimited, false);
+      assert.equal(mapped.canRetry, false);
+      assert.ok(mapped.message.includes('sign in with your student account'));
+    });
+
+    it('7. mapInterviewPrepError properly formats 404 NOT_FOUND without retry', () => {
+      const error404 = {
+        response: {
+          status: 404,
+          data: {
+            success: false,
+            error: { code: 'NOT_FOUND', message: 'Job does not exist' },
+          },
+        },
+      };
+
+      const mapped = mapInterviewPrepError(error404);
+      assert.equal(mapped.title, 'Job Unavailable');
+      assert.equal(mapped.isRateLimited, false);
+      assert.equal(mapped.canRetry, false);
+      assert.ok(mapped.message.includes('active listings'));
+    });
+
+    it('8. mapInterviewPrepError properly formats 429 RATE_LIMITED without auto-retry', () => {
+      const error429 = {
+        response: {
+          status: 429,
+          data: {
+            success: false,
+            error: {
+              code: 'RATE_LIMITED',
+              message: 'Daily interview prep limit reached (max 3/day)',
+            },
+          },
+        },
+      };
+
+      const mapped = mapInterviewPrepError(error429);
+      assert.equal(mapped.title, 'Daily Limit Reached');
+      assert.equal(mapped.isRateLimited, true);
+      assert.equal(mapped.canRetry, false);
+      assert.ok(mapped.message.includes('limit of 3 interview preparation sessions'));
+    });
+
+    it('9. mapInterviewPrepError allows retry on network or generic server failure', () => {
+      const networkErr = {
+        isAxiosError: true,
+        response: undefined,
+      };
+
+      const mappedNetwork = mapInterviewPrepError(networkErr);
+      assert.equal(mappedNetwork.title, 'Connection Issue');
+      assert.equal(mappedNetwork.canRetry, true);
+      assert.equal(mappedNetwork.isRateLimited, false);
+
+      const serverErr = {
+        response: {
+          status: 500,
+          data: {
+            success: false,
+            error: { code: 'INTERNAL_ERROR', message: 'Gemini API status 503' },
+          },
+        },
+      };
+
+      const mappedServer = mapInterviewPrepError(serverErr);
+      assert.equal(mappedServer.title, 'Generation Failed');
+      assert.equal(mappedServer.canRetry, true);
+      assert.equal(mappedServer.isRateLimited, false);
+      assert.ok(!mappedServer.message.includes('Gemini'));
+      assert.ok(!mappedServer.message.includes('503'));
+    });
+
+    it('10. InterviewPrepError component renders data-testid and handles retry action', () => {
+      const errorFile = path.join(componentsDir, 'InterviewPrepError.tsx');
+      const content = fs.readFileSync(errorFile, 'utf8');
+
+      assert.ok(content.includes('InterviewPrepErrorProps'));
+      assert.ok(content.includes('data-testid="interview-prep-error"'));
+      assert.ok(content.includes('data-testid="interview-prep-error-message"'));
+      assert.ok(content.includes('data-testid="interview-prep-retry-button"'));
+      assert.ok(content.includes('canRetry && onRetry'));
+      assert.ok(content.includes('RotateCcw'));
+      assert.ok(content.includes('mapInterviewPrepError'));
+    });
+
+    // --- InterviewPrepCard Container Tests ---
+    it('11. InterviewPrepCard orchestrates idle, loading, error, and success states cleanly', () => {
+      const cardFile = path.join(componentsDir, 'InterviewPrepCard.tsx');
+      const content = fs.readFileSync(cardFile, 'utf8');
+
+      assert.ok(content.includes('useGenerateInterviewPrep'));
+      assert.ok(content.includes('<InterviewPrepLoading'));
+      assert.ok(content.includes('<InterviewPrepError'));
+      assert.ok(content.includes('<InterviewPrepQuestions'));
+      assert.ok(content.includes('<InterviewPrepIdle'));
+      assert.ok(content.includes('mutation.isPending'));
+      assert.ok(content.includes('mutation.isError'));
+      assert.ok(content.includes('currentData'));
+      assert.ok(content.includes('initialData'));
+    });
+
+    // --- Boundaries & Accessibility Tests ---
+    it('12. Component files do not use localStorage, sessionStorage, or inline script injections', () => {
+      const files = fs.readdirSync(componentsDir);
+      for (const file of files) {
+        const content = fs.readFileSync(path.join(componentsDir, file), 'utf8');
+        assert.equal(content.includes('localStorage'), false, `${file} must not use localStorage`);
+        assert.equal(content.includes('sessionStorage'), false, `${file} must not use sessionStorage`);
+        assert.equal(content.includes('dangerouslySetInnerHTML'), false, `${file} must not use dangerouslySetInnerHTML`);
+      }
     });
   });
 });
