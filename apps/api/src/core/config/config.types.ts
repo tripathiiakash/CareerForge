@@ -10,4 +10,7 @@ export interface AppConfig {
   readonly jwtExpiresIn: string;
   readonly geminiApiKey?: string;
   readonly storageProvider?: string;
+  readonly emailProvider?: string;
+  readonly resendApiKey?: string;
+  readonly emailFrom?: string;
 }

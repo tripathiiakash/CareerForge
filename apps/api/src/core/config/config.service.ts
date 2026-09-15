@@ -62,6 +62,20 @@ export class ConfigService {
     return this.config.storageProvider ?? 'local';
   }
 
+  get emailProvider(): string {
+    return this.config.emailProvider ?? 'mock';
+  }
+
+  get resendApiKey(): string | undefined {
+    return this.config.resendApiKey;
+  }
+
+  get emailFrom(): string {
+    return (
+      this.config.emailFrom ?? 'CareerForge <notifications@careerforge.dev>'
+    );
+  }
+
   get<K extends keyof AppConfig>(key: K): AppConfig[K] {
     return this.config[key];
   }

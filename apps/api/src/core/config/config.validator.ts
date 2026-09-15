@@ -87,6 +87,33 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
   const geminiApiKey = env.GEMINI_API_KEY?.trim() || undefined;
   const storageProvider = env.STORAGE_PROVIDER?.trim() || 'local';
 
+  // 9. EMAIL_PROVIDER, RESEND_API_KEY & EMAIL_FROM
+  const resendApiKey = env.RESEND_API_KEY?.trim() || undefined;
+  const emailFrom =
+    env.EMAIL_FROM?.trim() ||
+    env.RESEND_FROM_EMAIL?.trim() ||
+    'CareerForge <notifications@careerforge.dev>';
+  const rawEmailProvider = env.EMAIL_PROVIDER?.trim()?.toLowerCase();
+  const emailProvider = rawEmailProvider || 'mock';
+
+  if (rawEmailProvider && !['resend', 'mock'].includes(rawEmailProvider)) {
+    errors.push(
+      `EMAIL_PROVIDER must be one of: 'resend', 'mock' (received "${rawEmailProvider}")`
+    );
+  }
+
+  if (rawEmailProvider === 'resend') {
+    if (
+      !resendApiKey ||
+      resendApiKey === 'your-resend-api-key-here' ||
+      resendApiKey.startsWith('your-')
+    ) {
+      errors.push(
+        'RESEND_API_KEY is required and must not be a placeholder when EMAIL_PROVIDER is "resend"'
+      );
+    }
+  }
+
   if (errors.length > 0) {
     throw new ConfigValidationError(errors);
   }
@@ -101,5 +128,8 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     jwtExpiresIn,
     geminiApiKey,
     storageProvider,
+    emailProvider,
+    resendApiKey,
+    emailFrom,
   };
 }

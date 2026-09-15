@@ -10,6 +10,7 @@ import { JobModule } from './modules/job/job.module';
 import { RecruiterModule } from './modules/recruiter/recruiter.module';
 import { ResumeModule } from './modules/resume/resume.module';
 import { StudentModule } from './modules/student/student.module';
+import { NotificationModule } from './modules/notifications/notification.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 /**
@@ -23,6 +24,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ConfigModule,
     PrismaModule,
     QueueModule,
+    NotificationModule,
     AuthModule,
     StudentModule,
     ResumeModule,
