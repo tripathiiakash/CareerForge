@@ -9,6 +9,6 @@ import { ApplicationService } from './application.service';
   imports: [AuthModule, QueueModule],
   controllers: [ApplicationController, ApplicationStatusController],
   providers: [ApplicationService],
-  exports: [ApplicationService, ApplicationStatusController],
+  exports: [ApplicationService],
 })
 export class ApplicationModule {}
