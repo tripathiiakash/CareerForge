@@ -3,9 +3,18 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ApplicationStatus, JobStatus, Prisma } from '@prisma/client';
+import { QueueService } from '../../core/queue/queue.service';
+import {
+  ApplicationStatusEmailJobData,
+  ApplicationSubmittedRecruiterEmailJobData,
+  ApplicationSubmittedStudentEmailJobData,
+  QUEUE_NAMES,
+} from '../../core/queue/queue.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   ApplicationCreatedData,
@@ -25,7 +34,13 @@ const UUID_REGEX =
 
 @Injectable()
 export class ApplicationService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(ApplicationService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly queueService?: QueueService
+  ) {}
 
   private validateUuid(id: string, fieldName: string): void {
     if (!id || !UUID_REGEX.test(id)) {
@@ -124,6 +139,40 @@ export class ApplicationService {
           status: ApplicationStatus.APPLIED,
         },
       });
+
+      // Asynchronously dispatch application submission notifications via pg-boss
+      if (this.queueService) {
+        try {
+          await Promise.all([
+            this.queueService.send<ApplicationSubmittedStudentEmailJobData>(
+              QUEUE_NAMES.NOTIFICATION_EMAIL_APPLICATION_SUBMITTED_STUDENT,
+              { applicationId: application.id },
+              {
+                singletonKey: `app-sub-student:${application.id}`,
+                retryLimit: 3,
+                retryDelay: 15,
+                retryBackoff: true,
+              }
+            ),
+            this.queueService.send<ApplicationSubmittedRecruiterEmailJobData>(
+              QUEUE_NAMES.NOTIFICATION_EMAIL_APPLICATION_SUBMITTED_RECRUITER,
+              { applicationId: application.id },
+              {
+                singletonKey: `app-sub-recruiter:${application.id}`,
+                retryLimit: 3,
+                retryDelay: 15,
+                retryBackoff: true,
+              }
+            ),
+          ]);
+        } catch (err: unknown) {
+          const message =
+            err instanceof Error ? err.message : 'Unknown queue error';
+          this.logger.error(
+            `Failed to enqueue application submission notifications for app ${application.id}: ${message}`
+          );
+        }
+      }
 
       return {
         application_id: application.id,
@@ -411,6 +460,34 @@ export class ApplicationService {
         updated_at: true,
       },
     });
+
+    // Asynchronously dispatch application status notification via pg-boss
+    if (
+      this.queueService &&
+      (dto.status === 'SHORTLISTED' || dto.status === 'REJECTED')
+    ) {
+      try {
+        await this.queueService.send<ApplicationStatusEmailJobData>(
+          QUEUE_NAMES.NOTIFICATION_EMAIL_APPLICATION_STATUS,
+          {
+            applicationId: updated.id,
+            status: updated.status as 'SHORTLISTED' | 'REJECTED',
+          },
+          {
+            singletonKey: `app-status:${updated.id}:${updated.status}`,
+            retryLimit: 3,
+            retryDelay: 15,
+            retryBackoff: true,
+          }
+        );
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : 'Unknown queue error';
+        this.logger.error(
+          `Failed to enqueue application status update email for app ${updated.id}: ${message}`
+        );
+      }
+    }
 
     return {
       application_id: updated.id,

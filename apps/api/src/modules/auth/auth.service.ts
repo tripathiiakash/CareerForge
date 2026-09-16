@@ -3,9 +3,13 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
+import { QueueService } from '../../core/queue/queue.service';
+import { QUEUE_NAMES, WelcomeEmailJobData } from '../../core/queue/queue.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthResponseData } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
@@ -15,10 +19,14 @@ import { TokenService } from './token.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly passwordService: PasswordService,
-    private readonly tokenService: TokenService
+    private readonly tokenService: TokenService,
+    @Optional()
+    private readonly queueService?: QueueService
   ) {}
 
   /**
@@ -86,6 +94,32 @@ export class AuthService {
     });
 
     const token = await this.tokenService.signToken(user);
+
+    // Asynchronously dispatch welcome email job via pg-boss
+    if (this.queueService) {
+      try {
+        await this.queueService.send<WelcomeEmailJobData>(
+          QUEUE_NAMES.NOTIFICATION_EMAIL_WELCOME,
+          {
+            userId: user.id,
+            email: user.email,
+            role: user.role,
+          },
+          {
+            singletonKey: `welcome:${user.id}`,
+            retryLimit: 3,
+            retryDelay: 15,
+            retryBackoff: true,
+          }
+        );
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : 'Unknown queue error';
+        this.logger.error(
+          `Failed to enqueue welcome email for user ${user.id}: ${message}`
+        );
+      }
+    }
 
     return {
       user_id: user.id,

@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
+import { QueueModule } from '../../core/queue/queue.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { PasswordService } from './password.service';
 import { TokenService } from './token.service';
 
 @Module({
-  imports: [JwtModule.register({})],
+  imports: [JwtModule.register({}), QueueModule],
   controllers: [AuthController],
   providers: [AuthService, PasswordService, TokenService],
   exports: [AuthService, PasswordService, TokenService],
