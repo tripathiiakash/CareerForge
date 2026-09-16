@@ -192,3 +192,35 @@ export async function getResumeAnalysis(
     throw error;
   }
 }
+
+/**
+ * Fetches the resume PDF file as a blob using the authenticated API client.
+ */
+export async function getResumeFileBlob(resumeId: string): Promise<Blob> {
+  const response = await apiClient.get(`/resumes/${resumeId}/file`, {
+    responseType: 'blob',
+  });
+  return new Blob([response.data], { type: 'application/pdf' });
+}
+
+/**
+ * Safely opens the resume PDF in a new browser tab or falls back to downloading it.
+ */
+export async function openResumePdf(
+  resumeId: string,
+  fileName?: string
+): Promise<void> {
+  const blob = await getResumeFileBlob(resumeId);
+  const blobUrl = window.URL.createObjectURL(blob);
+  const newTab = window.open(blobUrl, '_blank');
+
+  if (!newTab) {
+    // If popup was blocked, fallback to triggering a direct download via link
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName || 'Resume.pdf';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+}

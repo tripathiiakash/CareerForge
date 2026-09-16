@@ -8,12 +8,18 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Loader2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/use-toast';
 import { StudentResumeItem } from '../types';
-import { formatResumeDate, getResumeFileName } from '../resumesApi';
+import {
+  formatResumeDate,
+  getResumeFileName,
+  openResumePdf,
+} from '../resumesApi';
 import { ResumeAnalysisView } from './ResumeAnalysisView';
 
 export interface ResumeCardProps {
@@ -25,6 +31,8 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({
   resume,
   defaultExpanded,
 }) => {
+  const { toast } = useToast();
+  const [isOpening, setIsOpening] = useState(false);
   const fileName = getResumeFileName(resume.file_url);
   const formattedDate = formatResumeDate(resume.created_at);
 
@@ -32,6 +40,26 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({
   const [isAnalysisExpanded, setIsAnalysisExpanded] = useState<boolean>(
     defaultExpanded ?? Boolean(resume.is_primary && resume.has_analysis)
   );
+
+  const handleOpenResume = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isOpening) return;
+    setIsOpening(true);
+    try {
+      await openResumePdf(resume.id, fileName);
+    } catch (err: unknown) {
+      const errorMsg =
+        err instanceof Error ? err.message : 'Failed to open resume document';
+      toast({
+        title: 'Unable to open resume',
+        description: errorMsg,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsOpening(false);
+    }
+  };
 
   return (
     <Card
@@ -46,22 +74,36 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-start gap-3.5">
             {/* File Icon */}
-            <div
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-colors ${
+            <button
+              type="button"
+              onClick={handleOpenResume}
+              disabled={isOpening}
+              title="Click to view resume"
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all cursor-pointer hover:scale-105 active:scale-95 border-0 ${
                 resume.is_primary
                   ? 'bg-primary text-primary-foreground shadow-sm shadow-primary/30'
-                  : 'bg-secondary text-muted-foreground'
+                  : 'bg-secondary text-muted-foreground hover:text-foreground'
               }`}
             >
-              <FileText className="h-5 w-5" />
-            </div>
+              {isOpening ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <FileText className="h-5 w-5" />
+              )}
+            </button>
 
             {/* Resume Info */}
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-semibold text-foreground tracking-tight text-base break-all">
+                <button
+                  type="button"
+                  onClick={handleOpenResume}
+                  disabled={isOpening}
+                  className="font-semibold text-foreground tracking-tight text-base break-all text-left hover:text-primary hover:underline cursor-pointer transition-colors bg-transparent border-0 p-0"
+                  title="Click to view resume"
+                >
                   {fileName}
-                </h3>
+                </button>
                 {resume.is_primary && (
                   <Badge
                     variant="success"
@@ -107,18 +149,22 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({
 
           {/* Action Links & Buttons */}
           <div className="flex flex-wrap items-center gap-2 self-end sm:self-center w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-border/40">
-            {resume.file_url && (
-              <a
-                href={resume.file_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-foreground bg-secondary/80 hover:bg-secondary transition-colors"
-                title="Open PDF resume in a new tab"
-              >
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleOpenResume}
+              disabled={isOpening}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 h-8 rounded-lg text-xs font-medium text-foreground bg-secondary/80 hover:bg-secondary transition-colors"
+              title="Open PDF resume in a new tab"
+            >
+              {isOpening ? (
+                <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
+              ) : (
                 <ExternalLink className="h-3.5 w-3.5 text-primary" />
-                <span>View PDF</span>
-              </a>
-            )}
+              )}
+              <span>{isOpening ? 'Opening...' : 'View PDF'}</span>
+            </Button>
 
             <Button
               variant="outline"

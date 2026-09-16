@@ -31,7 +31,7 @@ export class LocalStorageProvider implements IStorageProvider {
     await fs.writeFile(targetPath, input.buffer);
 
     const port = this.configService.port;
-    const fileUrl = `http://localhost:${port}/uploads/resumes/${fileKey}`;
+    const fileUrl = `http://localhost:${port}/api/v1/resumes/file/${fileKey}`;
 
     return {
       fileKey,

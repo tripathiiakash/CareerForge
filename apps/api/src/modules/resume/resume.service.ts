@@ -1,10 +1,13 @@
 import {
   BadRequestException,
+  ForbiddenException,
   HttpException,
   HttpStatus,
   Injectable,
+  NotFoundException,
 } from '@nestjs/common';
 import * as path from 'path';
+import { UserRole } from '@prisma/client';
 import { QueueService } from '../../core/queue/queue.service';
 import {
   QUEUE_NAMES,
@@ -187,5 +190,97 @@ export class ResumeService {
       has_analysis: resume.ai_analysis !== null,
       created_at: resume.created_at.toISOString(),
     }));
+  }
+
+  /**
+   * 6.3 Retrieves a resume file buffer and metadata for authenticated viewing / download.
+   * Enforces strict ownership checks (API.md & security boundary).
+   */
+  async getResumeFile(
+    userId: string,
+    userRole: UserRole,
+    identifier: string
+  ): Promise<{ buffer: Buffer; fileName: string }> {
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        identifier
+      );
+
+    const resume = await this.prisma.resume.findFirst({
+      where: isUuid
+        ? { id: identifier }
+        : { file_url: { contains: identifier } },
+      include: {
+        student: {
+          select: {
+            id: true,
+            user_id: true,
+            first_name: true,
+            last_name: true,
+          },
+        },
+      },
+    });
+
+    if (!resume) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Resume not found',
+      });
+    }
+
+    // Enforce authorization & ownership
+    if (userRole === UserRole.STUDENT) {
+      if (resume.student.user_id !== userId) {
+        throw new ForbiddenException({
+          code: 'FORBIDDEN',
+          message: 'Access denied: this resume belongs to another student',
+        });
+      }
+    } else if (userRole === UserRole.RECRUITER) {
+      // Recruiter may only access if the student applied to a job posted by this recruiter
+      const hasApplication = await this.prisma.application.findFirst({
+        where: {
+          resume_id: resume.id,
+          job: {
+            recruiter: {
+              user_id: userId,
+            },
+          },
+        },
+      });
+
+      if (!hasApplication) {
+        throw new ForbiddenException({
+          code: 'FORBIDDEN',
+          message:
+            'Access denied: applicant resume does not belong to your job postings',
+        });
+      }
+    }
+
+    const fileKey = resume.file_url
+      ? resume.file_url.split('/').pop() || ''
+      : '';
+    if (!fileKey) {
+      throw new NotFoundException({
+        code: 'FILE_NOT_FOUND',
+        message: 'Resume storage file key could not be determined',
+      });
+    }
+
+    const buffer = await this.resumeStorageService.getFileBuffer(fileKey);
+    const cleanKey = fileKey.split('?')[0];
+    const isUuidKey =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/i.test(
+        cleanKey
+      );
+    const humanFileName = `${resume.student.first_name || 'Student'}_${resume.student.last_name || 'Candidate'}_Resume.pdf`.replace(
+      /\s+/g,
+      '_'
+    );
+    const fileName = isUuidKey ? humanFileName : cleanKey;
+
+    return { buffer, fileName };
   }
 }

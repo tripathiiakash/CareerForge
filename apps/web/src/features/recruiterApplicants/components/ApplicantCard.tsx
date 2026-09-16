@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   GraduationCap,
   Calendar,
@@ -9,10 +9,12 @@ import {
   ExternalLink,
   User,
   Building2,
+  Loader2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { openResumePdf } from '@/features/resumes/resumesApi';
 import { ApplicantStatus, JobApplicant } from '../types';
 
 export function formatApplicationDate(dateString: string): string {
@@ -92,6 +94,27 @@ export const ApplicantCard: React.FC<ApplicantCardProps> = ({
   const isShortlisting = isUpdating && updatingAction === 'SHORTLISTED';
   const isRejecting = isUpdating && updatingAction === 'REJECTED';
 
+  const [isOpeningResume, setIsOpeningResume] = useState(false);
+
+  const handleOpenResume = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!resume?.id || isOpeningResume) return;
+    setIsOpeningResume(true);
+    try {
+      await openResumePdf(
+        resume.id,
+        `${fullName.replace(/\s+/g, '_')}_Resume.pdf`
+      );
+    } catch {
+      // Fallback: If blob fetch fails, attempt direct link if present
+      if (resume.file_url) {
+        window.open(resume.file_url, '_blank', 'noopener,noreferrer');
+      }
+    } finally {
+      setIsOpeningResume(false);
+    }
+  };
+
   return (
     <Card
       glass
@@ -164,17 +187,21 @@ export const ApplicantCard: React.FC<ApplicantCardProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-border/40">
           {/* Resume View Link */}
           {resume?.file_url ? (
-            <a
-              href={resume.file_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:underline transition-colors"
+            <button
+              type="button"
+              onClick={handleOpenResume}
+              disabled={isOpeningResume}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300 hover:underline transition-colors bg-transparent border-0 p-0 cursor-pointer disabled:opacity-60"
               aria-label={`View PDF resume for ${fullName}`}
             >
-              <FileText className="h-4 w-4" />
-              <span>View PDF Resume</span>
+              {isOpeningResume ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <FileText className="h-4 w-4" />
+              )}
+              <span>{isOpeningResume ? 'Opening Resume...' : 'View PDF Resume'}</span>
               <ExternalLink className="h-3 w-3" />
-            </a>
+            </button>
           ) : (
             <span className="text-xs text-muted-foreground italic">
               No resume document attached

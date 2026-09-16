@@ -5,10 +5,12 @@ import {
   HttpStatus,
   Param,
   Post,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
@@ -120,5 +122,71 @@ export class ResumeController {
       success: true,
       data,
     };
+  }
+
+  /**
+   * 6.3 Download / View Resume File by FileKey
+   * GET /api/v1/resumes/file/:fileKey
+   */
+  @Get('file/:fileKey')
+  @Roles(UserRole.STUDENT, UserRole.RECRUITER, UserRole.ADMIN)
+  @RateLimit({
+    limit: 60,
+    ttlSeconds: 60,
+    keyPrefix: 'resume-file',
+  })
+  async getResumeByFileKey(
+    @CurrentUser('userId') userId: string,
+    @CurrentUser('role') userRole: UserRole,
+    @Param('fileKey') fileKey: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const { buffer, fileName } = await this.resumeService.getResumeFile(
+      userId,
+      userRole,
+      fileKey
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    res.setHeader(
+      'Cache-Control',
+      'private, no-cache, no-store, must-revalidate'
+    );
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(buffer);
+  }
+
+  /**
+   * 6.4 Download / View Resume File by Resume ID
+   * GET /api/v1/resumes/:resumeId/file
+   */
+  @Get(':resumeId/file')
+  @Roles(UserRole.STUDENT, UserRole.RECRUITER, UserRole.ADMIN)
+  @RateLimit({
+    limit: 60,
+    ttlSeconds: 60,
+    keyPrefix: 'resume-file',
+  })
+  async getResumeFile(
+    @CurrentUser('userId') userId: string,
+    @CurrentUser('role') userRole: UserRole,
+    @Param('resumeId') resumeId: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const { buffer, fileName } = await this.resumeService.getResumeFile(
+      userId,
+      userRole,
+      resumeId
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    res.setHeader(
+      'Cache-Control',
+      'private, no-cache, no-store, must-revalidate'
+    );
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(buffer);
   }
 }
