@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { toast } from '@/components/ui/use-toast';
 import { extractApiError } from '@/lib/api';
 import { usePendingJobs, useModerateJobStatus } from './hooks';
 import {
@@ -110,15 +111,24 @@ export const AdminModerationPage: React.FC = () => {
       const actionLabel =
         dialogAction === 'ACTIVE' ? 'approved and published' : 'rejected';
       setSuccessBanner(`"${dialogJob.title}" was successfully ${actionLabel}.`);
+      if (dialogAction === 'ACTIVE') {
+        toast.success(
+          'Job approved',
+          `"${dialogJob.title}" was approved and published.`
+        );
+      } else {
+        toast.info('Job rejected', `"${dialogJob.title}" was rejected.`);
+      }
       setDialogJob(null);
       setDialogAction(null);
       setTimeout(() => setSuccessBanner(null), 4000);
     } catch (err: unknown) {
       const parsed = extractApiError(err);
-      setErrorMessage(
+      const msg =
         parsed.message ||
-          'Failed to complete moderation action. Please try again.'
-      );
+        'Failed to complete moderation action. Please try again.';
+      setErrorMessage(msg);
+      toast.error('Moderation failed', msg);
     } finally {
       setUpdatingId(null);
       setUpdatingAction(null);

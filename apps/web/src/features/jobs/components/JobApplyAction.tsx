@@ -14,6 +14,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { toast } from '@/components/ui/use-toast';
 import { useAuth } from '@/auth/AuthContext';
 import { useApplyToJob, useStudentResumes } from '../hooks';
 import { StudentResumeItem } from '../types';
@@ -59,10 +60,11 @@ export const JobApplyAction: React.FC<JobApplyActionProps> = ({
     if (!isStudent || isApplied || applyMutation.isPending) return;
 
     if (!primaryResume) {
-      setErrorMessage(
-        'Please upload an active resume to your profile before applying.'
-      );
+      const msg =
+        'Please upload an active resume to your profile before applying.';
+      setErrorMessage(msg);
       setIsRetryable(false);
+      toast.warning('Resume required', msg);
       return;
     }
 
@@ -74,6 +76,10 @@ export const JobApplyAction: React.FC<JobApplyActionProps> = ({
         onSuccess: () => {
           setLocallyApplied(true);
           setErrorMessage(null);
+          toast.success(
+            'Application submitted',
+            'Your application has been submitted successfully.'
+          );
         },
         onError: (err) => {
           if (axios.isAxiosError(err)) {
@@ -85,58 +91,59 @@ export const JobApplyAction: React.FC<JobApplyActionProps> = ({
             if (status === 409) {
               // Duplicate application: treat as applied immediately
               setLocallyApplied(true);
-              setErrorMessage('You have already applied to this job posting.');
+              const msg = 'You have already applied to this job posting.';
+              setErrorMessage(msg);
               setIsRetryable(false);
+              toast.info('Already applied', msg);
               return;
             }
 
             if (status === 401) {
-              setErrorMessage(
-                'Your session has expired. Please sign in again to submit your application.'
-              );
+              const msg =
+                'Your session has expired. Please sign in again to submit your application.';
+              setErrorMessage(msg);
               setIsRetryable(false);
+              toast.error('Session expired', msg);
               return;
             }
 
             if (status === 403) {
-              setErrorMessage(
-                'Only authenticated students with valid resumes can apply for jobs.'
-              );
+              const msg =
+                'Only authenticated students with valid resumes can apply for jobs.';
+              setErrorMessage(msg);
               setIsRetryable(false);
+              toast.error('Application restricted', msg);
               return;
             }
 
             if (status === 404) {
-              if (
+              const msg =
                 typeof backendMessage === 'string' &&
                 backendMessage.toLowerCase().includes('resume')
-              ) {
-                setErrorMessage(
-                  'Your selected resume could not be found. Please upload a fresh resume.'
-                );
-              } else {
-                setErrorMessage(
-                  'This job posting is no longer available or does not exist.'
-                );
-              }
+                  ? 'Your selected resume could not be found. Please upload a fresh resume.'
+                  : 'This job posting is no longer available or does not exist.';
+              setErrorMessage(msg);
               setIsRetryable(false);
+              toast.error('Application failed', msg);
               return;
             }
 
             if (status === 400) {
-              setErrorMessage(
-                'This job posting is currently not accepting applications.'
-              );
+              const msg =
+                'This job posting is currently not accepting applications.';
+              setErrorMessage(msg);
               setIsRetryable(false);
+              toast.error('Application closed', msg);
               return;
             }
           }
 
           // Generic network or unexpected error
-          setErrorMessage(
-            'Unable to submit application. Please check your connection and try again.'
-          );
+          const genericMsg =
+            'Unable to submit application. Please check your connection and try again.';
+          setErrorMessage(genericMsg);
           setIsRetryable(true);
+          toast.error('Application failed', genericMsg);
         },
       }
     );

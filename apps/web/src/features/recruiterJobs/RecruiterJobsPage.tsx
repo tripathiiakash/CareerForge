@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/components/ui/use-toast';
 import { useDeleteJob, useRecruiterJobs } from './hooks';
 import { RecruiterJobCard } from './components/RecruiterJobCard';
 import { DeleteJobDialog } from './components/DeleteJobDialog';
@@ -30,6 +31,10 @@ export const RecruiterJobsPage: React.FC = () => {
     try {
       await deleteMutation.mutateAsync(jobToDelete.id);
       setSuccessBanner(`"${jobToDelete.title}" has been deleted.`);
+      toast.success(
+        'Job deleted',
+        `"${jobToDelete.title}" has been deleted successfully.`
+      );
       setJobToDelete(null);
 
       setTimeout(() => {
@@ -37,7 +42,9 @@ export const RecruiterJobsPage: React.FC = () => {
       }, 4000);
     } catch (err: unknown) {
       const parsed = extractApiError(err);
-      setErrorMessage(parsed.message || 'Failed to delete job posting.');
+      const msg = parsed.message || 'Failed to delete job posting.';
+      setErrorMessage(msg);
+      toast.error('Deletion failed', msg);
     }
   };
 

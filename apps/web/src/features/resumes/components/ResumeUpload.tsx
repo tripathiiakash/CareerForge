@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { extractApiError } from '@/lib/api';
+import { toast } from '@/components/ui/use-toast';
 import { useUploadResume } from '../hooks';
 import { formatFileSize, validateResumeFile } from '../resumesApi';
 
@@ -110,12 +111,13 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onSuccess }) => {
       },
       {
         onSuccess: (data) => {
-          setSuccessMessage(
+          const msg =
             data.message ||
-              'Resume uploaded successfully! It is now your active primary resume.'
-          );
+            'Resume uploaded successfully! It is now your active primary resume.';
+          setSuccessMessage(msg);
           setSelectedFile(null);
           setUploadProgress(100);
+          toast.success('Resume uploaded', msg);
           if (fileInputRef.current) {
             fileInputRef.current.value = '';
           }
@@ -127,6 +129,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onSuccess }) => {
           const apiErr = extractApiError(err);
           setValidationError(apiErr.message);
           setUploadProgress(0);
+          toast.error('Upload failed', apiErr.message);
         },
       }
     );

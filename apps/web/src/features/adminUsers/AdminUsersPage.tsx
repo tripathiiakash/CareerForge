@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { toast } from '@/components/ui/use-toast';
 import { extractApiError } from '@/lib/api';
 import { useAdminUsers, useDeleteUser } from './hooks';
 import {
@@ -162,14 +163,19 @@ export const AdminUsersPage: React.FC = () => {
       setSuccessBanner(
         `User "${displayName}" (${selectedUser.email}) and associated data were permanently deleted.`
       );
+      toast.success(
+        'User deleted',
+        `User "${displayName}" (${selectedUser.email}) has been permanently deleted.`
+      );
       setSelectedUser(null);
       setIsDeleteDialogOpen(false);
       setTimeout(() => setSuccessBanner(null), 4000);
     } catch (err: unknown) {
       const parsed = extractApiError(err);
-      setErrorMessage(
-        parsed.message || 'Failed to delete user account. Please try again.'
-      );
+      const msg =
+        parsed.message || 'Failed to delete user account. Please try again.';
+      setErrorMessage(msg);
+      toast.error('Deletion failed', msg);
     } finally {
       setDeletingUserId(null);
     }

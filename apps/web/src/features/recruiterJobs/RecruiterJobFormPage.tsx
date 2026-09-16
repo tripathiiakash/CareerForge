@@ -15,6 +15,7 @@ import {
   CardContent,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/components/ui/use-toast';
 import { JobForm } from './components/JobForm';
 import { useCreateJob, useJobDetail, useUpdateJob } from './hooks';
 import { useRecruiterProfile } from '@/features/recruiter';
@@ -57,17 +58,25 @@ export const RecruiterJobFormPage: React.FC<RecruiterJobFormPageProps> = ({
         const schemaResult = createJobSchema.safeParse(data);
         if (!schemaResult.success) {
           const firstIssue = schemaResult.error.issues[0];
-          setFormError(firstIssue ? firstIssue.message : 'Validation failed');
+          const msg = firstIssue ? firstIssue.message : 'Validation failed';
+          setFormError(msg);
+          toast.error('Validation error', msg);
           return;
         }
 
         await createMutation.mutateAsync(schemaResult.data);
+        toast.success(
+          'Job created',
+          'Your job requisition has been posted and sent for review.'
+        );
         navigate('/recruiter/jobs');
       } else if (mode === 'edit' && jobId) {
         const schemaResult = updateJobSchema.safeParse(data);
         if (!schemaResult.success) {
           const firstIssue = schemaResult.error.issues[0];
-          setFormError(firstIssue ? firstIssue.message : 'Validation failed');
+          const msg = firstIssue ? firstIssue.message : 'Validation failed';
+          setFormError(msg);
+          toast.error('Validation error', msg);
           return;
         }
 
@@ -75,11 +84,20 @@ export const RecruiterJobFormPage: React.FC<RecruiterJobFormPageProps> = ({
           jobId,
           dto: schemaResult.data,
         });
+        toast.success(
+          'Job updated',
+          'Your job requisition has been updated successfully.'
+        );
         navigate('/recruiter/jobs');
       }
     } catch (err: unknown) {
       const parsed = extractApiError(err);
-      setFormError(parsed.message || 'Operation failed. Please try again.');
+      const msg = parsed.message || 'Operation failed. Please try again.';
+      setFormError(msg);
+      toast.error(
+        mode === 'create' ? 'Job creation failed' : 'Update failed',
+        msg
+      );
     }
   };
 

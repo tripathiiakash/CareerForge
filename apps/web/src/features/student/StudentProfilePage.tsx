@@ -8,6 +8,7 @@ import {
 import { useAuth } from '@/auth/AuthContext';
 import { useStudentProfile, useUpdateStudentProfile } from './hooks';
 import { extractApiError } from '@/lib/api';
+import { toast } from '@/components/ui/use-toast';
 import {
   Card,
   CardHeader,
@@ -139,6 +140,10 @@ export const StudentProfilePage: React.FC = () => {
       await updateMutation.mutateAsync(parseResult.data);
       setSaveSuccess(true);
       setIsEditing(false);
+      toast.success(
+        'Profile updated',
+        'Your student profile changes have been saved.'
+      );
 
       setTimeout(() => {
         setSaveSuccess(false);
@@ -149,6 +154,7 @@ export const StudentProfilePage: React.FC = () => {
         code: parsed.code,
         message: parsed.message,
       });
+      toast.error('Failed to update profile', parsed.message);
     }
   };
 

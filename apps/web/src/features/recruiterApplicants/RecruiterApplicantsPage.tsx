@@ -16,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
+import { toast } from '@/components/ui/use-toast';
 import { useJobDetail } from '@/features/recruiterJobs';
 import { useJobApplicants, useUpdateApplicationStatus } from './hooks';
 import {
@@ -122,10 +123,16 @@ export const RecruiterApplicantsPage: React.FC = () => {
         `${applicant.student.first_name || ''} ${applicant.student.last_name || ''}`.trim() ||
         'Candidate';
       setSuccessBanner(`"${name}" has been shortlisted.`);
+      toast.success(
+        'Applicant shortlisted',
+        `"${name}" has been moved to shortlisted.`
+      );
       setTimeout(() => setSuccessBanner(null), 4000);
     } catch (err: unknown) {
       const parsed = extractApiError(err);
-      setErrorMessage(parsed.message || 'Failed to shortlist applicant.');
+      const msg = parsed.message || 'Failed to shortlist applicant.';
+      setErrorMessage(msg);
+      toast.error('Shortlist failed', msg);
     } finally {
       setUpdatingId(null);
       setUpdatingAction(null);
@@ -147,11 +154,17 @@ export const RecruiterApplicantsPage: React.FC = () => {
         `${applicantToReject.student.first_name || ''} ${applicantToReject.student.last_name || ''}`.trim() ||
         'Candidate';
       setSuccessBanner(`"${name}" has been marked as rejected.`);
+      toast.info(
+        'Applicant rejected',
+        `"${name}" has been marked as rejected.`
+      );
       setApplicantToReject(null);
       setTimeout(() => setSuccessBanner(null), 4000);
     } catch (err: unknown) {
       const parsed = extractApiError(err);
-      setErrorMessage(parsed.message || 'Failed to reject applicant.');
+      const msg = parsed.message || 'Failed to reject applicant.';
+      setErrorMessage(msg);
+      toast.error('Rejection failed', msg);
     } finally {
       setUpdatingId(null);
       setUpdatingAction(null);
