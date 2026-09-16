@@ -20,6 +20,7 @@ import { CurrentUser } from '../../core/decorators/current-user.decorator';
 import { Roles } from '../../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
 import { RolesGuard } from '../../core/guards/roles.guard';
+import { RateLimit } from '../../core/rate-limit/rate-limit.decorator';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { ApplicationService } from './application.service';
 import {
@@ -41,6 +42,11 @@ export class ApplicationController {
    */
   @Post(':jobId/apply')
   @HttpCode(HttpStatus.CREATED)
+  @RateLimit({
+    limit: 20,
+    ttlSeconds: 60,
+    keyPrefix: 'applications',
+  })
   async applyToJob(
     @CurrentUser('userId') userId: string,
     @Param(

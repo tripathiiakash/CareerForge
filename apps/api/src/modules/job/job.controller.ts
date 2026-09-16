@@ -24,6 +24,7 @@ import { Public } from '../../core/decorators/public.decorator';
 import { Roles } from '../../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
 import { RolesGuard } from '../../core/guards/roles.guard';
+import { RateLimit } from '../../core/rate-limit/rate-limit.decorator';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { CreateJobDto } from './dto/create-job.dto';
@@ -73,6 +74,12 @@ export class JobController {
   @Get()
   @Public()
   @HttpCode(HttpStatus.OK)
+  @RateLimit({
+    limit: 60,
+    ttlSeconds: 60,
+    keyPrefix: 'jobs-public',
+    message: 'Too many job search requests. Please slow down.',
+  })
   async listJobs(
     @Query(new ZodValidationPipe(listJobsQuerySchema)) query: ListJobsQueryDto
   ): Promise<ListJobsResponseDto> {
@@ -91,6 +98,12 @@ export class JobController {
   @Get(':id')
   @Public()
   @HttpCode(HttpStatus.OK)
+  @RateLimit({
+    limit: 60,
+    ttlSeconds: 60,
+    keyPrefix: 'jobs-public',
+    message: 'Too many job detail requests. Please slow down.',
+  })
   async getJob(
     @Param(
       'id',
@@ -177,6 +190,13 @@ export class JobController {
   @Post(':jobId/interview-prep')
   @Roles(UserRole.STUDENT)
   @HttpCode(HttpStatus.OK)
+  @RateLimit({
+    limit: 10,
+    ttlSeconds: 60,
+    keyPrefix: 'interview-prep',
+    message:
+      'Too many interview preparation requests. Please wait before trying again.',
+  })
   async generateInterviewPrep(
     @CurrentUser('userId') userId: string,
     @Param(

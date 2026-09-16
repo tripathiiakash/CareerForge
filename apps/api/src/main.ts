@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import type { Express } from 'express';
+import express, { type Express } from 'express';
 import { AppModule } from './app.module';
 import { ConfigService } from './core/config/config.service';
 import { loadEnvironment } from './core/config/env-loader';
@@ -11,20 +11,27 @@ async function bootstrap() {
   loadEnvironment();
 
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
 
   // 2. Retrieve validated configuration
   const config = app.get(ConfigService);
 
-  // 3. Security defaults: disable Express technology fingerprinting
+  // 3. Security defaults: disable technology fingerprinting & enforce body limits
   const expressApp = app.getHttpAdapter().getInstance() as Express;
   if (typeof expressApp?.disable === 'function') {
     expressApp.disable('x-powered-by');
   }
+  expressApp.use(express.json({ limit: '1mb' }));
+  expressApp.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-  // 4. CORS configuration
+  // 4. CORS configuration (supports single or comma-separated origins)
+  const allowedOrigins = config.corsOrigin
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: config.corsOrigin,
+    origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,

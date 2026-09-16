@@ -12,6 +12,9 @@ const {
   StudentController,
 } = require('../dist/modules/student/student.controller');
 const { ROLES_KEY } = require('../dist/core/decorators/roles.decorator');
+const {
+  RATE_LIMIT_KEY,
+} = require('../dist/core/rate-limit/rate-limit.decorator');
 
 describe('Application Controller & Security Guards Test Suite (docs/API.md §8.1)', () => {
   const reflector = new Reflector();
@@ -126,6 +129,18 @@ describe('Application Controller & Security Guards Test Suite (docs/API.md §8.1
     it('should have STUDENT role metadata defined on the controller class', () => {
       const roles = reflector.get(ROLES_KEY, ApplicationController);
       assert.deepEqual(roles, ['STUDENT']);
+    });
+
+    it('should have RateLimit metadata defined on applyToJob endpoint (20 / 60s)', () => {
+      const rateLimitOptions = reflector.get(
+        RATE_LIMIT_KEY,
+        ApplicationController.prototype.applyToJob
+      );
+      assert.deepEqual(rateLimitOptions, {
+        limit: 20,
+        ttlSeconds: 60,
+        keyPrefix: 'applications',
+      });
     });
 
     it('should route applyToJob to applicationService and return 201 Created envelope', async () => {

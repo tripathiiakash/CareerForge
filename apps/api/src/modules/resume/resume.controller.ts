@@ -15,6 +15,7 @@ import { CurrentUser } from '../../core/decorators/current-user.decorator';
 import { Roles } from '../../core/decorators/roles.decorator';
 import { JwtAuthGuard } from '../../core/guards/jwt-auth.guard';
 import { RolesGuard } from '../../core/guards/roles.guard';
+import { RateLimit } from '../../core/rate-limit/rate-limit.decorator';
 import { GetAnalysisResponseDto } from './dto/get-analysis-response.dto';
 import { ResumeListResponseDto } from './dto/resume-response.dto';
 import { TriggerAnalysisResponseDto } from './dto/trigger-analysis-response.dto';
@@ -38,6 +39,13 @@ export class ResumeController {
    */
   @Post('upload')
   @HttpCode(HttpStatus.CREATED)
+  @RateLimit({
+    limit: 10,
+    ttlSeconds: 60,
+    keyPrefix: 'resume-upload',
+    message:
+      'Too many resume upload attempts. Please wait before trying again.',
+  })
   @UseInterceptors(
     FileInterceptor('file', {
       limits: {
@@ -77,6 +85,13 @@ export class ResumeController {
    */
   @Post(':resumeId/analyze')
   @HttpCode(HttpStatus.ACCEPTED)
+  @RateLimit({
+    limit: 10,
+    ttlSeconds: 60,
+    keyPrefix: 'resume-analysis',
+    message:
+      'Too many resume analysis requests. Please wait before trying again.',
+  })
   async triggerAnalysis(
     @CurrentUser('userId') userId: string,
     @Param('resumeId') resumeId: string

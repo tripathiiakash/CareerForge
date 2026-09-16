@@ -42,6 +42,15 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
 
   // 3. CORS_ORIGIN
   const corsOrigin = env.CORS_ORIGIN?.trim() || 'http://localhost:5173';
+  if (
+    isProduction &&
+    corsOrigin
+      .split(',')
+      .map((s) => s.trim())
+      .includes('*')
+  ) {
+    errors.push('CORS_ORIGIN must not be wildcard (*) in production');
+  }
 
   // 4. DATABASE_URL
   const databaseUrl = env.DATABASE_URL?.trim();
@@ -114,6 +123,29 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     }
   }
 
+  // 10. Rate Limiting Configuration
+  const rateLimitEnabled = env.RATE_LIMIT_ENABLED
+    ? env.RATE_LIMIT_ENABLED.trim().toLowerCase() !== 'false'
+    : true;
+
+  const parseOptionalInt = (
+    val: string | undefined,
+    defaultVal: number
+  ): number => {
+    if (!val) return defaultVal;
+    const parsed = parseInt(val.trim(), 10);
+    return Number.isNaN(parsed) || parsed < 1 ? defaultVal : parsed;
+  };
+
+  const rateLimitAuthMax = parseOptionalInt(env.RATE_LIMIT_AUTH_MAX, 10);
+  const rateLimitAiMax = parseOptionalInt(env.RATE_LIMIT_AI_MAX, 10);
+  const rateLimitPublicMax = parseOptionalInt(env.RATE_LIMIT_PUBLIC_MAX, 60);
+  const rateLimitGlobalMax = parseOptionalInt(env.RATE_LIMIT_GLOBAL_MAX, 120);
+  const rateLimitWindowSeconds = parseOptionalInt(
+    env.RATE_LIMIT_WINDOW_SECONDS,
+    60
+  );
+
   if (errors.length > 0) {
     throw new ConfigValidationError(errors);
   }
@@ -131,5 +163,11 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     emailProvider,
     resendApiKey,
     emailFrom,
+    rateLimitEnabled,
+    rateLimitAuthMax,
+    rateLimitAiMax,
+    rateLimitPublicMax,
+    rateLimitGlobalMax,
+    rateLimitWindowSeconds,
   };
 }

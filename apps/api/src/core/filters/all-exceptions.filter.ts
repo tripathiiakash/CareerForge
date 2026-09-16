@@ -82,7 +82,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
       ) {
         status = HttpStatus.PAYLOAD_TOO_LARGE;
         code = 'VALIDATION_ERROR';
-        message = 'File exceeds 5MB size limit';
+        if (
+          message === 'File too large' ||
+          (request.url && request.url.includes('upload'))
+        ) {
+          message = 'File exceeds 5MB size limit';
+        } else {
+          message = 'Request payload exceeds size limit';
+        }
       }
     } else if (
       exception instanceof Error &&
@@ -102,6 +109,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
         code = 'VALIDATION_ERROR';
         message = exception.message || 'File upload validation failed';
       }
+    } else if (
+      exception instanceof Error &&
+      ((exception as unknown as Record<string, unknown>).status === 413 ||
+        (exception as unknown as Record<string, unknown>).statusCode === 413 ||
+        (exception as unknown as Record<string, unknown>).type ===
+          'entity.too.large')
+    ) {
+      status = HttpStatus.PAYLOAD_TOO_LARGE;
+      code = 'VALIDATION_ERROR';
+      message = 'Request payload exceeds size limit';
     } else if (exception instanceof Error) {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
       code = 'INTERNAL_ERROR';

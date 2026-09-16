@@ -13,4 +13,10 @@ export interface AppConfig {
   readonly emailProvider?: string;
   readonly resendApiKey?: string;
   readonly emailFrom?: string;
+  readonly rateLimitEnabled?: boolean;
+  readonly rateLimitAuthMax?: number;
+  readonly rateLimitAiMax?: number;
+  readonly rateLimitPublicMax?: number;
+  readonly rateLimitGlobalMax?: number;
+  readonly rateLimitWindowSeconds?: number;
 }

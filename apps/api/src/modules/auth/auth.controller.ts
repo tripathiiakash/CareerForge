@@ -7,6 +7,7 @@ import {
   UsePipes,
 } from '@nestjs/common';
 import { loginSchema, registerSchema } from '@careerforge/validation';
+import { RateLimit } from '../../core/rate-limit/rate-limit.decorator';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { AuthService } from './auth.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
@@ -23,6 +24,12 @@ export class AuthController {
    */
   @Post('register')
   @HttpCode(HttpStatus.CREATED)
+  @RateLimit({
+    limit: 10,
+    ttlSeconds: 60,
+    keyPrefix: 'auth',
+    message: 'Too many registration attempts. Please try again later.',
+  })
   @UsePipes(new ZodValidationPipe(registerSchema))
   async register(@Body() dto: RegisterDto): Promise<AuthResponseDto> {
     const data = await this.authService.register(dto);
@@ -38,6 +45,12 @@ export class AuthController {
    */
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @RateLimit({
+    limit: 10,
+    ttlSeconds: 60,
+    keyPrefix: 'auth',
+    message: 'Too many login attempts. Please try again later.',
+  })
   @UsePipes(new ZodValidationPipe(loginSchema))
   async login(@Body() dto: LoginDto): Promise<AuthResponseDto> {
     const data = await this.authService.login(dto);

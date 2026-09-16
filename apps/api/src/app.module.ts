@@ -1,7 +1,9 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { ConfigModule } from './core/config/config.module';
+import { SecurityHeadersMiddleware } from './core/middleware/security-headers.middleware';
 import { QueueModule } from './core/queue/queue.module';
+import { RateLimitModule } from './core/rate-limit/rate-limit.module';
 import { ApplicationModule } from './modules/application/application.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -15,15 +17,15 @@ import { PrismaModule } from './prisma/prisma.module';
 
 /**
  * Root application module.
- * ConfigModule and PrismaModule are registered globally here so all domain
- * feature modules (Auth, Profiles, Jobs, Applications, AI, Resumes, Admin) can inject ConfigService
- * and PrismaService directly.
+ * ConfigModule, PrismaModule, and RateLimitModule are registered globally here so all domain
+ * feature modules can inject them directly.
  */
 @Module({
   imports: [
     ConfigModule,
     PrismaModule,
     QueueModule,
+    RateLimitModule,
     NotificationModule,
     AuthModule,
     StudentModule,
@@ -37,4 +39,8 @@ import { PrismaModule } from './prisma/prisma.module';
   controllers: [AppController],
   providers: [],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(SecurityHeadersMiddleware).forRoutes('*');
+  }
+}

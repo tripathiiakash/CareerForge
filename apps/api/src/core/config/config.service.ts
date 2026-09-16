@@ -76,6 +76,30 @@ export class ConfigService {
     );
   }
 
+  get rateLimitEnabled(): boolean {
+    return this.config.rateLimitEnabled ?? true;
+  }
+
+  get rateLimitAuthMax(): number {
+    return this.config.rateLimitAuthMax ?? 10;
+  }
+
+  get rateLimitAiMax(): number {
+    return this.config.rateLimitAiMax ?? 10;
+  }
+
+  get rateLimitPublicMax(): number {
+    return this.config.rateLimitPublicMax ?? 60;
+  }
+
+  get rateLimitGlobalMax(): number {
+    return this.config.rateLimitGlobalMax ?? 120;
+  }
+
+  get rateLimitWindowSeconds(): number {
+    return this.config.rateLimitWindowSeconds ?? 60;
+  }
+
   get<K extends keyof AppConfig>(key: K): AppConfig[K] {
     return this.config[key];
   }
