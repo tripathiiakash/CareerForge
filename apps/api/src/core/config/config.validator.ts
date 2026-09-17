@@ -146,6 +146,24 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     60
   );
 
+  // 11. Trust Proxy Configuration
+  let trustProxy: boolean | number | string = isProduction ? 1 : false;
+  if (env.TRUST_PROXY !== undefined && env.TRUST_PROXY.trim().length > 0) {
+    const rawTrustProxy = env.TRUST_PROXY.trim().toLowerCase();
+    if (rawTrustProxy === 'true') {
+      trustProxy = true;
+    } else if (rawTrustProxy === 'false') {
+      trustProxy = false;
+    } else {
+      const parsedNum = parseInt(rawTrustProxy, 10);
+      if (!Number.isNaN(parsedNum) && parsedNum >= 0) {
+        trustProxy = parsedNum;
+      } else {
+        trustProxy = env.TRUST_PROXY.trim();
+      }
+    }
+  }
+
   if (errors.length > 0) {
     throw new ConfigValidationError(errors);
   }
@@ -169,5 +187,6 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     rateLimitPublicMax,
     rateLimitGlobalMax,
     rateLimitWindowSeconds,
+    trustProxy,
   };
 }

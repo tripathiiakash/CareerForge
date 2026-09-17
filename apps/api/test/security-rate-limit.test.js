@@ -1,6 +1,6 @@
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { HttpStatus, HttpException } = require('@nestjs/common');
+const { HttpStatus, HttpException, UnprocessableEntityException } = require('@nestjs/common');
 const { RateLimitStore } = require('../dist/core/rate-limit/rate-limit.store');
 const { RateLimitGuard } = require('../dist/core/rate-limit/rate-limit.guard');
 const {
@@ -244,17 +244,77 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
       assert.equal(await guard.canActivate(context), true);
     });
 
-    it('should safely extract first IP from comma-separated X-Forwarded-For', async () => {
+    it('should derive IP from direct request without trusting arbitrary X-Forwarded-For header', async () => {
       const { context, reflector } = createMockContext({
-        forwardedFor: '203.0.113.195, 70.41.3.18, 150.172.238.178',
+        ip: '198.51.100.50',
+        forwardedFor: '203.0.113.195',
         handlerOptions: { limit: 1, keyPrefix: 'public' },
       });
 
       const guard = new RateLimitGuard(store, reflector, mockConfig);
       await guard.canActivate(context);
 
-      // Verify the key was stored with the true client IP
+      // Key must use real connection IP (198.51.100.50), NOT arbitrary client X-Forwarded-For (203.0.113.195)
+      assert.ok(store.records.has('public:ip:198.51.100.50'));
+      assert.ok(!store.records.has('public:ip:203.0.113.195'));
+    });
+
+    it('should correctly key off trusted reverse-proxy resolved client IP', async () => {
+      const { context, reflector } = createMockContext({
+        ip: '203.0.113.195', // Express has resolved this as trusted client IP
+        handlerOptions: { limit: 1, keyPrefix: 'public' },
+      });
+
+      const guard = new RateLimitGuard(store, reflector, mockConfig);
+      await guard.canActivate(context);
+
       assert.ok(store.records.has('public:ip:203.0.113.195'));
+    });
+
+    it('should prevent IP spoofing and enforce rate limit quota against real client IP', async () => {
+      // Client at 198.51.100.1 attempts to bypass rate limit by sending distinct X-Forwarded-For headers
+      const { context: req1, reflector: ref1 } = createMockContext({
+        ip: '198.51.100.1',
+        forwardedFor: '10.0.0.1',
+        handlerOptions: { limit: 2, keyPrefix: 'public' },
+      });
+      const { context: req2 } = createMockContext({
+        ip: '198.51.100.1',
+        forwardedFor: '10.0.0.2',
+        handlerOptions: { limit: 2, keyPrefix: 'public' },
+      });
+      const { context: req3 } = createMockContext({
+        ip: '198.51.100.1',
+        forwardedFor: '10.0.0.3',
+        handlerOptions: { limit: 2, keyPrefix: 'public' },
+      });
+
+      const guard = new RateLimitGuard(store, ref1, mockConfig);
+      await guard.canActivate(req1);
+      await guard.canActivate(req2);
+
+      // Third request from same physical IP must be blocked despite sending new X-Forwarded-For
+      await assert.rejects(
+        () => guard.canActivate(req3),
+        (err) => {
+          assert.equal(err.getStatus(), HttpStatus.TOO_MANY_REQUESTS);
+          return true;
+        }
+      );
+    });
+
+    it('should prioritize authenticated user identity over client IP for rate limit keying', async () => {
+      const { context, reflector } = createMockContext({
+        user: { userId: 'student-auth-user-42' },
+        ip: '198.51.100.99',
+        handlerOptions: { limit: 5, keyPrefix: 'auth_test' },
+      });
+
+      const guard = new RateLimitGuard(store, reflector, mockConfig);
+      await guard.canActivate(context);
+
+      assert.ok(store.records.has('auth_test:user:student-auth-user-42'));
+      assert.ok(!store.records.has('auth_test:ip:198.51.100.99'));
     });
 
     it('should enforce dedicated application rate limit (20 req / 60s per user)', async () => {
@@ -341,7 +401,7 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
 
       assert.equal(
         headers['Strict-Transport-Security'],
-        'max-age=31536000; includeSubDomains'
+        'max-age=31536000; includeSubDomains; preload'
       );
     });
   });
@@ -462,6 +522,26 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
         },
       });
     });
+
+    it('should map plain 422 UnprocessableEntity to UNPROCESSABLE_ENTITY code adhering to docs/API.md', () => {
+      const filter = new AllExceptionsFilter({ isProduction: true });
+      const { host, getStatusCode, getJsonPayload } = createMockFilterContext();
+
+      const exception = new UnprocessableEntityException(
+        'Failed to process uploaded resume text'
+      );
+
+      filter.catch(exception, host);
+
+      assert.equal(getStatusCode(), 422);
+      assert.deepEqual(getJsonPayload(), {
+        success: false,
+        error: {
+          code: 'UNPROCESSABLE_ENTITY',
+          message: 'Failed to process uploaded resume text',
+        },
+      });
+    });
   });
 
   describe('5. CORS Hardening & Environment Validation', () => {
@@ -540,6 +620,50 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
       assert.equal(config.rateLimitPublicMax, 50);
       assert.equal(config.rateLimitGlobalMax, 200);
       assert.equal(config.rateLimitWindowSeconds, 30);
+    });
+
+    it('should configure trustProxy with production-safe defaults and support overrides', () => {
+      // Development / Test default: false
+      const devConfig = validateEnvironment({
+        ...validBaseEnv,
+        NODE_ENV: 'development',
+      });
+      assert.equal(devConfig.trustProxy, false);
+
+      // Production default: 1 (single-hop reverse proxy)
+      const prodConfig = validateEnvironment({
+        ...validBaseEnv,
+        NODE_ENV: 'production',
+        JWT_SECRET: 'a'.repeat(32),
+      });
+      assert.equal(prodConfig.trustProxy, 1);
+
+      // Explicit overrides
+      const overrideTrue = validateEnvironment({
+        ...validBaseEnv,
+        TRUST_PROXY: 'true',
+      });
+      assert.equal(overrideTrue.trustProxy, true);
+
+      const overrideFalse = validateEnvironment({
+        ...validBaseEnv,
+        NODE_ENV: 'production',
+        JWT_SECRET: 'a'.repeat(32),
+        TRUST_PROXY: 'false',
+      });
+      assert.equal(overrideFalse.trustProxy, false);
+
+      const overrideHops = validateEnvironment({
+        ...validBaseEnv,
+        TRUST_PROXY: '2',
+      });
+      assert.equal(overrideHops.trustProxy, 2);
+
+      const overrideSubnet = validateEnvironment({
+        ...validBaseEnv,
+        TRUST_PROXY: 'loopback, 10.0.0.0/8',
+      });
+      assert.equal(overrideSubnet.trustProxy, 'loopback, 10.0.0.0/8');
     });
   });
 });

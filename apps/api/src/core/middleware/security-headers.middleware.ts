@@ -40,7 +40,7 @@ export class SecurityHeadersMiddleware implements NestMiddleware {
     if (this.configService.isProduction) {
       res.setHeader(
         'Strict-Transport-Security',
-        'max-age=31536000; includeSubDomains'
+        'max-age=31536000; includeSubDomains; preload'
       );
     }
 

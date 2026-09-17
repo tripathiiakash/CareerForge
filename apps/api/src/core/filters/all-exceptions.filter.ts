@@ -173,6 +173,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return 'CONFLICT';
       case HttpStatus.PAYLOAD_TOO_LARGE:
         return 'VALIDATION_ERROR';
+      case HttpStatus.UNPROCESSABLE_ENTITY:
+        return 'UNPROCESSABLE_ENTITY';
       case HttpStatus.TOO_MANY_REQUESTS:
         return 'RATE_LIMITED';
       case HttpStatus.INTERNAL_SERVER_ERROR:

@@ -88,14 +88,11 @@ export class RateLimitGuard implements CanActivate {
   }
 
   /**
-   * Safely extracts client IP address, checking X-Forwarded-For if available.
+   * Resolves client IP address through Express trusted reverse proxy configuration,
+   * falling back to the direct socket address or localhost fallback.
+   * Arbitrary client-supplied X-Forwarded-For headers are never blindly parsed.
    */
   private getClientIp(request: Request): string {
-    const forwarded = request.headers['x-forwarded-for'];
-    if (typeof forwarded === 'string' && forwarded.trim().length > 0) {
-      const firstIp = forwarded.split(',')[0].trim();
-      if (firstIp) return firstIp;
-    }
-    return request.ip || request.socket.remoteAddress || '127.0.0.1';
+    return request.ip || request.socket?.remoteAddress || '127.0.0.1';
   }
 }

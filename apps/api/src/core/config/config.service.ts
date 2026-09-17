@@ -100,6 +100,10 @@ export class ConfigService {
     return this.config.rateLimitWindowSeconds ?? 60;
   }
 
+  get trustProxy(): boolean | number | string {
+    return this.config.trustProxy ?? (this.isProduction ? 1 : false);
+  }
+
   get<K extends keyof AppConfig>(key: K): AppConfig[K] {
     return this.config[key];
   }

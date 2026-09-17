@@ -19,4 +19,5 @@ export interface AppConfig {
   readonly rateLimitPublicMax?: number;
   readonly rateLimitGlobalMax?: number;
   readonly rateLimitWindowSeconds?: number;
+  readonly trustProxy?: boolean | number | string;
 }

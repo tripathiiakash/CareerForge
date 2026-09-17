@@ -28,9 +28,7 @@ import { ApplyJobDto } from './dto/apply-job.dto';
 import { ListJobApplicantsQueryDto } from './dto/list-job-applicants-query.dto';
 import { ListStudentApplicationsQueryDto } from './dto/list-student-applications-query.dto';
 import { UpdateApplicationStatusDto } from './dto/update-application-status.dto';
-
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { UUID_REGEX } from '../../core/utils/uuid.util';
 
 @Injectable()
 export class ApplicationService {

@@ -16,10 +16,13 @@ async function bootstrap() {
   // 2. Retrieve validated configuration
   const config = app.get(ConfigService);
 
-  // 3. Security defaults: disable technology fingerprinting & enforce body limits
+  // 3. Security defaults: disable technology fingerprinting, configure trusted reverse proxies & enforce body limits
   const expressApp = app.getHttpAdapter().getInstance() as Express;
   if (typeof expressApp?.disable === 'function') {
     expressApp.disable('x-powered-by');
+  }
+  if (typeof expressApp?.set === 'function') {
+    expressApp.set('trust proxy', config.trustProxy);
   }
   expressApp.use(express.json({ limit: '1mb' }));
   expressApp.use(express.urlencoded({ extended: true, limit: '1mb' }));

@@ -23,9 +23,7 @@ import { ListJobsQueryDto } from './dto/list-jobs-query.dto';
 import { ListPendingJobsQueryDto } from './dto/list-pending-jobs-query.dto';
 import { ModerateJobStatusDto } from './dto/moderate-job-status.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
-
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+import { UUID_REGEX } from '../../core/utils/uuid.util';
 
 @Injectable()
 export class JobService {
@@ -219,22 +217,16 @@ export class JobService {
       });
     }
 
-    if (this.prisma.$transaction) {
-      await this.prisma.$transaction(async (tx) => {
-        if (tx.application) {
-          await tx.application.deleteMany({
-            where: { job_id: jobId },
-          });
-        }
-        await tx.job.delete({
-          where: { id: jobId },
+    await this.prisma.$transaction(async (tx) => {
+      if (tx.application) {
+        await tx.application.deleteMany({
+          where: { job_id: jobId },
         });
-      });
-    } else {
-      await this.prisma.job.delete({
+      }
+      await tx.job.delete({
         where: { id: jobId },
       });
-    }
+    });
 
     return {
       message: 'Job deleted successfully.',

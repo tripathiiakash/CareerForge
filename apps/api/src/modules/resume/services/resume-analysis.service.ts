@@ -16,9 +16,8 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { StudentService } from '../../student/student.service';
 import { GetAnalysisData } from '../dto/get-analysis-response.dto';
 import { TriggerAnalysisData } from '../dto/trigger-analysis-response.dto';
+import { UUID_REGEX } from '../../../core/utils/uuid.util';
 
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const COOLDOWN_MS = 5 * 60 * 1000; // 5-minute cooldown per docs/API.md §7.1
 
 @Injectable()

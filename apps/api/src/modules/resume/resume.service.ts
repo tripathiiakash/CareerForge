@@ -19,6 +19,7 @@ import { ResumeListItemDto } from './dto/resume-response.dto';
 import { UploadResumeData } from './dto/upload-resume-response.dto';
 import { UploadedFile } from './interfaces/uploaded-file.interface';
 import { ResumeStorageService } from './storage/resume-storage.service';
+import { isValidUuid } from '../../core/utils/uuid.util';
 
 const PDF_MAGIC_BYTES = Buffer.from('%PDF-'); // 0x25 0x50 0x44 0x46 0x2D
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB (5,242,880 bytes)
@@ -201,10 +202,7 @@ export class ResumeService {
     userRole: UserRole,
     identifier: string
   ): Promise<{ buffer: Buffer; fileName: string }> {
-    const isUuid =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        identifier
-      );
+    const isUuid = isValidUuid(identifier);
 
     const resume = await this.prisma.resume.findFirst({
       where: isUuid
