@@ -181,6 +181,12 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     }
   }
 
+  // 13. Application Limits
+  const maxApplicationsPerStudent = parseOptionalInt(
+    env.MAX_APPLICATIONS_PER_STUDENT || env.STUDENT_APPLICATION_LIMIT,
+    100
+  );
+
   if (errors.length > 0) {
     throw new ConfigValidationError(errors);
   }
@@ -208,5 +214,6 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     authCookieName,
     authCookieMaxAgeSec,
     authCookieSameSite,
+    maxApplicationsPerStudent,
   };
 }

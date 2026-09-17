@@ -403,3 +403,13 @@ export const interviewPrepOutputSchema = z.object({
 });
 
 export type InterviewPrepOutput = z.infer<typeof interviewPrepOutputSchema>;
+
+export const updateUserBanSchema = z
+  .object({
+    is_banned: z.boolean({
+      message: 'is_banned must be a boolean (true or false)',
+    }),
+  })
+  .strict();
+
+export type UpdateUserBanInput = z.infer<typeof updateUserBanSchema>;

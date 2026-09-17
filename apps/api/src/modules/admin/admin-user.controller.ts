@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   Get,
@@ -7,10 +8,11 @@ import {
   HttpStatus,
   Param,
   ParseUUIDPipe,
+  Patch,
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { listUsersQuerySchema } from '@careerforge/validation';
+import { listUsersQuerySchema, updateUserBanSchema } from '@careerforge/validation';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../../core/decorators/current-user.decorator';
 import { Roles } from '../../core/decorators/roles.decorator';
@@ -24,6 +26,10 @@ import {
   ListUsersResponseDto,
 } from './dto/admin-user-response.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import {
+  UpdateUserBanDto,
+  UpdateUserBanResponseDto,
+} from './dto/update-user-ban.dto';
 
 @Controller('admin/users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -77,6 +83,40 @@ export class AdminUserController {
     return {
       success: true,
       message,
+    };
+  }
+
+  /**
+   * 9.5 Soft Ban / Unban User
+   * PATCH /api/v1/admin/users/:id/ban
+   */
+  @Patch(':id/ban')
+  @HttpCode(HttpStatus.OK)
+  async updateUserBan(
+    @Param(
+      'id',
+      new ParseUUIDPipe({
+        version: '4',
+        exceptionFactory: () =>
+          new BadRequestException({
+            code: 'VALIDATION_ERROR',
+            message: 'Invalid id format (must be a valid UUID)',
+          }),
+      })
+    )
+    id: string,
+    @Body(new ZodValidationPipe(updateUserBanSchema))
+    dto: UpdateUserBanDto,
+    @CurrentUser() adminUser: AuthenticatedUser
+  ): Promise<UpdateUserBanResponseDto> {
+    const data = await this.adminUserService.updateUserBan(
+      id,
+      dto.is_banned,
+      adminUser.userId
+    );
+    return {
+      success: true,
+      data,
     };
   }
 }

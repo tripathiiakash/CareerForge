@@ -611,7 +611,7 @@ Manages job postings.
 - `required_skills`: Required. Array of strings, minimum 1 item, maximum 20 items, each item max 50 characters.
 - `employment_type`: Required. Enum: `'INTERNSHIP'` or `'FULL_TIME'`.
 
-**Pre-conditions:** The recruiter must have a linked `company_id` in their profile. If no company is linked, return `400`.
+**Pre-conditions:** The recruiter must have a linked `company_id` in their profile. If no company is linked, return `400`. The recruiter account must be approved by an administrator (`is_approved = true`). If unapproved, return `403 FORBIDDEN`.
 
 **Request Body:**
 
@@ -643,7 +643,7 @@ Manages job postings.
 |--------|------|-----------|
 | 400 | `VALIDATION_ERROR` | Missing required fields, description too short, invalid employment type, recruiter has no linked company |
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
-| 403 | `FORBIDDEN` | Role is not `RECRUITER` |
+| 403 | `FORBIDDEN` | Role is not `RECRUITER`, or recruiter account is pending admin approval (`is_approved = false`) |
 
 **Database Entities:** `jobs`, `recruiters`
 
@@ -1136,6 +1136,7 @@ Connects students to jobs.
 - `jobId`: Required. Valid UUID path parameter. Job must exist and have `status = 'ACTIVE'`.
 - `resume_id`: Required in request body. Must be a valid UUID **owned by the requesting student**. The server must verify `resumes.student_id` matches the authenticated student's profile ID to prevent BOLA/IDOR attacks.
 - **Duplicate check:** The database enforces a unique constraint on `(job_id, student_id)`. If the student has already applied to this job, return `409 CONFLICT`.
+- **Global submission limit (BUS-01):** The server enforces a configurable maximum lifetime application limit per student (`MAX_APPLICATIONS_PER_STUDENT`, default `100`). If exceeded, return `400 VALIDATION_ERROR`.
 
 **Request Body:**
 
@@ -1163,7 +1164,7 @@ Connects students to jobs.
 
 | Status | Code | Condition |
 |--------|------|-----------|
-| 400 | `VALIDATION_ERROR` | Job is not in `ACTIVE` status (e.g., `PENDING`, `REJECTED`, or closed) |
+| 400 | `VALIDATION_ERROR` | Job is not in `ACTIVE` status (e.g., `PENDING`, `REJECTED`, or closed), or maximum student application limit reached |
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 403 | `FORBIDDEN` | `resume_id` does not belong to the authenticated student |
 | 404 | `NOT_FOUND` | Job or resume does not exist |
@@ -1518,7 +1519,59 @@ Manages platform moderation, user management, and overview metrics. All admin en
 
 ---
 
-### 9.5 Get Platform Metrics
+### 9.5 Soft Ban / Unban User
+
+**Method:** `PATCH`
+
+**Endpoint:** `/api/v1/admin/users/:id/ban`
+
+**Authorization Requirements:** Bearer Token, Role: `ADMIN`
+
+**Purpose:** Suspends or unsuspends a user account without deleting their relational data. Banned users are rejected from authentication (`POST /auth/login`) and blocked from accessing protected endpoints (`JwtAuthGuard`).
+
+**Validation Rules:**
+
+- `id`: Required. Valid UUID path parameter.
+- `is_banned`: Required boolean in request body (`true` to ban, `false` to unban).
+- Admin cannot ban their own account.
+- Admin accounts cannot be banned.
+
+**Request Body:**
+
+```json
+{
+  "is_banned": true
+}
+```
+
+**Response Body:** (200 OK)
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "email": "student@university.edu",
+    "is_banned": true,
+    "message": "User has been banned."
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| 400 | `VALIDATION_ERROR` | Admin attempted to ban their own account, or target user is an administrator |
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Role is not `ADMIN` |
+| 404 | `NOT_FOUND` | User does not exist |
+
+**Database Entities:** `users`
+
+---
+
+### 9.6 Get Platform Metrics
 
 **Method:** `GET`
 

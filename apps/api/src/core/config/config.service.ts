@@ -116,6 +116,10 @@ export class ConfigService {
     return this.config.authCookieSameSite ?? 'lax';
   }
 
+  get maxApplicationsPerStudent(): number {
+    return this.config.maxApplicationsPerStudent ?? 100;
+  }
+
   get<K extends keyof AppConfig>(key: K): AppConfig[K] {
     return this.config[key];
   }

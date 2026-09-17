@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { Request } from 'express';
 import { TokenService } from '../../modules/auth/token.service';
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
 import { ConfigService } from '../config/config.service';
+import { PrismaService } from '../../prisma/prisma.service';
 import { parseCookieHeader } from '../utils/cookie.util';
 
 @Injectable()
@@ -16,7 +18,8 @@ export class JwtAuthGuard implements CanActivate {
   constructor(
     private readonly tokenService: TokenService,
     private readonly reflector: Reflector,
-    private readonly configService?: ConfigService
+    private readonly configService?: ConfigService,
+    private readonly prisma?: PrismaService
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -54,6 +57,21 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     const payload = await this.tokenService.verifyToken(token);
+
+    // If database access is available, verify the user has not been banned
+    if (this.prisma && typeof this.prisma.user?.findUnique === 'function') {
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+        select: { is_banned: true },
+      });
+
+      if (user?.is_banned) {
+        throw new ForbiddenException({
+          code: 'FORBIDDEN',
+          message: 'Your account has been suspended. Contact support.',
+        });
+      }
+    }
 
     (request as unknown as { user?: unknown }).user = {
       userId: payload.sub,

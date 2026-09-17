@@ -238,4 +238,70 @@ export class AdminUserService {
       message: 'User and associated data deleted.',
     };
   }
+
+  /**
+   * 9.5 Soft Ban / Unban User
+   * PATCH /api/v1/admin/users/:id/ban
+   * - Toggles soft-ban status (is_banned: true/false).
+   * - Prohibits self-banning by the authenticated administrator.
+   * - Prohibits banning admin accounts to protect administrative controls.
+   */
+  async updateUserBan(
+    id: string,
+    isBanned: boolean,
+    adminUserId: string
+  ): Promise<{
+    id: string;
+    email: string;
+    is_banned: boolean;
+    message: string;
+  }> {
+    if (id === adminUserId) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Admins cannot ban their own account',
+      });
+    }
+
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        is_banned: true,
+      },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'User does not exist',
+      });
+    }
+
+    if (targetUser.role === UserRole.ADMIN) {
+      throw new BadRequestException({
+        code: 'VALIDATION_ERROR',
+        message: 'Admin accounts cannot be banned',
+      });
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { is_banned: isBanned },
+      select: {
+        id: true,
+        email: true,
+        is_banned: true,
+      },
+    });
+
+    return {
+      id: updated.id,
+      email: updated.email,
+      is_banned: updated.is_banned,
+      message: isBanned ? 'User has been banned.' : 'User has been unbanned.',
+    };
+  }
 }

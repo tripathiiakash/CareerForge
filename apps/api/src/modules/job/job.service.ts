@@ -58,6 +58,13 @@ export class JobService {
       });
     }
 
+    if (!recruiter.is_approved) {
+      throw new ForbiddenException({
+        code: 'FORBIDDEN',
+        message: 'Recruiter account is pending admin approval',
+      });
+    }
+
     if (
       !recruiter.company_id ||
       !recruiter.company ||

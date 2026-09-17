@@ -23,4 +23,5 @@ export interface AppConfig {
   readonly authCookieName?: string;
   readonly authCookieMaxAgeSec?: number;
   readonly authCookieSameSite?: 'lax' | 'strict' | 'none';
+  readonly maxApplicationsPerStudent?: number;
 }
