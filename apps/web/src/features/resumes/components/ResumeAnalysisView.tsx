@@ -197,9 +197,27 @@ export const ResumeAnalysisView: React.FC<ResumeAnalysisViewProps> = ({
         </div>
 
         {actionError && (
-          <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive">
-            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-            <span>{actionError}</span>
+          <div className="space-y-2">
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>{actionError}</span>
+            </div>
+            {(actionError.toLowerCase().includes('image scan') ||
+              actionError.toLowerCase().includes('text')) && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-300 space-y-1">
+                <p className="font-semibold text-amber-200">
+                  Tip: Upload a text-based PDF
+                </p>
+                <p className="text-amber-300/80 leading-relaxed">
+                  CareerForge requires PDF resumes with selectable text. If
+                  using Google Docs or Microsoft Word, please export via{' '}
+                  <strong className="text-amber-200">
+                    File &gt; Download &gt; PDF Document (.pdf)
+                  </strong>{' '}
+                  rather than "Print to PDF" or scanned images.
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -277,6 +295,24 @@ export const ResumeAnalysisView: React.FC<ResumeAnalysisViewProps> = ({
         {actionError && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
             {actionError}
+          </div>
+        )}
+
+        {(analysisData.error_message?.toLowerCase().includes('image scan') ||
+          analysisData.error_message?.toLowerCase().includes('text') ||
+          actionError?.toLowerCase().includes('image scan')) && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-300 space-y-1">
+            <p className="font-semibold text-amber-200">
+              Tip: Upload a text-based PDF
+            </p>
+            <p className="text-amber-300/80 leading-relaxed">
+              CareerForge requires PDF resumes with selectable text. If using
+              Google Docs or Microsoft Word, please export via{' '}
+              <strong className="text-amber-200">
+                File &gt; Download &gt; PDF Document (.pdf)
+              </strong>{' '}
+              rather than "Print to PDF" or scanned images.
+            </p>
           </div>
         )}
       </div>

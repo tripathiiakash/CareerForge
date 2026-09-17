@@ -1,4 +1,10 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import { AnalysisStatus } from '@prisma/client';
 import {
   JobEnvelope,
   QUEUE_NAMES,
@@ -90,10 +96,37 @@ export class ResumeExtractionWorker implements OnModuleInit {
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
+
+      // Handle non-retriable deterministic parsing failures (empty/scanned content, invalid format)
+      if (error instanceof UnprocessableEntityException) {
+        const safeErrorMessage =
+          'Failed to parse resume text. Please ensure the PDF is not password-protected or an image scan.';
+
+        this.logger.warn(
+          `Non-retriable extraction failure for resume ${resumeId}: ${errorMessage}. Recording FAILED state in ai_analyses.`
+        );
+
+        await this.prisma.aiAnalysis.upsert({
+          where: { resume_id: resumeId },
+          create: {
+            resume_id: resumeId,
+            status: AnalysisStatus.FAILED,
+            error_message: safeErrorMessage,
+          },
+          update: {
+            status: AnalysisStatus.FAILED,
+            error_message: safeErrorMessage,
+          },
+        });
+
+        // Do not rethrow; non-retriable errors should not waste pg-boss retry budget
+        return;
+      }
+
       this.logger.error(
-        `Failed to process text extraction for resume ${resumeId}: ${errorMessage}`
+        `Transient failure processing text extraction for resume ${resumeId}: ${errorMessage}`
       );
-      // Rethrow to allow pg-boss to handle retries / backoff
+      // Rethrow to allow pg-boss to handle retries / backoff for transient infrastructure errors
       throw error;
     }
   }

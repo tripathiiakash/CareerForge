@@ -103,6 +103,29 @@ describe('ResumeAnalysisService Test Suite', () => {
       );
     });
 
+    it('should reject with 422 UNPROCESSABLE_ENTITY if text extraction failed with FAILED status', async () => {
+      mockPrisma.resume.findUnique = async () => ({
+        id: resumeId,
+        student_id: studentProfileId,
+        parsed_text: null,
+        ai_analysis: {
+          status: 'FAILED',
+          error_message:
+            'Failed to parse resume text. Please ensure the PDF is not password-protected or an image scan.',
+        },
+      });
+
+      await assert.rejects(
+        () => service.triggerAnalysis(validStudentUserId, resumeId),
+        (err) => {
+          assert.equal(err.status, 422);
+          assert.equal(err.response.code, 'UNPROCESSABLE_ENTITY');
+          assert.match(err.response.message, /image scan/);
+          return true;
+        }
+      );
+    });
+
     it('should reject with 429 TOO_MANY_REQUESTS if analysis is currently PROCESSING (concurrency lock)', async () => {
       mockPrisma.resume.findUnique = async () => ({
         id: resumeId,

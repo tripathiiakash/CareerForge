@@ -6,6 +6,7 @@ import {
   Sparkles,
   Clock,
   CheckCircle2,
+  AlertTriangle,
   ChevronDown,
   ChevronUp,
   Loader2,
@@ -14,6 +15,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { useResumeAnalysis } from '../hooks';
 import { StudentResumeItem } from '../types';
 import {
   formatResumeDate,
@@ -33,6 +35,10 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({
 }) => {
   const { toast } = useToast();
   const [isOpening, setIsOpening] = useState(false);
+  const { data: analysisData } = useResumeAnalysis(
+    resume.id,
+    resume.has_analysis
+  );
   const fileName = getResumeFileName(resume.file_url);
   const formattedDate = formatResumeDate(resume.created_at);
 
@@ -122,19 +128,41 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({
                 </span>
 
                 {resume.has_analysis ? (
-                  <button
-                    type="button"
-                    onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
-                    className="flex items-center gap-1 text-purple-400 hover:text-purple-300 font-medium transition-colors cursor-pointer"
-                    title="Click to view AI Analysis"
-                  >
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span>AI Analysis Ready</span>
-                  </button>
+                  analysisData?.status === 'FAILED' ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+                      className="flex items-center gap-1 text-rose-400 hover:text-rose-300 font-medium transition-colors cursor-pointer"
+                      title="Click to view extraction/analysis error details"
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
+                      <span>Analysis Failed</span>
+                    </button>
+                  ) : analysisData?.status === 'PROCESSING' ? (
+                    <button
+                      type="button"
+                      onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+                      className="flex items-center gap-1 text-purple-400 hover:text-purple-300 font-medium transition-colors cursor-pointer"
+                      title="Click to view analysis progress"
+                    >
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-purple-400" />
+                      <span>Analyzing...</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
+                      className="flex items-center gap-1 text-purple-400 hover:text-purple-300 font-medium transition-colors cursor-pointer"
+                      title="Click to view AI Analysis"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>AI Analysis Ready</span>
+                    </button>
+                  )
                 ) : (
                   <span className="flex items-center gap-1 text-muted-foreground/80">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                    Parsed & Active
+                    Uploaded & Active
                   </span>
                 )}
               </div>
@@ -172,13 +200,25 @@ export const ResumeCard: React.FC<ResumeCardProps> = ({
               onClick={() => setIsAnalysisExpanded(!isAnalysisExpanded)}
               className={`text-xs h-8 gap-1.5 transition-all ${
                 isAnalysisExpanded
-                  ? 'bg-purple-500/10 border-purple-500/40 text-purple-300'
-                  : 'hover:border-purple-500/40 hover:text-purple-300'
+                  ? analysisData?.status === 'FAILED'
+                    ? 'bg-rose-500/10 border-rose-500/40 text-rose-300'
+                    : 'bg-purple-500/10 border-purple-500/40 text-purple-300'
+                  : analysisData?.status === 'FAILED'
+                    ? 'hover:border-rose-500/40 hover:text-rose-300'
+                    : 'hover:border-purple-500/40 hover:text-purple-300'
               }`}
             >
-              <Sparkles className="h-3.5 w-3.5 text-purple-400" />
+              {analysisData?.status === 'FAILED' ? (
+                <AlertTriangle className="h-3.5 w-3.5 text-rose-400" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5 text-purple-400" />
+              )}
               <span>
-                {resume.has_analysis ? 'AI Analysis' : 'Analyze with AI'}
+                {analysisData?.status === 'FAILED'
+                  ? 'View Error'
+                  : resume.has_analysis
+                    ? 'AI Analysis'
+                    : 'Analyze with AI'}
               </span>
               {isAnalysisExpanded ? (
                 <ChevronUp className="h-3.5 w-3.5" />

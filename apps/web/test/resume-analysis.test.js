@@ -446,6 +446,25 @@ describe('Student AI Resume Analysis Suite (Phase 5.9 - docs/API.md §7.1, §7.2
       assert.match(errorMessage, /extraction is still in progress/);
     });
 
+    it('should handle 422 Unprocessable Entity when text extraction has failed', () => {
+      const errorResponse = {
+        response: {
+          status: 422,
+          data: {
+            success: false,
+            error: {
+              code: 'UNPROCESSABLE_ENTITY',
+              message:
+                'Failed to parse resume text. Please ensure the PDF is not password-protected or an image scan.',
+            },
+          },
+        },
+      };
+
+      const errorMessage = errorResponse.response.data.error.message;
+      assert.match(errorMessage, /image scan/);
+    });
+
     it('should handle 429 Too Many Requests when within 5-minute cooldown', () => {
       const errorResponse = {
         response: {

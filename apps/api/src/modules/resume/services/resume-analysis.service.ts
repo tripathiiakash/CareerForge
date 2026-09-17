@@ -74,6 +74,18 @@ export class ResumeAnalysisService {
 
     // 4. Verify that parsed text is ready
     if (!resume.parsed_text || resume.parsed_text.trim().length === 0) {
+      if (resume.ai_analysis?.status === AnalysisStatus.FAILED) {
+        throw new HttpException(
+          {
+            code: 'UNPROCESSABLE_ENTITY',
+            message:
+              resume.ai_analysis.error_message ||
+              'Failed to parse resume text. Please ensure the PDF is not password-protected or an image scan.',
+          },
+          HttpStatus.UNPROCESSABLE_ENTITY
+        );
+      }
+
       throw new HttpException(
         {
           code: 'CONFLICT',
