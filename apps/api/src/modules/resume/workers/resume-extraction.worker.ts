@@ -73,10 +73,11 @@ export class ResumeExtractionWorker implements OnModuleInit {
         return;
       }
 
-      // 4. Retrieve PDF bytes via storage provider abstraction
+      // 4. Retrieve PDF bytes via storage provider abstraction using canonical file_key (ENG-01)
       const targetFileKey =
         fileKey ||
-        (resume.file_url ? resume.file_url.split('/').pop() || '' : '');
+        resume.file_key ||
+        this.extractLegacyFileKey(resume.file_url);
       const fileBuffer = await this.storageService.getFileBuffer(targetFileKey);
 
       // 5. Extract text via PdfParserService (handles page limits, null byte sanitization, empty text check)
@@ -128,6 +129,24 @@ export class ResumeExtractionWorker implements OnModuleInit {
       );
       // Rethrow to allow pg-boss to handle retries / backoff for transient infrastructure errors
       throw error;
+    }
+  }
+
+  /**
+   * Backward-compatibility fallback for legacy resumes created before Phase 6.3-B (ENG-01)
+   * where `file_key` was not explicitly passed or stored.
+   * Isolated strictly here to ensure no URL parsing leaks across the rest of the application.
+   */
+  private extractLegacyFileKey(fileUrl?: string | null): string {
+    if (!fileUrl) return '';
+    try {
+      const parsed = new URL(fileUrl, 'http://localhost');
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      return segments[segments.length - 1] || '';
+    } catch {
+      const cleanUrl = fileUrl.split('?')[0];
+      const segments = cleanUrl.split('/').filter(Boolean);
+      return segments[segments.length - 1] || '';
     }
   }
 }

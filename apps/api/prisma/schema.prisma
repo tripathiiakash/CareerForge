@@ -150,6 +150,7 @@ model Student {
 model Resume {
   id          String   @id @default(uuid()) @db.Uuid
   student_id  String   @db.Uuid
+  file_key    String?  @db.VarChar(255)
   file_url    String   @db.VarChar(512)
   parsed_text String?
   is_primary  Boolean  @default(true)
@@ -160,6 +161,7 @@ model Resume {
   ai_analysis AiAnalysis?
   applications Application[]
 
+  @@index([file_key])
   @@map("resumes")
 }
 

@@ -117,12 +117,14 @@ export class ResumeService {
         return await tx.resume.create({
           data: {
             student_id: student.id,
+            file_key: uploadResult.fileKey,
             file_url: uploadResult.fileUrl,
             parsed_text: null,
             is_primary: true,
           },
           select: {
             id: true,
+            file_key: true,
             file_url: true,
             is_primary: true,
           },
@@ -196,6 +198,7 @@ export class ResumeService {
   /**
    * 6.3 Retrieves a resume file buffer and metadata for authenticated viewing / download.
    * Enforces strict ownership checks (API.md & security boundary).
+   * Uses canonical storage file_key directly without fragile URL parsing (ENG-01).
    */
   async getResumeFile(
     userId: string,
@@ -207,7 +210,12 @@ export class ResumeService {
     const resume = await this.prisma.resume.findFirst({
       where: isUuid
         ? { id: identifier }
-        : { file_url: { contains: identifier } },
+        : {
+            OR: [
+              { file_key: identifier },
+              { file_url: { contains: identifier } },
+            ],
+          },
       include: {
         student: {
           select: {
@@ -257,9 +265,9 @@ export class ResumeService {
       }
     }
 
-    const fileKey = resume.file_url
-      ? resume.file_url.split('/').pop() || ''
-      : '';
+    // Canonical storage key lookup with isolated backward-compatibility fallback
+    const fileKey =
+      resume.file_key || this.extractLegacyFileKey(resume.file_url);
     if (!fileKey) {
       throw new NotFoundException({
         code: 'FILE_NOT_FOUND',
@@ -268,17 +276,34 @@ export class ResumeService {
     }
 
     const buffer = await this.resumeStorageService.getFileBuffer(fileKey);
-    const cleanKey = fileKey.split('?')[0];
     const isUuidKey =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/i.test(
-        cleanKey
+        fileKey
       );
     const humanFileName = `${resume.student.first_name || 'Student'}_${resume.student.last_name || 'Candidate'}_Resume.pdf`.replace(
       /\s+/g,
       '_'
     );
-    const fileName = isUuidKey ? humanFileName : cleanKey;
+    const fileName = isUuidKey ? humanFileName : fileKey;
 
     return { buffer, fileName };
+  }
+
+  /**
+   * Backward-compatibility fallback for legacy resumes created before Phase 6.3-B (ENG-01)
+   * where `file_key` was not explicitly stored.
+   * Isolated strictly here to ensure no URL parsing leaks across the rest of the application.
+   */
+  private extractLegacyFileKey(fileUrl?: string | null): string {
+    if (!fileUrl) return '';
+    try {
+      const parsed = new URL(fileUrl, 'http://localhost');
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      return segments[segments.length - 1] || '';
+    } catch {
+      const cleanUrl = fileUrl.split('?')[0];
+      const segments = cleanUrl.split('/').filter(Boolean);
+      return segments[segments.length - 1] || '';
+    }
   }
 }
