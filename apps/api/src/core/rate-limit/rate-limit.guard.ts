@@ -60,7 +60,7 @@ export class RateLimitGuard implements CanActivate {
     const rateLimitKey = `${prefix}:${identifier}`;
 
     // 5. Increment counter
-    const result = this.store.increment(rateLimitKey, limit, ttlSeconds);
+    const result = await this.store.increment(rateLimitKey, limit, ttlSeconds);
 
     // 6. Set standard X-RateLimit headers
     if (response && typeof response.setHeader === 'function') {

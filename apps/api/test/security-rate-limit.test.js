@@ -1,6 +1,7 @@
-const { describe, it, beforeEach } = require('node:test');
+const { describe, it, beforeEach, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { HttpStatus, HttpException, UnprocessableEntityException } = require('@nestjs/common');
+const { PrismaClient } = require('@prisma/client');
 const { RateLimitStore } = require('../dist/core/rate-limit/rate-limit.store');
 const { RateLimitGuard } = require('../dist/core/rate-limit/rate-limit.guard');
 const {
@@ -18,63 +19,182 @@ const {
   ConfigValidationError,
 } = require('../dist/core/config/config.validator');
 
+const prisma = new PrismaClient();
+
 describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
+  after(async () => {
+    try {
+      await prisma.$executeRaw`TRUNCATE TABLE "rate_limits"`;
+    } catch (_) {}
+    await prisma.$disconnect();
+  });
+
   describe('1. RateLimitStore', () => {
     let store;
 
-    beforeEach(() => {
-      store = new RateLimitStore();
+    beforeEach(async () => {
+      store = new RateLimitStore(prisma);
+      await store.clear();
     });
 
-    it('should track hits and calculate remaining quota correctly', () => {
-      const res1 = store.increment('test:client-1', 5, 60);
+    it('should track hits and calculate remaining quota correctly', async () => {
+      const res1 = await store.increment('test:client-1', 5, 60);
       assert.equal(res1.totalHits, 1);
       assert.equal(res1.remaining, 4);
       assert.equal(res1.isBlocked, false);
+      assert.ok(res1.resetAt > 0);
+      assert.ok(res1.retryAfterSeconds > 0);
 
-      const res2 = store.increment('test:client-1', 5, 60);
+      const res2 = await store.increment('test:client-1', 5, 60);
       assert.equal(res2.totalHits, 2);
       assert.equal(res2.remaining, 3);
       assert.equal(res2.isBlocked, false);
     });
 
-    it('should block requests when exceeding the specified limit', () => {
+    it('should block requests when exceeding the specified limit', async () => {
       for (let i = 1; i <= 3; i++) {
-        const res = store.increment('test:client-2', 3, 60);
+        const res = await store.increment('test:client-2', 3, 60);
         assert.equal(res.totalHits, i);
         assert.equal(res.isBlocked, false);
       }
 
       // 4th request exceeds limit of 3
-      const blockedRes = store.increment('test:client-2', 3, 60);
+      const blockedRes = await store.increment('test:client-2', 3, 60);
       assert.equal(blockedRes.totalHits, 4);
       assert.equal(blockedRes.remaining, 0);
       assert.equal(blockedRes.isBlocked, true);
       assert.ok(blockedRes.retryAfterSeconds > 0);
     });
 
-    it('should maintain independent counters for different keys', () => {
-      store.increment('auth:ip-1', 2, 60);
-      store.increment('auth:ip-1', 2, 60);
-      const blocked1 = store.increment('auth:ip-1', 2, 60);
+    it('should maintain independent counters for different keys', async () => {
+      await store.increment('auth:ip-1', 2, 60);
+      await store.increment('auth:ip-1', 2, 60);
+      const blocked1 = await store.increment('auth:ip-1', 2, 60);
       assert.equal(blocked1.isBlocked, true);
 
       // Different IP should still be allowed
-      const allowed2 = store.increment('auth:ip-2', 2, 60);
+      const allowed2 = await store.increment('auth:ip-2', 2, 60);
       assert.equal(allowed2.isBlocked, false);
       assert.equal(allowed2.totalHits, 1);
     });
 
-    it('should clear and reset counters on command', () => {
-      store.increment('key-1', 5, 60);
-      store.increment('key-2', 5, 60);
-      assert.equal(store.size(), 2);
+    it('should clear and reset counters on command', async () => {
+      await store.increment('key-1', 5, 60);
+      await store.increment('key-2', 5, 60);
+      assert.equal(await store.size(), 2);
 
-      store.reset('key-1');
-      assert.equal(store.size(), 1);
+      await store.reset('key-1');
+      assert.equal(await store.size(), 1);
 
-      store.clear();
-      assert.equal(store.size(), 0);
+      await store.clear();
+      assert.equal(await store.size(), 0);
+    });
+
+    it('should persist rate-limit state across multiple RateLimitStore instances (multi-instance)', async () => {
+      const storeA = new RateLimitStore(prisma);
+      const storeB = new RateLimitStore(prisma);
+
+      // Instance A receives first hit
+      const hit1 = await storeA.increment('cluster:shared-key', 5, 60);
+      assert.equal(hit1.totalHits, 1);
+      assert.equal(hit1.remaining, 4);
+
+      // Instance B receives second hit for same key
+      const hit2 = await storeB.increment('cluster:shared-key', 5, 60);
+      assert.equal(hit2.totalHits, 2);
+      assert.equal(hit2.remaining, 3);
+
+      // Verify row in database matches shared state
+      const record = await prisma.rateLimit.findUnique({
+        where: { key: 'cluster:shared-key' },
+      });
+      assert.equal(record.hits, 2);
+    });
+
+    it('should atomically handle high concurrency without lost updates (race condition test)', async () => {
+      const CONCURRENT_REQUESTS = 10;
+      const results = await Promise.all(
+        Array.from({ length: CONCURRENT_REQUESTS }, () =>
+          store.increment('concurrency:atomic-key', 15, 60)
+        )
+      );
+
+      // Verify all hit counters are distinct from 1 to 10
+      const hitNumbers = results.map((r) => r.totalHits).sort((a, b) => a - b);
+      assert.deepEqual(
+        hitNumbers,
+        Array.from({ length: CONCURRENT_REQUESTS }, (_, i) => i + 1)
+      );
+
+      // Verify record in PostgreSQL has exactly 10 hits
+      const record = await prisma.rateLimit.findUnique({
+        where: { key: 'concurrency:atomic-key' },
+      });
+      assert.equal(record.hits, 10);
+    });
+
+    it('should reset hits to 1 and start a new window when reset_at has expired', async () => {
+      // Record hit 1
+      await store.increment('expiry:test-key', 5, 60);
+
+      // Manually expire the bucket in PostgreSQL
+      const pastDate = new Date(Date.now() - 5000);
+      await prisma.rateLimit.update({
+        where: { key: 'expiry:test-key' },
+        data: { reset_at: pastDate },
+      });
+
+      // Next increment should detect reset_at <= now, reset counter to 1 and advance window
+      const resetRes = await store.increment('expiry:test-key', 5, 60);
+      assert.equal(resetRes.totalHits, 1);
+      assert.equal(resetRes.remaining, 4);
+      assert.equal(resetRes.isBlocked, false);
+      assert.ok(resetRes.resetAt > Math.floor(Date.now() / 1000));
+    });
+
+    it('should prune expired records and keep unexpired records with cleanupExpired()', async () => {
+      const now = new Date();
+      const past = new Date(now.getTime() - 60000);
+      const future = new Date(now.getTime() + 60000);
+
+      await prisma.rateLimit.createMany({
+        data: [
+          { key: 'cleanup:expired-1', hits: 5, reset_at: past },
+          { key: 'cleanup:expired-2', hits: 3, reset_at: past },
+          { key: 'cleanup:active-1', hits: 1, reset_at: future },
+        ],
+      });
+
+      const deletedCount = await store.cleanupExpired();
+      assert.equal(deletedCount, 2);
+
+      const remainingKeys = await prisma.rateLimit.findMany({
+        select: { key: true },
+      });
+      assert.equal(remainingKeys.length, 1);
+      assert.equal(remainingKeys[0].key, 'cleanup:active-1');
+    });
+
+    it('should fail closed and rethrow database errors when Prisma operation fails', async () => {
+      const brokenPrisma = {
+        $queryRaw: async () => {
+          throw new Error('Connection terminated unexpectedly');
+        },
+      };
+      const failingStore = new RateLimitStore(brokenPrisma);
+
+      await assert.rejects(
+        () => failingStore.increment('broken:db-key', 5, 60),
+        /Connection terminated unexpectedly/
+      );
+    });
+
+    it('should throw if instantiated without PrismaService when increment is called', async () => {
+      const storeWithoutPrisma = new RateLimitStore();
+      await assert.rejects(
+        () => storeWithoutPrisma.increment('test:no-db', 5, 60),
+        /PrismaService is required for persistent rate limiting/
+      );
     });
   });
 
@@ -82,8 +202,9 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
     let store;
     let mockConfig;
 
-    beforeEach(() => {
-      store = new RateLimitStore();
+    beforeEach(async () => {
+      store = new RateLimitStore(prisma);
+      await store.clear();
       mockConfig = {
         rateLimitEnabled: true,
         rateLimitGlobalMax: 120,
@@ -255,8 +376,14 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
       await guard.canActivate(context);
 
       // Key must use real connection IP (198.51.100.50), NOT arbitrary client X-Forwarded-For (203.0.113.195)
-      assert.ok(store.records.has('public:ip:198.51.100.50'));
-      assert.ok(!store.records.has('public:ip:203.0.113.195'));
+      const directRecord = await prisma.rateLimit.findUnique({
+        where: { key: 'public:ip:198.51.100.50' },
+      });
+      const spoofedRecord = await prisma.rateLimit.findUnique({
+        where: { key: 'public:ip:203.0.113.195' },
+      });
+      assert.ok(directRecord);
+      assert.equal(spoofedRecord, null);
     });
 
     it('should correctly key off trusted reverse-proxy resolved client IP', async () => {
@@ -268,7 +395,10 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
       const guard = new RateLimitGuard(store, reflector, mockConfig);
       await guard.canActivate(context);
 
-      assert.ok(store.records.has('public:ip:203.0.113.195'));
+      const trustedRecord = await prisma.rateLimit.findUnique({
+        where: { key: 'public:ip:203.0.113.195' },
+      });
+      assert.ok(trustedRecord);
     });
 
     it('should prevent IP spoofing and enforce rate limit quota against real client IP', async () => {
@@ -313,8 +443,14 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
       const guard = new RateLimitGuard(store, reflector, mockConfig);
       await guard.canActivate(context);
 
-      assert.ok(store.records.has('auth_test:user:student-auth-user-42'));
-      assert.ok(!store.records.has('auth_test:ip:198.51.100.99'));
+      const userRecord = await prisma.rateLimit.findUnique({
+        where: { key: 'auth_test:user:student-auth-user-42' },
+      });
+      const ipRecord = await prisma.rateLimit.findUnique({
+        where: { key: 'auth_test:ip:198.51.100.99' },
+      });
+      assert.ok(userRecord);
+      assert.equal(ipRecord, null);
     });
 
     it('should enforce dedicated application rate limit (20 req / 60s per user)', async () => {

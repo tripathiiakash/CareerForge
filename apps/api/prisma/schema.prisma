@@ -253,3 +253,19 @@ model InterviewPrepLog {
   @@index([student_id, created_at])
   @@map("interview_prep_logs")
 }
+
+// ---------------------------------------------------------------------------
+// 10. Rate Limits (Security / Core Module)
+// SEC-02: Persistent PostgreSQL-backed rate limit store.
+// Tracks request hits and window expiration per rate-limit key.
+// ---------------------------------------------------------------------------
+model RateLimit {
+  key        String   @id @db.VarChar(255)
+  hits       Int      @default(1)
+  reset_at   DateTime
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now()) @updatedAt
+
+  @@index([reset_at])
+  @@map("rate_limits")
+}
