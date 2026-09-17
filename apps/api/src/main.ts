@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import express, { type Express } from 'express';
+import cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 import { ConfigService } from './core/config/config.service';
 import { loadEnvironment } from './core/config/env-loader';
@@ -26,6 +27,7 @@ async function bootstrap() {
   }
   expressApp.use(express.json({ limit: '1mb' }));
   expressApp.use(express.urlencoded({ extended: true, limit: '1mb' }));
+  expressApp.use(cookieParser());
 
   // 4. CORS configuration (supports single or comma-separated origins)
   const allowedOrigins = config.corsOrigin

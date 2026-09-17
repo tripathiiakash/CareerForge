@@ -8,8 +8,7 @@ import React, {
 import { LoginInput, RegisterInput } from '@careerforge/validation';
 import { UserRole } from '@careerforge/types';
 import { apiClient } from '@/lib/api';
-import { clearSession, getToken, getUser, setSession } from './authStorage';
-import { decodeJwt } from './jwt';
+import { clearSession, setSession } from './authStorage';
 import { AuthContextValue, AuthState, AuthUser } from './types';
 
 interface AuthResponseEnvelope {
@@ -18,7 +17,6 @@ interface AuthResponseEnvelope {
     user_id: string;
     email: string;
     role: UserRole;
-    token: string;
   };
 }
 
@@ -35,52 +33,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     isLoading: true,
   });
 
-  // Rehydrate auth state on mount
+  // Rehydrate auth state on mount via backend GET /auth/me
   useEffect(() => {
-    try {
-      const storedToken = getToken();
-      const storedUser = getUser();
+    let isMounted = true;
 
-      if (storedToken) {
-        const decoded = decodeJwt(storedToken);
+    async function rehydrateSession() {
+      try {
+        const response = await apiClient.get<AuthResponseEnvelope>('/auth/me');
+        if (!isMounted) return;
 
-        if (decoded) {
-          // Token is valid and non-expired
-          const activeUser: AuthUser = storedUser || {
-            id: decoded.sub,
-            email: decoded.email,
-            role: decoded.role,
-          };
-
+        if (response.data?.success && response.data?.data) {
+          const { user_id, email, role } = response.data.data;
+          const user: AuthUser = { id: user_id, email, role };
+          setSession({ user });
           setState({
-            user: activeUser,
-            token: storedToken,
-            role: decoded.role,
+            user,
+            token: null,
+            role,
             isAuthenticated: true,
             isLoading: false,
           });
           return;
-        } else {
-          // Expired or invalid token
-          clearSession();
         }
+      } catch {
+        // Unauthenticated or network error on rehydration
       }
-    } catch {
-      clearSession();
+
+      if (isMounted) {
+        clearSession();
+        setState({
+          user: null,
+          token: null,
+          role: null,
+          isAuthenticated: false,
+          isLoading: false,
+        });
+      }
     }
 
-    setState({
-      user: null,
-      token: null,
-      role: null,
-      isAuthenticated: false,
-      isLoading: false,
-    });
+    rehydrateSession();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   // Listen for 401 Unauthorized events from apiClient
   useEffect(() => {
     const handleUnauthorized = () => {
+      clearSession();
       setState({
         user: null,
         token: null,
@@ -106,14 +107,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       '/auth/login',
       credentials
     );
-    const { user_id, email, role, token } = response.data.data;
+    const { user_id, email, role } = response.data.data;
 
     const user: AuthUser = { id: user_id, email, role };
-    setSession({ user, token });
+    setSession({ user });
 
     setState({
       user,
-      token,
+      token: null,
       role,
       isAuthenticated: true,
       isLoading: false,
@@ -125,30 +126,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       '/auth/register',
       data
     );
-    const { user_id, email, role, token } = response.data.data;
+    const { user_id, email, role } = response.data.data;
 
     // Automatic login on successful registration
     const user: AuthUser = { id: user_id, email, role };
-    setSession({ user, token });
+    setSession({ user });
 
     setState({
       user,
-      token,
+      token: null,
       role,
       isAuthenticated: true,
       isLoading: false,
     });
   }, []);
 
-  const logout = useCallback((): void => {
-    clearSession();
-    setState({
-      user: null,
-      token: null,
-      role: null,
-      isAuthenticated: false,
-      isLoading: false,
-    });
+  const logout = useCallback(async (): Promise<void> => {
+    try {
+      await apiClient.post('/auth/logout');
+    } catch {
+      // Proceed with frontend state cleanup even if network fails
+    } finally {
+      clearSession();
+      setState({
+        user: null,
+        token: null,
+        role: null,
+        isAuthenticated: false,
+        isLoading: false,
+      });
+    }
   }, []);
 
   return (

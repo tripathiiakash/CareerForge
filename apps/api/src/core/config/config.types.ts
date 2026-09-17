@@ -20,4 +20,7 @@ export interface AppConfig {
   readonly rateLimitGlobalMax?: number;
   readonly rateLimitWindowSeconds?: number;
   readonly trustProxy?: boolean | number | string;
+  readonly authCookieName?: string;
+  readonly authCookieMaxAgeSec?: number;
+  readonly authCookieSameSite?: 'lax' | 'strict' | 'none';
 }

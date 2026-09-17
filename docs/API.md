@@ -2,7 +2,7 @@
 
 **Base URL:** `/api/v1`
 **Content-Type:** `application/json` (unless otherwise specified)
-**Authentication:** JWT Bearer Token via `Authorization: Bearer <token>` header
+**Authentication:** Secure HttpOnly Cookie `cf_auth` (primary for browser clients); `Authorization: Bearer <token>` header supported as fallback for non-browser/test clients.
 
 ---
 
@@ -78,6 +78,8 @@ All `:id`, `:jobId`, `:resumeId`, and `:applicationId` path parameters must be v
 
 Manages user identity and access tokens.
 
+Browser clients receive a secure, HttpOnly session cookie (`cf_auth`). JavaScript cannot access the JWT, eliminating localStorage/sessionStorage XSS token extraction vectors.
+
 ---
 
 ### 1.1 Register User
@@ -104,6 +106,9 @@ Manages user identity and access tokens.
 }
 ```
 
+**Response Headers:**
+`Set-Cookie: cf_auth=<jwt>; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` (Secure in production)
+
 **Response Body:** (201 Created)
 
 ```json
@@ -112,8 +117,7 @@ Manages user identity and access tokens.
   "data": {
     "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
     "email": "student@university.edu",
-    "role": "STUDENT",
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "role": "STUDENT"
   }
 }
 ```
@@ -152,6 +156,9 @@ Manages user identity and access tokens.
 }
 ```
 
+**Response Headers:**
+`Set-Cookie: cf_auth=<jwt>; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800` (Secure in production)
+
 **Response Body:** (200 OK)
 
 ```json
@@ -160,8 +167,7 @@ Manages user identity and access tokens.
   "data": {
     "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
     "email": "student@university.edu",
-    "role": "STUDENT",
-    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+    "role": "STUDENT"
   }
 }
 ```
@@ -178,6 +184,60 @@ Manages user identity and access tokens.
 **Database Entities:** `users`
 
 **Note:** The `403 FORBIDDEN` response requires checking the `is_banned` field on the `users` table. See DATABASE.md flagged changes.
+
+---
+
+### 1.3 Logout User
+
+**Method:** `POST`
+
+**Endpoint:** `/api/v1/auth/logout`
+
+**Authorization Requirements:** Public / Authenticated
+
+**Request Body:** None
+
+**Response Headers:**
+`Set-Cookie: cf_auth=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT`
+
+**Response Body:** (200 OK)
+
+```json
+{
+  "success": true
+}
+```
+
+---
+
+### 1.4 Get Current Authenticated User (Session Rehydration)
+
+**Method:** `GET`
+
+**Endpoint:** `/api/v1/auth/me`
+
+**Authorization Requirements:** HttpOnly Cookie or Bearer Token
+
+**Request Body:** None
+
+**Response Body:** (200 OK)
+
+```json
+{
+  "success": true,
+  "data": {
+    "user_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "email": "student@university.edu",
+    "role": "STUDENT"
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| 401 | `UNAUTHORIZED` | Missing, invalid, or expired session cookie / token |
 
 ---
 

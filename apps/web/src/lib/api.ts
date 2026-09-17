@@ -1,5 +1,5 @@
-import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { clearSession, getToken } from '@/auth/authStorage';
+import axios, { AxiosError } from 'axios';
+import { clearSession } from '@/auth/authStorage';
 import { AuthError } from '@/auth/types';
 
 export const apiClient = axios.create({
@@ -8,19 +8,8 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
   timeout: 15000,
+  withCredentials: true,
 });
-
-// Automatic JWT request interceptor
-apiClient.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
-    const token = getToken();
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
 
 // Response interceptor handling errors and 401 token expirations
 apiClient.interceptors.response.use(

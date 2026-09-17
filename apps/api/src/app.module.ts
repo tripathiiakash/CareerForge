@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { ConfigModule } from './core/config/config.module';
 import { SecurityHeadersMiddleware } from './core/middleware/security-headers.middleware';
+import { CsrfMiddleware } from './core/middleware/csrf.middleware';
 import { QueueModule } from './core/queue/queue.module';
 import { RateLimitModule } from './core/rate-limit/rate-limit.module';
 import { ApplicationModule } from './modules/application/application.module';
@@ -41,6 +42,8 @@ import { PrismaModule } from './prisma/prisma.module';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
-    consumer.apply(SecurityHeadersMiddleware).forRoutes('*');
+    consumer
+      .apply(SecurityHeadersMiddleware, CsrfMiddleware)
+      .forRoutes('*');
   }
 }

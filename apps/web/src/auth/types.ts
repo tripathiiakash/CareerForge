@@ -9,7 +9,7 @@ export interface AuthUser {
 
 export interface AuthSession {
   user: AuthUser;
-  token: string;
+  token?: string | null;
 }
 
 export interface AuthState {
@@ -29,5 +29,5 @@ export interface AuthError {
 export interface AuthContextValue extends AuthState {
   login: (credentials: LoginInput) => Promise<void>;
   register: (data: RegisterInput) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void> | void;
 }

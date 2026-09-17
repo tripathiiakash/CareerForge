@@ -164,6 +164,23 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     }
   }
 
+  // 12. Cookie Configuration
+  const authCookieName = env.AUTH_COOKIE_NAME?.trim() || 'cf_auth';
+  const authCookieMaxAgeSec = parseOptionalInt(
+    env.AUTH_COOKIE_MAX_AGE_SEC,
+    7 * 24 * 3600 // 7 days, matching default jwtExpiresIn
+  );
+
+  const rawSameSite = env.AUTH_COOKIE_SAMESITE?.trim().toLowerCase();
+  let authCookieSameSite: 'lax' | 'strict' | 'none' = 'lax';
+  if (rawSameSite) {
+    if (rawSameSite === 'lax' || rawSameSite === 'strict' || rawSameSite === 'none') {
+      authCookieSameSite = rawSameSite;
+    } else {
+      errors.push(`AUTH_COOKIE_SAMESITE must be 'lax', 'strict', or 'none'`);
+    }
+  }
+
   if (errors.length > 0) {
     throw new ConfigValidationError(errors);
   }
@@ -188,5 +205,8 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     rateLimitGlobalMax,
     rateLimitWindowSeconds,
     trustProxy,
+    authCookieName,
+    authCookieMaxAgeSec,
+    authCookieSameSite,
   };
 }

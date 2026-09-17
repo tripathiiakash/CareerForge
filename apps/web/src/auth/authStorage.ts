@@ -7,31 +7,24 @@ const isBrowser =
   typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 
 /**
- * Safely reads the authentication token from localStorage.
+ * Safely reads the authentication token.
+ * With SEC-01 HttpOnly cookie migration, JWTs are never stored in browser storage.
+ * Always returns null so client code never attempts to read tokens from localStorage.
  */
 export function getToken(): string | null {
-  if (!isBrowser) return null;
-  try {
-    return localStorage.getItem(TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 /**
- * Safely stores the authentication token in localStorage.
+ * Deliberately does not store JWT tokens in localStorage (SEC-01).
+ * Purges any legacy tokens if present.
  */
-export function setToken(token: string): void {
-  if (!isBrowser) return;
-  try {
-    localStorage.setItem(TOKEN_STORAGE_KEY, token);
-  } catch {
-    // Gracefully handle storage quota or privacy mode errors
-  }
+export function setToken(_token: string): void {
+  removeToken();
 }
 
 /**
- * Safely removes the authentication token from localStorage.
+ * Safely removes any legacy authentication token from localStorage.
  */
 export function removeToken(): void {
   if (!isBrowser) return;
@@ -92,10 +85,10 @@ export function removeUser(): void {
 }
 
 /**
- * Persists an authenticated session atomically.
+ * Persists an authenticated session without storing the JWT token in browser storage.
  */
 export function setSession(session: AuthSession): void {
-  setToken(session.token);
+  removeToken();
   setUser(session.user);
 }
 

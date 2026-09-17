@@ -104,6 +104,18 @@ export class ConfigService {
     return this.config.trustProxy ?? (this.isProduction ? 1 : false);
   }
 
+  get authCookieName(): string {
+    return this.config.authCookieName ?? 'cf_auth';
+  }
+
+  get authCookieMaxAgeSec(): number {
+    return this.config.authCookieMaxAgeSec ?? 7 * 24 * 3600;
+  }
+
+  get authCookieSameSite(): 'lax' | 'strict' | 'none' {
+    return this.config.authCookieSameSite ?? 'lax';
+  }
+
   get<K extends keyof AppConfig>(key: K): AppConfig[K] {
     return this.config[key];
   }
