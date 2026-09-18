@@ -169,7 +169,12 @@ export class AdminUserService {
           where: { student_id: studentId },
         });
 
-        // b. Query all resumes owned by the student
+        // b. Delete all interview prep logs associated with the student
+        await tx.interviewPrepLog.deleteMany({
+          where: { student_id: studentId },
+        });
+
+        // c. Query all resumes owned by the student
         const resumes = await tx.resume.findMany({
           where: { student_id: studentId },
           select: { id: true },
@@ -177,23 +182,23 @@ export class AdminUserService {
         const resumeIds = resumes.map((r) => r.id);
 
         if (resumeIds.length > 0) {
-          // c. Delete AI analyses associated with student resumes
+          // d. Delete AI analyses associated with student resumes
           await tx.aiAnalysis.deleteMany({
             where: { resume_id: { in: resumeIds } },
           });
 
-          // d. Defensively delete any application referencing these resumes
+          // e. Defensively delete any application referencing these resumes
           await tx.application.deleteMany({
             where: { resume_id: { in: resumeIds } },
           });
 
-          // e. Delete resumes
+          // f. Delete resumes
           await tx.resume.deleteMany({
             where: { id: { in: resumeIds } },
           });
         }
 
-        // f. Delete student profile
+        // g. Delete student profile
         await tx.student.delete({
           where: { id: studentId },
         });
@@ -216,7 +221,12 @@ export class AdminUserService {
             where: { job_id: { in: jobIds } },
           });
 
-          // c. Delete jobs
+          // c. Delete all interview prep logs referencing recruiter's jobs
+          await tx.interviewPrepLog.deleteMany({
+            where: { job_id: { in: jobIds } },
+          });
+
+          // d. Delete jobs
           await tx.job.deleteMany({
             where: { id: { in: jobIds } },
           });

@@ -385,6 +385,12 @@ describe('Phase 5.14.0 — Admin User Management Backend Contract Test Suite', (
                 return { count: 2 };
               },
             },
+            interviewPrepLog: {
+              deleteMany: async (args) => {
+                executedTxCalls.push({ entity: 'interviewPrepLog', action: 'deleteMany', args });
+                return { count: 1 };
+              },
+            },
             resume: {
               findMany: async (args) => {
                 executedTxCalls.push({ entity: 'resume', action: 'findMany', args });
@@ -428,39 +434,43 @@ describe('Phase 5.14.0 — Admin User Management Backend Contract Test Suite', (
       assert.equal(executedTxCalls[0].entity, 'application');
       assert.deepEqual(executedTxCalls[0].args, { where: { student_id: studentId } });
 
-      // 2. Resumes queried to identify AI analysis references
-      assert.equal(executedTxCalls[1].entity, 'resume');
-      assert.equal(executedTxCalls[1].action, 'findMany');
+      // 2. Interview prep logs associated with student deleted
+      assert.equal(executedTxCalls[1].entity, 'interviewPrepLog');
+      assert.deepEqual(executedTxCalls[1].args, { where: { student_id: studentId } });
 
-      // 3. AI analysis dependent on resumes deleted before resumes
-      assert.equal(executedTxCalls[2].entity, 'aiAnalysis');
-      assert.deepEqual(executedTxCalls[2].args, {
-        where: { resume_id: { in: [resumeId1, resumeId2] } },
-      });
+      // 3. Resumes queried to identify AI analysis references
+      assert.equal(executedTxCalls[2].entity, 'resume');
+      assert.equal(executedTxCalls[2].action, 'findMany');
 
-      // 4. Applications referencing resumes deleted (defensive)
-      assert.equal(executedTxCalls[3].entity, 'application');
+      // 4. AI analysis dependent on resumes deleted before resumes
+      assert.equal(executedTxCalls[3].entity, 'aiAnalysis');
       assert.deepEqual(executedTxCalls[3].args, {
         where: { resume_id: { in: [resumeId1, resumeId2] } },
       });
 
-      // 5. Resumes deleted before student
-      assert.equal(executedTxCalls[4].entity, 'resume');
-      assert.equal(executedTxCalls[4].action, 'deleteMany');
+      // 5. Applications referencing resumes deleted (defensive)
+      assert.equal(executedTxCalls[4].entity, 'application');
       assert.deepEqual(executedTxCalls[4].args, {
+        where: { resume_id: { in: [resumeId1, resumeId2] } },
+      });
+
+      // 6. Resumes deleted before student
+      assert.equal(executedTxCalls[5].entity, 'resume');
+      assert.equal(executedTxCalls[5].action, 'deleteMany');
+      assert.deepEqual(executedTxCalls[5].args, {
         where: { id: { in: [resumeId1, resumeId2] } },
       });
 
-      // 6. Student profile deleted before user
-      assert.equal(executedTxCalls[5].entity, 'student');
-      assert.deepEqual(executedTxCalls[5].args, { where: { id: studentId } });
+      // 7. Student profile deleted before user
+      assert.equal(executedTxCalls[6].entity, 'student');
+      assert.deepEqual(executedTxCalls[6].args, { where: { id: studentId } });
 
-      // 7. User record deleted last
-      assert.equal(executedTxCalls[6].entity, 'user');
-      assert.deepEqual(executedTxCalls[6].args, { where: { id: targetStudentUserId } });
+      // 8. User record deleted last
+      assert.equal(executedTxCalls[7].entity, 'user');
+      assert.deepEqual(executedTxCalls[7].args, { where: { id: targetStudentUserId } });
     });
 
-    it('23. RECRUITER deletion removes jobs, job applications, and profile (preserves company)', async () => {
+    it('23. RECRUITER deletion removes jobs, job applications, interview prep logs, and profile (preserves company)', async () => {
       const recruiterId = 'rec-1111-1111-4111-8111-111111111111';
       const jobId1 = 'job-1111-1111-4111-8111-111111111111';
       const jobId2 = 'job-2222-2222-4222-8222-222222222222';
@@ -490,6 +500,12 @@ describe('Phase 5.14.0 — Admin User Management Backend Contract Test Suite', (
               deleteMany: async (args) => {
                 executedTxCalls.push({ entity: 'application', action: 'deleteMany', args });
                 return { count: 5 };
+              },
+            },
+            interviewPrepLog: {
+              deleteMany: async (args) => {
+                executedTxCalls.push({ entity: 'interviewPrepLog', action: 'deleteMany', args });
+                return { count: 3 };
               },
             },
             recruiter: {
@@ -525,22 +541,28 @@ describe('Phase 5.14.0 — Admin User Management Backend Contract Test Suite', (
         where: { job_id: { in: [jobId1, jobId2] } },
       });
 
-      // 3. Jobs deleted before recruiter
-      assert.equal(executedTxCalls[2].entity, 'job');
-      assert.equal(executedTxCalls[2].action, 'deleteMany');
+      // 3. Interview prep logs referencing recruiter's jobs deleted before jobs
+      assert.equal(executedTxCalls[2].entity, 'interviewPrepLog');
       assert.deepEqual(executedTxCalls[2].args, {
+        where: { job_id: { in: [jobId1, jobId2] } },
+      });
+
+      // 4. Jobs deleted before recruiter
+      assert.equal(executedTxCalls[3].entity, 'job');
+      assert.equal(executedTxCalls[3].action, 'deleteMany');
+      assert.deepEqual(executedTxCalls[3].args, {
         where: { id: { in: [jobId1, jobId2] } },
       });
 
-      // 4. Recruiter profile deleted before user
-      assert.equal(executedTxCalls[3].entity, 'recruiter');
-      assert.deepEqual(executedTxCalls[3].args, { where: { id: recruiterId } });
+      // 5. Recruiter profile deleted before user
+      assert.equal(executedTxCalls[4].entity, 'recruiter');
+      assert.deepEqual(executedTxCalls[4].args, { where: { id: recruiterId } });
 
-      // 5. User record deleted last
-      assert.equal(executedTxCalls[4].entity, 'user');
-      assert.deepEqual(executedTxCalls[4].args, { where: { id: targetRecruiterUserId } });
+      // 6. User record deleted last
+      assert.equal(executedTxCalls[5].entity, 'user');
+      assert.deepEqual(executedTxCalls[5].args, { where: { id: targetRecruiterUserId } });
 
-      // 6. Confirm company is NOT deleted
+      // 7. Confirm company is NOT deleted
       const companyDeletes = executedTxCalls.filter((c) => c.entity === 'company');
       assert.equal(companyDeletes.length, 0);
     });
