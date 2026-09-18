@@ -94,7 +94,7 @@ Browser clients receive a secure, HttpOnly session cookie (`cf_auth`). JavaScrip
 
 - `email`: Required. Must be a valid email format. Max 255 characters. Automatically normalized to lowercase and trimmed by the server.
 - `password`: Required. Minimum 8 characters, maximum 72 characters (bcrypt safe limit). Must contain at least 1 number and 1 special character.
-- `role`: Required. Must be exactly `'STUDENT'` or `'RECRUITER'`. Registration as `'ADMIN'` is not permitted; admin accounts are provisioned via database seed only.
+- `role`: Required. Must be exactly `'STUDENT'` or `'RECRUITER'`. Registration as `'ADMIN'` is strictly prohibited; admin accounts are provisioned exclusively via the operator bootstrap CLI (see §9.0).
 
 **Request Body:**
 
@@ -1289,7 +1289,31 @@ Connects students to jobs.
 
 ## 9. Admin
 
-Manages platform moderation, user management, and overview metrics. All admin endpoints require `Role: ADMIN`. Admin accounts are provisioned via database seed script only and cannot be created through the public registration endpoint.
+Manages platform moderation, user management, and overview metrics. All admin endpoints require `Role: ADMIN`. Public registration as `ADMIN` is strictly forbidden. The platform administrator account is provisioned out-of-band via an operator CLI script.
+
+---
+
+### 9.0 First-Admin Account Provisioning (CLI)
+
+**Execution Command:**
+```bash
+# Method A: Via environment variables (preferred for deployments / CI / containers):
+ADMIN_EMAIL="admin@yourdomain.com" ADMIN_PASSWORD="<strong-password>" npm run admin:bootstrap
+
+# Method B: Via interactive masked TTY prompt:
+npm run admin:bootstrap -- --email="admin@yourdomain.com"
+# (Terminal prompts for masked password securely)
+```
+
+**Purpose:** Provides a secure, operator-driven bootstrap mechanism to provision the initial administrator account without exposing an administrative registration endpoint or embedding credentials in source code.
+
+**Security & Operational Invariants:**
+- **No Public HTTP Endpoint:** Admin provisioning is an out-of-band CLI procedure; no administrative registration route exists.
+- **No Command-Line Password Flags:** To prevent credential leakage through shell history (`.bash_history`) or process tables (`ps aux`, Task Manager), passing passwords via command-line arguments (`--password`) is strictly prohibited.
+- **Credential Supply:** Passwords must be supplied exclusively via the `ADMIN_PASSWORD` environment variable or through secure, masked interactive terminal input.
+- **Idempotent Execution:** Re-running the command with the same admin email safely reports that the admin account already exists with status `EXISTS` and makes no modifications.
+- **Elevation Protection:** If the specified email belongs to an existing `STUDENT` or `RECRUITER` user, the command immediately aborts with `409 Conflict`, preventing accidental or unauthorized privilege escalation.
+- **Password Policy:** The password must meet platform security standards (min 8 chars, at least 1 number, at least 1 special char, max 72 chars) and is hashed using `bcrypt` (10 rounds). Plaintext credentials are never logged, printed, or saved.
 
 ---
 
