@@ -1,6 +1,13 @@
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { UnprocessableEntityException } = require('@nestjs/common');
+const {
+  UnprocessableEntityException,
+  BadRequestException,
+} = require('@nestjs/common');
+const {
+  StorageFileNotFoundError,
+  StorageInvalidKeyError,
+} = require('../dist/modules/resume/storage/storage.interface');
 const {
   ResumeExtractionWorker,
 } = require('../dist/modules/resume/workers/resume-extraction.worker');
@@ -143,6 +150,157 @@ describe('ResumeExtractionWorker Test Suite', () => {
     );
 
     // Should NOT mark as FAILED in ai_analyses on transient errors
+    assert.equal(aiAnalysisUpsertCalled, false);
+  });
+
+  it('E. should handle StorageFileNotFoundError as non-retriable: record FAILED in ai_analyses and not rethrow', async () => {
+    mockStorageService.getFileBuffer = async () => {
+      throw new StorageFileNotFoundError('test-file.pdf');
+    };
+
+    let upsertCalledWith = null;
+    mockPrisma.aiAnalysis.upsert = async (args) => {
+      upsertCalledWith = args;
+      return { id: 'analysis-file-not-found' };
+    };
+
+    let parserCalled = false;
+    mockPdfParserService.extractText = async () => {
+      parserCalled = true;
+    };
+
+    // Must resolve cleanly without throwing, so pg-boss does not retry
+    await assert.doesNotReject(() => worker.handleExtractionJob(sampleJob));
+
+    assert.ok(upsertCalledWith);
+    assert.equal(upsertCalledWith.where.resume_id, resumeId);
+    assert.equal(upsertCalledWith.create.status, 'FAILED');
+    assert.match(
+      upsertCalledWith.create.error_message,
+      /could not be found or accessed/
+    );
+    assert.equal(parserCalled, false);
+  });
+
+  it('F. should handle legacy/mock BadRequestException with FILE_NOT_FOUND as non-retriable: record FAILED and not rethrow', async () => {
+    mockStorageService.getFileBuffer = async () => {
+      throw new BadRequestException({
+        code: 'FILE_NOT_FOUND',
+        message: 'Stored resume file not found',
+      });
+    };
+
+    let upsertCalledWith = null;
+    mockPrisma.aiAnalysis.upsert = async (args) => {
+      upsertCalledWith = args;
+      return { id: 'analysis-bad-req-file-not-found' };
+    };
+
+    await assert.doesNotReject(() => worker.handleExtractionJob(sampleJob));
+
+    assert.ok(upsertCalledWith);
+    assert.equal(upsertCalledWith.create.status, 'FAILED');
+    assert.match(
+      upsertCalledWith.create.error_message,
+      /could not be found or accessed/
+    );
+  });
+
+  it('G. should handle StorageInvalidKeyError as non-retriable: record FAILED in ai_analyses and not rethrow', async () => {
+    mockStorageService.getFileBuffer = async () => {
+      throw new StorageInvalidKeyError(
+        'malicious/../key',
+        'Path traversal attempt detected'
+      );
+    };
+
+    let upsertCalledWith = null;
+    mockPrisma.aiAnalysis.upsert = async (args) => {
+      upsertCalledWith = args;
+      return { id: 'analysis-invalid-key' };
+    };
+
+    await assert.doesNotReject(() => worker.handleExtractionJob(sampleJob));
+
+    assert.ok(upsertCalledWith);
+    assert.equal(upsertCalledWith.create.status, 'FAILED');
+    assert.match(
+      upsertCalledWith.create.error_message,
+      /invalid or corrupted/
+    );
+  });
+
+  it('H. should handle missing/empty storage file key as non-retriable: record FAILED and not rethrow', async () => {
+    mockPrisma.resume.findUnique = async () => ({
+      id: resumeId,
+      student_id: studentId,
+      file_key: null,
+      file_url: null,
+      parsed_text: null,
+    });
+
+    let storageCalled = false;
+    mockStorageService.getFileBuffer = async () => {
+      storageCalled = true;
+    };
+
+    let upsertCalledWith = null;
+    mockPrisma.aiAnalysis.upsert = async (args) => {
+      upsertCalledWith = args;
+      return { id: 'analysis-empty-key' };
+    };
+
+    const jobWithNoKey = {
+      id: 'job-no-key',
+      name: 'resume-text-extraction',
+      data: { resumeId, studentId, fileKey: '' },
+    };
+
+    await assert.doesNotReject(() => worker.handleExtractionJob(jobWithNoKey));
+
+    assert.equal(storageCalled, false);
+    assert.ok(upsertCalledWith);
+    assert.equal(upsertCalledWith.create.status, 'FAILED');
+    assert.match(
+      upsertCalledWith.create.error_message,
+      /could not be found or accessed/
+    );
+  });
+
+  it('I. should not invoke parser when storage retrieval fails', async () => {
+    mockStorageService.getFileBuffer = async () => {
+      throw new StorageFileNotFoundError('missing.pdf');
+    };
+
+    let parserInvoked = false;
+    mockPdfParserService.extractText = async () => {
+      parserInvoked = true;
+    };
+
+    await worker.handleExtractionJob(sampleJob);
+    assert.equal(parserInvoked, false);
+  });
+
+  it('J. should rethrow transient storage connection error (ECONNRESET, ETIMEDOUT)', async () => {
+    mockStorageService.getFileBuffer = async () => {
+      const err = new Error('ECONNRESET: connection reset by peer');
+      err.code = 'ECONNRESET';
+      throw err;
+    };
+
+    let aiAnalysisUpsertCalled = false;
+    mockPrisma.aiAnalysis.upsert = async () => {
+      aiAnalysisUpsertCalled = true;
+    };
+
+    await assert.rejects(
+      () => worker.handleExtractionJob(sampleJob),
+      (err) => {
+        assert.match(err.message, /ECONNRESET/);
+        return true;
+      }
+    );
+
     assert.equal(aiAnalysisUpsertCalled, false);
   });
 

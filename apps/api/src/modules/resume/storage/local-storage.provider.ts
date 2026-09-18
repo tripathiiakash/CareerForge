@@ -1,10 +1,12 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { ConfigService } from '../../../core/config/config.service';
 import {
   IStorageProvider,
+  StorageFileNotFoundError,
+  StorageInvalidKeyError,
   StorageUploadInput,
   StorageUploadResult,
 } from './storage.interface';
@@ -67,10 +69,7 @@ export class LocalStorageProvider implements IStorageProvider {
         error !== null &&
         (error as { code?: string }).code === 'ENOENT'
       ) {
-        throw new BadRequestException({
-          code: 'FILE_NOT_FOUND',
-          message: 'Stored resume file not found',
-        });
+        throw new StorageFileNotFoundError(fileKey);
       }
       throw error;
     }
@@ -79,10 +78,10 @@ export class LocalStorageProvider implements IStorageProvider {
   private resolveAndVerifyPath(fileKey: string): string {
     // Sanitization: fileKey must only be alphanumeric characters, hyphens, and .pdf extension
     if (!/^[a-zA-Z0-9-]+\.pdf$/.test(fileKey)) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid storage file key format',
-      });
+      throw new StorageInvalidKeyError(
+        fileKey,
+        'Invalid storage file key format'
+      );
     }
 
     const resolved = path.resolve(this.storageDir, fileKey);
@@ -91,10 +90,10 @@ export class LocalStorageProvider implements IStorageProvider {
       !resolved.startsWith(this.storageDir + path.sep) &&
       resolved !== this.storageDir
     ) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message: 'Path traversal attempt detected',
-      });
+      throw new StorageInvalidKeyError(
+        fileKey,
+        'Path traversal attempt detected'
+      );
     }
 
     return resolved;

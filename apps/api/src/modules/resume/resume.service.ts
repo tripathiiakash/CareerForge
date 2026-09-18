@@ -19,6 +19,10 @@ import { ResumeListItemDto } from './dto/resume-response.dto';
 import { UploadResumeData } from './dto/upload-resume-response.dto';
 import { UploadedFile } from './interfaces/uploaded-file.interface';
 import { ResumeStorageService } from './storage/resume-storage.service';
+import {
+  StorageFileNotFoundError,
+  StorageInvalidKeyError,
+} from './storage/storage.interface';
 import { isValidUuid } from '../../core/utils/uuid.util';
 
 const PDF_MAGIC_BYTES = Buffer.from('%PDF-'); // 0x25 0x50 0x44 0x46 0x2D
@@ -275,7 +279,24 @@ export class ResumeService {
       });
     }
 
-    const buffer = await this.resumeStorageService.getFileBuffer(fileKey);
+    let buffer: Buffer;
+    try {
+      buffer = await this.resumeStorageService.getFileBuffer(fileKey);
+    } catch (err: unknown) {
+      if (err instanceof StorageFileNotFoundError) {
+        throw new NotFoundException({
+          code: 'FILE_NOT_FOUND',
+          message: 'Stored resume file not found',
+        });
+      }
+      if (err instanceof StorageInvalidKeyError) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: err.message,
+        });
+      }
+      throw err;
+    }
     const isUuidKey =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/i.test(
         fileKey
