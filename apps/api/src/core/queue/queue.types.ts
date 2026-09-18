@@ -42,6 +42,7 @@ export interface ApplicationSubmittedRecruiterEmailJobData {
 export interface ApplicationStatusEmailJobData {
   applicationId: string;
   status: 'SHORTLISTED' | 'REJECTED';
+  eventId?: string;
 }
 
 export interface JobEnvelope<T> {

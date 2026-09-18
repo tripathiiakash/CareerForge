@@ -91,6 +91,40 @@ describe('Transactional Email Notification Service (Phase 5.17.0)', () => {
       assert.equal(provider.getLastEmail(), undefined);
       assert.equal(provider.hasSentEmailTo('dev1@example.com'), false);
     });
+
+    it('should record idempotencyKey and deduplicate repeated sends with identical idempotencyKey', async () => {
+      const provider = new MockEmailProvider();
+      const idempotencyKey = 'email:welcome:test-user-123';
+
+      const firstResult = await provider.send({
+        to: 'candidate@example.com',
+        subject: 'Welcome to CareerForge!',
+        text: 'Welcome!',
+        idempotencyKey,
+      });
+
+      assert.equal(firstResult.success, true);
+      assert.equal(provider.count(), 1);
+      assert.equal(provider.hasSentEmailWithIdempotencyKey(idempotencyKey), true);
+
+      const record = provider.getSentEmailByIdempotencyKey(idempotencyKey);
+      assert.ok(record);
+      assert.equal(record.idempotencyKey, idempotencyKey);
+      assert.equal(record.messageId, firstResult.messageId);
+
+      // Repeated send with same idempotencyKey (e.g. queue retry)
+      const secondResult = await provider.send({
+        to: 'candidate@example.com',
+        subject: 'Welcome to CareerForge!',
+        text: 'Welcome!',
+        idempotencyKey,
+      });
+
+      assert.equal(secondResult.success, true);
+      // Returns same messageId and does NOT append duplicate email record
+      assert.equal(secondResult.messageId, firstResult.messageId);
+      assert.equal(provider.count(), 1);
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -170,6 +204,40 @@ describe('Transactional Email Notification Service (Phase 5.17.0)', () => {
           success: true,
           messageId: 'resend_msg_abc123',
         });
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('should forward Idempotency-Key header to Resend API when idempotencyKey is supplied', async () => {
+      let capturedHeaders = {};
+      const mockConfig = {
+        resendApiKey: 're_idempotency_test_key',
+        emailFrom: 'CareerForge <notifications@careerforge.dev>',
+      };
+      const provider = new ResendEmailProvider(mockConfig);
+
+      const originalFetch = global.fetch;
+      global.fetch = async (url, options) => {
+        capturedHeaders = options.headers;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ id: 'resend_msg_idem_789' }),
+        };
+      };
+
+      try {
+        const result = await provider.send({
+          to: 'student@example.com',
+          subject: 'Welcome',
+          text: 'Welcome to CareerForge!',
+          idempotencyKey: 'email:welcome:student-uuid-999',
+        });
+
+        assert.equal(capturedHeaders['Idempotency-Key'], 'email:welcome:student-uuid-999');
+        assert.equal(result.success, true);
+        assert.equal(result.messageId, 'resend_msg_idem_789');
       } finally {
         global.fetch = originalFetch;
       }

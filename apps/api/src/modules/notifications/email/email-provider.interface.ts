@@ -10,6 +10,7 @@ export interface SendEmailOptions {
   text?: string;
   from?: string;
   replyTo?: string;
+  idempotencyKey?: string;
 }
 
 export interface SendEmailResult {

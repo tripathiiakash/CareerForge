@@ -123,12 +123,16 @@ export class NotificationEmailWorker implements OnModuleInit {
            <p>Best regards,<br/>The CareerForge Team</p>
          </div>`;
 
-    // 3. Dispatch email through provider abstraction
-    await this.emailService.sendEmail({
-      to: recipientEmail,
+    // 3. Dispatch email through provider abstraction with deterministic idempotency
+    const idempotencyKey = `email:welcome:${userId}`;
+    await this.dispatchIdempotentEmail({
+      idempotencyKey,
+      eventType: 'welcome',
+      recipientEmail,
       subject,
       text,
       html,
+      jobId: job.id,
     });
 
     this.logger.log(
@@ -195,11 +199,15 @@ export class NotificationEmailWorker implements OnModuleInit {
          <p>Best regards,<br/>The CareerForge Team</p>
        </div>`;
 
-    await this.emailService.sendEmail({
-      to: recipientEmail,
+    const idempotencyKey = `email:app-sub-student:${applicationId}`;
+    await this.dispatchIdempotentEmail({
+      idempotencyKey,
+      eventType: 'application_submitted_student',
+      recipientEmail,
       subject,
       text,
       html,
+      jobId: job.id,
     });
 
     this.logger.log(
@@ -272,11 +280,15 @@ export class NotificationEmailWorker implements OnModuleInit {
          <p>Best regards,<br/>The CareerForge Team</p>
        </div>`;
 
-    await this.emailService.sendEmail({
-      to: recipientEmail,
+    const idempotencyKey = `email:app-sub-recruiter:${applicationId}`;
+    await this.dispatchIdempotentEmail({
+      idempotencyKey,
+      eventType: 'application_submitted_recruiter',
+      recipientEmail,
       subject,
       text,
       html,
+      jobId: job.id,
     });
 
     this.logger.log(
@@ -367,15 +379,271 @@ export class NotificationEmailWorker implements OnModuleInit {
          </div>`;
     }
 
-    await this.emailService.sendEmail({
-      to: recipientEmail,
+    const idempotencyKey = job.data.eventId
+      ? `email:app-status:${job.data.eventId}`
+      : `email:app-status:${applicationId}:${status}`;
+    await this.dispatchIdempotentEmail({
+      idempotencyKey,
+      eventType: 'application_status',
+      recipientEmail,
       subject,
       text,
       html,
+      jobId: job.id,
     });
 
     this.logger.log(
       `Status update email (${status}) delivered for application ${applicationId} [job: ${job.id}]`
     );
+  }
+
+  private static readonly STALE_PENDING_THRESHOLD_MS = 15_000;
+
+  /**
+   * Dispatches a transactional email idempotently using database-backed delivery markers
+   * and provider-level idempotency headers.
+   */
+  private async dispatchIdempotentEmail(params: {
+    idempotencyKey: string;
+    eventType: string;
+    recipientEmail: string;
+    subject: string;
+    text?: string;
+    html?: string;
+    jobId: string;
+  }): Promise<void> {
+    const {
+      idempotencyKey,
+      eventType,
+      recipientEmail,
+      subject,
+      text,
+      html,
+      jobId,
+    } = params;
+
+    let effectiveRecipient = recipientEmail;
+    let effectiveSubject = subject;
+    let effectiveText = text;
+    let effectiveHtml = html;
+
+    // 1. If database delivery model is available on prisma, manage lifecycle
+    if (this.prisma && this.prisma.emailDelivery) {
+      const existing = await this.prisma.emailDelivery.findUnique({
+        where: { idempotency_key: idempotencyKey },
+      });
+
+      // 1.1 If already delivered, skip immediately (exactly-once logical delivery)
+      if (existing && existing.status === 'SENT') {
+        this.logger.log(
+          `Transactional email with idempotency key ${idempotencyKey} already delivered (messageId: ${existing.message_id || 'unknown'}). Skipping duplicate delivery [job: ${jobId}].`
+        );
+        return;
+      }
+
+      // 1.2 If currently PENDING, check if an active worker is in-flight vs crashed
+      if (existing && existing.status === 'PENDING') {
+        const lastUpdated = new Date(
+          existing.updated_at || existing.created_at
+        ).getTime();
+        const ageMs = Date.now() - lastUpdated;
+
+        if (ageMs < NotificationEmailWorker.STALE_PENDING_THRESHOLD_MS) {
+          // Another worker is actively executing — wait cooperatively
+          const outcome = await this.waitForInFlightDelivery(
+            idempotencyKey,
+            jobId
+          );
+          if (outcome === 'SENT') {
+            return;
+          }
+        }
+      }
+
+      let deliveryRecord = existing;
+
+      // 1.3 If no record exists, insert PENDING record atomically with immutable payload snapshot
+      if (!existing) {
+        try {
+          deliveryRecord = await this.prisma.emailDelivery.create({
+            data: {
+              idempotency_key: idempotencyKey,
+              event_type: eventType,
+              recipient_email: recipientEmail,
+              subject,
+              body_text: text || null,
+              body_html: html || null,
+              status: 'PENDING',
+              attempts: 1,
+            },
+          });
+        } catch (err: unknown) {
+          // Handle unique constraint conflict across concurrent workers (Prisma P2002)
+          const isConflict =
+            (err &&
+              typeof err === 'object' &&
+              'code' in err &&
+              (err as { code: string }).code === 'P2002') ||
+            (err instanceof Error &&
+              err.message.includes('Unique constraint failed'));
+
+          if (isConflict) {
+            const outcome = await this.waitForInFlightDelivery(
+              idempotencyKey,
+              jobId
+            );
+            if (outcome === 'SENT') {
+              return;
+            }
+            deliveryRecord = await this.prisma.emailDelivery.findUnique({
+              where: { idempotency_key: idempotencyKey },
+            });
+          } else {
+            throw err;
+          }
+        }
+      } else {
+        // Record existed in FAILED state, or was stale PENDING after worker crash: reclaim lease & retry
+        try {
+          deliveryRecord = await this.prisma.emailDelivery.update({
+            where: { idempotency_key: idempotencyKey },
+            data: {
+              status: 'PENDING',
+              attempts: { increment: 1 },
+              updated_at: new Date(),
+            },
+          });
+        } catch (updateErr: unknown) {
+          this.logger.warn(
+            `Could not increment attempts for ${idempotencyKey}: ${updateErr instanceof Error ? updateErr.message : 'Unknown'}`
+          );
+        }
+      }
+
+      // Reconstruct payload from the immutable snapshot stored in the delivery record.
+      // This guarantees that retries send the exact byte-for-byte identical payload to Resend,
+      // preventing HTTP 409 invalid_idempotent_request even if underlying entities were mutated.
+      const snapshot = deliveryRecord || existing;
+      if (snapshot) {
+        effectiveRecipient = snapshot.recipient_email || recipientEmail;
+        effectiveSubject = snapshot.subject || subject;
+        const withBodies = snapshot as {
+          body_text?: string | null;
+          body_html?: string | null;
+        };
+        if (withBodies.body_text !== undefined && withBodies.body_text !== null) {
+          effectiveText = withBodies.body_text;
+        }
+        if (withBodies.body_html !== undefined && withBodies.body_html !== null) {
+          effectiveHtml = withBodies.body_html;
+        }
+      }
+    }
+
+    // 2. Dispatch to email provider using deterministic idempotency key and immutable payload snapshot
+    try {
+      const result = await this.emailService.sendEmail({
+        to: effectiveRecipient,
+        subject: effectiveSubject,
+        text: effectiveText,
+        html: effectiveHtml,
+        idempotencyKey,
+      });
+
+      // 3. Mark delivery SENT in database upon success
+      if (this.prisma && this.prisma.emailDelivery) {
+        await this.prisma.emailDelivery.update({
+          where: { idempotency_key: idempotencyKey },
+          data: {
+            status: 'SENT',
+            message_id: result.messageId || null,
+            sent_at: new Date(),
+            error_message: null,
+          },
+        });
+      }
+    } catch (error: unknown) {
+      // 4. Handle provider response or failure
+      const is409 =
+        (error &&
+          typeof error === 'object' &&
+          'statusCode' in error &&
+          (error as { statusCode?: number }).statusCode === 409) ||
+        (error instanceof Error &&
+          error.message.includes('concurrent_idempotent_requests'));
+
+      if (is409) {
+        this.logger.warn(
+          `Concurrent request in-flight at provider for ${idempotencyKey} (HTTP 409). Rethrowing for queue retry.`
+        );
+      }
+
+      const rawError =
+        error instanceof Error ? error.message : 'Unknown delivery error';
+
+      if (this.prisma && this.prisma.emailDelivery) {
+        try {
+          await this.prisma.emailDelivery.update({
+            where: { idempotency_key: idempotencyKey },
+            data: {
+              status: is409 ? 'PENDING' : 'FAILED',
+              error_message: rawError,
+            },
+          });
+        } catch (dbErr: unknown) {
+          this.logger.error(
+            `Failed to record email delivery state in database for ${idempotencyKey}: ${dbErr instanceof Error ? dbErr.message : 'Unknown'}`
+          );
+        }
+      }
+
+      // Rethrow to allow pg-boss backoff and retry
+      throw error;
+    }
+  }
+
+  /**
+   * Cooperatively waits for an in-flight concurrent worker to finalize email delivery.
+   */
+  private async waitForInFlightDelivery(
+    idempotencyKey: string,
+    jobId: string
+  ): Promise<'SENT' | 'FAILED' | 'TIMEOUT'> {
+    let waitedMs = 0;
+    const maxWaitMs = 2500;
+    const intervalMs = 50;
+
+    while (waitedMs < maxWaitMs) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      waitedMs += intervalMs;
+
+      const current = await this.prisma.emailDelivery.findUnique({
+        where: { idempotency_key: idempotencyKey },
+      });
+
+      if (current && current.status === 'SENT') {
+        this.logger.log(
+          `Transactional email with idempotency key ${idempotencyKey} was delivered concurrently. Skipping [job: ${jobId}].`
+        );
+        return 'SENT';
+      }
+
+      if (current && current.status === 'FAILED') {
+        return 'FAILED';
+      }
+    }
+
+    const current = await this.prisma.emailDelivery.findUnique({
+      where: { idempotency_key: idempotencyKey },
+    });
+
+    if (current && current.status === 'SENT') {
+      this.logger.log(
+        `Transactional email with idempotency key ${idempotencyKey} was delivered concurrently. Skipping [job: ${jobId}].`
+      );
+      return 'SENT';
+    }
+
+    return 'TIMEOUT';
   }
 }

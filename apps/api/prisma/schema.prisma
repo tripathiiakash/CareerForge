@@ -53,6 +53,13 @@ enum ApplicationStatus {
   REJECTED
 }
 
+/// Email delivery status — docs/DATABASE.md: email_deliveries.status VARCHAR(20)
+enum EmailDeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // 1. Users (Auth Module)
 // docs/DATABASE.md §1
@@ -270,4 +277,30 @@ model RateLimit {
 
   @@index([reset_at])
   @@map("rate_limits")
+}
+
+// ---------------------------------------------------------------------------
+// 11. Email Deliveries (Notifications Module)
+// Phase 6.5-C: Persistent PostgreSQL-backed email delivery idempotency store.
+// Prevents duplicate sends across worker retries, timeouts, and concurrent workers.
+// ---------------------------------------------------------------------------
+model EmailDelivery {
+  id              String              @id @default(uuid()) @db.Uuid
+  idempotency_key String              @unique @db.VarChar(255)
+  event_type      String              @db.VarChar(100)
+  recipient_email String              @db.VarChar(255)
+  subject         String              @db.VarChar(255)
+  body_text       String?             @db.Text
+  body_html       String?             @db.Text
+  status          EmailDeliveryStatus @default(PENDING)
+  provider        String?             @db.VarChar(50)
+  message_id      String?             @db.VarChar(255)
+  error_message   String?
+  attempts        Int                 @default(1)
+  sent_at         DateTime?
+  created_at      DateTime            @default(now())
+  updated_at      DateTime            @default(now()) @updatedAt
+
+  @@index([status])
+  @@map("email_deliveries")
 }

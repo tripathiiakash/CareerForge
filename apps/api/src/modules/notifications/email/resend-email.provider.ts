@@ -58,14 +58,22 @@ export class ResendEmailProvider implements IEmailProvider {
       payload.reply_to = options.replyTo;
     }
 
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'CareerForge-API/1.0',
+    };
+
+    if (options.idempotencyKey) {
+      headers['Idempotency-Key'] = options.idempotencyKey;
+    }
+
+    const maskedRecipients = recipients.map((r) => this.maskRecipient(r));
+
     try {
       const response = await fetch(this.apiUrl, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'User-Agent': 'CareerForge-API/1.0',
-        },
+        headers,
         body: JSON.stringify(payload),
       });
 
@@ -95,7 +103,7 @@ export class ResendEmailProvider implements IEmailProvider {
       const messageId = responseData?.id || undefined;
 
       this.logger.log(
-        `Email delivered successfully to [${recipients.join(', ')}] with subject "${options.subject}" (id: ${messageId || 'unknown'})`
+        `Email delivered successfully to [${maskedRecipients.join(', ')}] with subject "${options.subject}" (id: ${messageId || 'unknown'})`
       );
 
       return {
@@ -115,7 +123,7 @@ export class ResendEmailProvider implements IEmailProvider {
       );
 
       this.logger.error(
-        `Unexpected error during email delivery to [${recipients.join(', ')}]: ${safeMessage}`
+        `Unexpected error during email delivery to [${maskedRecipients.join(', ')}]: ${safeMessage}`
       );
 
       throw new EmailDeliveryError(safeMessage);
@@ -133,6 +141,27 @@ export class ResendEmailProvider implements IEmailProvider {
       }
       return item.email.trim();
     });
+  }
+
+  private maskRecipient(recipient: string): string {
+    const angleMatch = recipient.match(/^(.*)<([^>]+)>$/);
+    if (angleMatch) {
+      const name = angleMatch[1].trim();
+      const email = angleMatch[2].trim();
+      return `${name} <${this.maskEmailAddress(email)}>`;
+    }
+    return this.maskEmailAddress(recipient.trim());
+  }
+
+  private maskEmailAddress(email: string): string {
+    if (!email || !email.includes('@')) return '[REDACTED]';
+    const parts = email.split('@');
+    const local = parts[0];
+    const domain = parts.slice(1).join('@');
+    if (local.length <= 2) {
+      return `${local[0] || '*'}***@${domain}`;
+    }
+    return `${local[0]}***${local[local.length - 1]}@${domain}`;
   }
 
   private redactSecret(text: string, secret: string): string {
