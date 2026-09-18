@@ -7,7 +7,47 @@ import {
   ResumeAnalysisJobData,
 } from '../../../core/queue/queue.types';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { AI_PROVIDER_TOKEN, IAiProvider } from '../ai/ai-provider.interface';
+import {
+  AI_PROVIDER_TOKEN,
+  AiProviderError,
+  IAiProvider,
+} from '../ai/ai-provider.interface';
+import { COOLDOWN_MS } from '../services/resume-analysis.service';
+
+/**
+ * Classifies an error from the AI analysis workflow into retryable or non-retryable.
+ * - Permanent/Non-retryable: Missing API key/configuration, permanent 4xx responses (400, 401, 403, 404).
+ * - Retryable: Rate limits (429), 5xx server errors, network timeouts/aborts, and transient runtime failures.
+ */
+export function isRetryableAiError(error: unknown): boolean {
+  if (error instanceof AiProviderError) {
+    return error.isRetryable;
+  }
+  if (error instanceof Error) {
+    const msg = error.message.toLowerCase();
+    if (
+      msg.includes('gemini_api_key is not configured') ||
+      msg.includes('api key is not configured')
+    ) {
+      return false;
+    }
+    const status = (error as any).statusCode || (error as any).status;
+    if (typeof status === 'number') {
+      if (status >= 400 && status < 500 && status !== 429) {
+        return false;
+      }
+    }
+    if (
+      msg.includes('status 400') ||
+      msg.includes('status 401') ||
+      msg.includes('status 403') ||
+      msg.includes('status 404')
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 @Injectable()
 export class ResumeAnalysisWorker implements OnModuleInit {
@@ -34,8 +74,10 @@ export class ResumeAnalysisWorker implements OnModuleInit {
     job: JobEnvelope<ResumeAnalysisJobData>
   ): Promise<void> {
     const { resumeId, studentId } = job.data;
+    const retryCount = job.retryCount ?? 0;
+    const retryLimit = job.retryLimit ?? 2;
     this.logger.log(
-      `Processing resume AI analysis for resume ${resumeId} (job: ${job.id})`
+      `Processing resume AI analysis for resume ${resumeId} (job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1})`
     );
 
     try {
@@ -65,14 +107,10 @@ export class ResumeAnalysisWorker implements OnModuleInit {
         this.logger.warn(
           `Resume ${resumeId} has no parsed text. Marking analysis as FAILED.`
         );
-        await this.prisma.aiAnalysis.update({
-          where: { resume_id: resumeId },
-          data: {
-            status: AnalysisStatus.FAILED,
-            error_message:
-              'Failed to parse resume text. Please ensure the PDF is not password-protected or an image scan.',
-          },
-        });
+        await this.markAnalysisFailed(
+          resumeId,
+          'Failed to parse resume text. Please ensure the PDF is not password-protected or an image scan.'
+        );
         return;
       }
 
@@ -82,7 +120,7 @@ export class ResumeAnalysisWorker implements OnModuleInit {
         resume.ai_analysis.status === AnalysisStatus.COMPLETED
       ) {
         const elapsedMs = Date.now() - resume.ai_analysis.created_at.getTime();
-        if (elapsedMs < 5 * 60 * 1000) {
+        if (elapsedMs < COOLDOWN_MS) {
           this.logger.log(
             `Resume ${resumeId} already has completed analysis. Skipping duplicate job ${job.id}.`
           );
@@ -114,28 +152,61 @@ export class ResumeAnalysisWorker implements OnModuleInit {
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      this.logger.error(
-        `Failed to process AI analysis for resume ${resumeId}: ${errorMessage}`
-      );
+      const isFinalAttempt = retryCount >= retryLimit;
+      const retryable = isRetryableAiError(error);
 
-      // Persist FAILED status so user GET returns failed state
-      try {
-        await this.prisma.aiAnalysis.update({
-          where: { resume_id: resumeId },
-          data: {
-            status: AnalysisStatus.FAILED,
-            error_message:
-              'Failed to analyze resume. Please verify resume readability and try again.',
-          },
-        });
-      } catch (dbError) {
-        this.logger.error(
-          `Failed to update AiAnalysis status to FAILED for ${resumeId}: ${dbError}`
+      // Case 1: Permanent/non-retryable failure (e.g. unconfigured key, 4xx error)
+      if (!retryable) {
+        this.logger.warn(
+          `Non-retryable failure for resume ${resumeId} (attempt ${retryCount + 1}): ${errorMessage}. Recording FAILED state.`
         );
+        await this.markAnalysisFailed(
+          resumeId,
+          'Failed to analyze resume due to a configuration or validation issue.'
+        );
+        // Do NOT rethrow; job completes terminally without wasting retry attempts
+        return;
       }
 
-      // Rethrow to allow pg-boss to manage retries/backoff
+      // Case 2: Final retry exhausted
+      if (isFinalAttempt) {
+        this.logger.error(
+          `AI analysis failed and retries exhausted for resume ${resumeId} (attempt ${retryCount + 1}/${retryLimit + 1}): ${errorMessage}. Recording FAILED state.`
+        );
+        await this.markAnalysisFailed(
+          resumeId,
+          'Failed to analyze resume. Please verify resume readability and try again.'
+        );
+        // Rethrow so pg-boss marks the job as failed in queue state
+        throw error;
+      }
+
+      // Case 3: Transient/retryable failure on non-final attempt
+      this.logger.warn(
+        `Transient failure during AI analysis for resume ${resumeId} (attempt ${retryCount + 1}/${retryLimit + 1}): ${errorMessage}. Retrying via pg-boss backoff...`
+      );
+      // Keep status as PROCESSING in DB to prevent concurrent student re-triggers
+      // Rethrow so pg-boss executes the next retry attempt
       throw error;
+    }
+  }
+
+  private async markAnalysisFailed(
+    resumeId: string,
+    errorMessage: string
+  ): Promise<void> {
+    try {
+      await this.prisma.aiAnalysis.update({
+        where: { resume_id: resumeId },
+        data: {
+          status: AnalysisStatus.FAILED,
+          error_message: errorMessage,
+        },
+      });
+    } catch (dbError) {
+      this.logger.error(
+        `Failed to update AiAnalysis status to FAILED for ${resumeId}: ${dbError}`
+      );
     }
   }
 }

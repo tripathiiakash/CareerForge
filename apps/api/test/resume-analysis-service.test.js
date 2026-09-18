@@ -126,7 +126,7 @@ describe('ResumeAnalysisService Test Suite', () => {
       );
     });
 
-    it('should reject with 429 TOO_MANY_REQUESTS if analysis is currently PROCESSING (concurrency lock)', async () => {
+    it('should reject with 429 TOO_MANY_REQUESTS if analysis is currently PROCESSING and fresh (concurrency lock)', async () => {
       mockPrisma.resume.findUnique = async () => ({
         id: resumeId,
         student_id: studentProfileId,
@@ -141,6 +141,84 @@ describe('ResumeAnalysisService Test Suite', () => {
         () => service.triggerAnalysis(validStudentUserId, resumeId),
         (err) => err.status === 429 && err.response.code === 'RATE_LIMITED'
       );
+    });
+
+    it('should reject with 429 TOO_MANY_REQUESTS if PROCESSING within the legitimate retry window (2 minutes ago)', async () => {
+      const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+      mockPrisma.resume.findUnique = async () => ({
+        id: resumeId,
+        student_id: studentProfileId,
+        parsed_text: 'Valid resume text',
+        ai_analysis: {
+          status: 'PROCESSING',
+          created_at: twoMinutesAgo,
+        },
+      });
+
+      await assert.rejects(
+        () => service.triggerAnalysis(validStudentUserId, resumeId),
+        (err) => err.status === 429 && err.response.code === 'RATE_LIMITED'
+      );
+    });
+
+    it('should reject with 429 TOO_MANY_REQUESTS if PROCESSING at 5 minutes ago (within the 6-minute worst-case retry window)', async () => {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+      mockPrisma.resume.findUnique = async () => ({
+        id: resumeId,
+        student_id: studentProfileId,
+        parsed_text: 'Valid resume text',
+        ai_analysis: {
+          status: 'PROCESSING',
+          created_at: fiveMinutesAgo,
+        },
+      });
+
+      await assert.rejects(
+        () => service.triggerAnalysis(validStudentUserId, resumeId),
+        (err) => err.status === 429 && err.response.code === 'RATE_LIMITED'
+      );
+    });
+
+    it('should recover from abandoned/stale PROCESSING state older than 6 minutes and allow new analysis', async () => {
+      const sevenMinutesAgo = new Date(Date.now() - 7 * 60 * 1000);
+      mockPrisma.resume.findUnique = async () => ({
+        id: resumeId,
+        student_id: studentProfileId,
+        parsed_text: 'Valid resume text',
+        ai_analysis: {
+          status: 'PROCESSING',
+          created_at: sevenMinutesAgo,
+        },
+      });
+
+      let upsertArgs = null;
+      mockPrisma.aiAnalysis.upsert = async (args) => {
+        upsertArgs = args;
+        return {};
+      };
+
+      let queuedJob = null;
+      mockQueueService.send = async (queueName, data, options) => {
+        queuedJob = { queueName, data, options };
+        return 'job-recovery-1';
+      };
+
+      const result = await service.triggerAnalysis(
+        validStudentUserId,
+        resumeId
+      );
+
+      assert.equal(result.status, 'PROCESSING');
+      assert.equal(result.resume_id, resumeId);
+      assert.ok(upsertArgs);
+      assert.equal(upsertArgs.where.resume_id, resumeId);
+      assert.equal(upsertArgs.update.status, 'PROCESSING');
+      assert.ok(upsertArgs.update.created_at instanceof Date);
+      assert.ok(queuedJob);
+      assert.equal(queuedJob.queueName, 'resume-ai-analysis');
+      assert.equal(queuedJob.options.singletonKey, resumeId);
+      assert.equal(queuedJob.options.retryLimit, 2);
+      assert.equal(queuedJob.options.expireInSeconds, 120);
     });
 
     it('should reject with 429 TOO_MANY_REQUESTS if COMPLETED within the 5-minute cooldown period', async () => {
@@ -215,6 +293,118 @@ describe('ResumeAnalysisService Test Suite', () => {
         resumeId
       );
       assert.equal(result.status, 'PROCESSING');
+    });
+
+    it('should reject retrigger while retryable failure is in backoff, then allow recovery once stale', async () => {
+      // Step 1: Initial analysis enqueued at T0
+      const t0 = new Date(Date.now() - 2 * 60 * 1000); // 2 minutes ago
+      let analysisRecord = {
+        status: 'PROCESSING',
+        created_at: t0,
+      };
+
+      mockPrisma.resume.findUnique = async () => ({
+        id: resumeId,
+        student_id: studentProfileId,
+        parsed_text: 'Valid resume text',
+        ai_analysis: analysisRecord,
+      });
+
+      // Step 2: Retryable failure occurred in worker, leaving DB in PROCESSING.
+      // At T0 + 2m, user attempts to trigger analysis again while retries are still pending.
+      await assert.rejects(
+        () => service.triggerAnalysis(validStudentUserId, resumeId),
+        (err) => {
+          assert.equal(err.status, 429);
+          assert.equal(err.response.code, 'RATE_LIMITED');
+          assert.match(err.response.message, /Please wait before re-analyzing this resume/);
+          return true;
+        }
+      );
+
+      // Step 3: Now simulate worker/server crash or pg-boss job expiration:
+      // Time advances past the 6-minute stale threshold (T0 + 7m)
+      const t7 = new Date(Date.now() - 7 * 60 * 1000);
+      analysisRecord.created_at = t7;
+
+      let reEnqueued = false;
+      mockQueueService.send = async (queue, data, opts) => {
+        reEnqueued = true;
+        assert.equal(opts.singletonKey, resumeId);
+        assert.equal(opts.expireInSeconds, 120);
+        return 'new-recovery-job';
+      };
+
+      const recoveryResult = await service.triggerAnalysis(validStudentUserId, resumeId);
+      assert.equal(recoveryResult.status, 'PROCESSING');
+      assert.equal(reEnqueued, true);
+    });
+
+    it('Scenario 3: when DB timestamp is older than stale threshold but pg-boss job is still retrying/active, exclusive policy deduplicates and prevents second job', async () => {
+      // A. Resume analysis is PROCESSING in the database.
+      // C. The DB timestamp becomes older than the stale threshold (7 minutes ago).
+      const sevenMinutesAgo = new Date(Date.now() - 7 * 60 * 1000);
+      mockPrisma.resume.findUnique = async () => ({
+        id: resumeId,
+        student_id: studentProfileId,
+        parsed_text: 'Valid resume text',
+        ai_analysis: {
+          status: 'PROCESSING',
+          created_at: sevenMinutesAgo,
+        },
+      });
+
+      // B & D. A corresponding pg-boss job exists in retry or active state in the queue.
+      // In PostgreSQL, pg-boss index job_i6 enforces UNIQUE(name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'.
+      // Therefore, pg-boss insertJobs encounters conflict, performs ON CONFLICT DO NOTHING, and returns null.
+      let sendCalled = false;
+      mockQueueService.send = async (queueName, data, options) => {
+        sendCalled = true;
+        assert.equal(queueName, 'resume-ai-analysis');
+        assert.equal(options.singletonKey, resumeId);
+        // Simulate pg-boss returning null due to exclusive policy deduplication
+        return null;
+      };
+
+      const result = await service.triggerAnalysis(validStudentUserId, resumeId);
+
+      // Verify that the system handled deduplication gracefully without error or creating a duplicate job
+      assert.equal(sendCalled, true);
+      assert.equal(result.status, 'PROCESSING');
+      assert.equal(result.resume_id, resumeId);
+    });
+
+    it('should catch queue enqueue error, rollback DB to FAILED, and not lock user out for 6 minutes', async () => {
+      mockPrisma.resume.findUnique = async () => ({
+        id: resumeId,
+        student_id: studentProfileId,
+        parsed_text: 'Valid resume text',
+        ai_analysis: null,
+      });
+
+      let updatedState = null;
+      mockPrisma.aiAnalysis.update = async (params) => {
+        updatedState = params.data;
+        return {};
+      };
+
+      mockQueueService.send = async () => {
+        throw new Error('pg-boss connection refused');
+      };
+
+      await assert.rejects(
+        () => service.triggerAnalysis(validStudentUserId, resumeId),
+        (err) => {
+          assert.equal(err.status, 500);
+          assert.equal(err.response.code, 'QUEUE_ERROR');
+          return true;
+        }
+      );
+
+      // Verify DB was marked FAILED so student is not locked out
+      assert.ok(updatedState);
+      assert.equal(updatedState.status, 'FAILED');
+      assert.match(updatedState.error_message, /Failed to schedule analysis job/);
     });
   });
 

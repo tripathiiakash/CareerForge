@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { aiResumeAnalysisOutputSchema } from '@careerforge/validation';
 import { ConfigService } from '../../../core/config/config.service';
 import {
+  AiProviderError,
   IAiProvider,
   ResumeAnalysisPromptInput,
   ResumeAnalysisResult,
@@ -23,8 +24,10 @@ export class GeminiProvider implements IAiProvider {
   ): Promise<ResumeAnalysisResult> {
     const apiKey = this.configService.geminiApiKey;
     if (!apiKey) {
-      throw new Error(
-        'GEMINI_API_KEY is not configured on the server. Cannot execute AI analysis.'
+      throw new AiProviderError(
+        'GEMINI_API_KEY is not configured on the server. Cannot execute AI analysis.',
+        500,
+        false
       );
     }
 
@@ -79,8 +82,11 @@ Return strictly a raw JSON object matching the schema. Do not wrap in markdown t
         this.logger.error(
           `Gemini API returned HTTP ${response.status}: ${response.statusText}`
         );
-        throw new Error(
-          `Gemini API request failed with status ${response.status}`
+        const isRetryable = response.status === 429 || response.status >= 500;
+        throw new AiProviderError(
+          `Gemini API request failed with status ${response.status}`,
+          response.status,
+          isRetryable
         );
       }
 

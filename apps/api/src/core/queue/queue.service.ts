@@ -4,9 +4,13 @@ import {
   OnModuleDestroy,
   OnModuleInit,
 } from '@nestjs/common';
-import { PgBoss } from 'pg-boss';
+import { PgBoss, JobWithMetadata, QueuePolicy } from 'pg-boss';
 import { ConfigService } from '../config/config.service';
 import { JobHandler, QUEUE_NAMES, QueueSendOptions } from './queue.types';
+
+const DEFAULT_QUEUE_POLICIES: Partial<Record<string, QueuePolicy>> = {
+  [QUEUE_NAMES.RESUME_AI_ANALYSIS]: 'exclusive',
+};
 
 @Injectable()
 export class QueueService implements OnModuleInit, OnModuleDestroy {
@@ -55,8 +59,16 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async createQueue(name: string): Promise<void> {
-    await this.boss.createQueue(name);
+  async createQueue(
+    name: string,
+    options?: { policy?: QueuePolicy }
+  ): Promise<void> {
+    const policy = options?.policy ?? DEFAULT_QUEUE_POLICIES[name];
+    if (policy) {
+      await this.boss.createQueue(name, { policy });
+    } else {
+      await this.boss.createQueue(name);
+    }
   }
 
   async send<T extends object>(
@@ -72,13 +84,16 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     handler: JobHandler<T>
   ): Promise<void> {
     await this.createQueue(name);
-    await this.boss.work<T>(name, async (jobs) => {
+    await this.boss.work<T>(name, { includeMetadata: true }, async (jobs) => {
       const jobList = Array.isArray(jobs) ? jobs : [jobs];
       for (const job of jobList) {
+        const jobWithMeta = job as JobWithMetadata<T>;
         await handler({
-          id: job.id,
-          name: job.name,
-          data: job.data,
+          id: jobWithMeta.id,
+          name: jobWithMeta.name,
+          data: jobWithMeta.data,
+          retryCount: jobWithMeta.retryCount ?? 0,
+          retryLimit: jobWithMeta.retryLimit,
         });
       }
     });

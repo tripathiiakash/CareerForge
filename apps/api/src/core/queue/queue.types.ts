@@ -48,6 +48,8 @@ export interface JobEnvelope<T> {
   id: string;
   name: string;
   data: T;
+  retryCount?: number;
+  retryLimit?: number;
 }
 
 export type JobHandler<T> = (job: JobEnvelope<T>) => Promise<void>;

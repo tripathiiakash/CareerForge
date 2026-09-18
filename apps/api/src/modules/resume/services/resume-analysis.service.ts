@@ -4,6 +4,7 @@ import {
   HttpException,
   HttpStatus,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AnalysisStatus } from '@prisma/client';
@@ -18,10 +19,47 @@ import { GetAnalysisData } from '../dto/get-analysis-response.dto';
 import { TriggerAnalysisData } from '../dto/trigger-analysis-response.dto';
 import { UUID_REGEX } from '../../../core/utils/uuid.util';
 
-const COOLDOWN_MS = 5 * 60 * 1000; // 5-minute cooldown per docs/API.md §7.1
+export const COOLDOWN_MS = 5 * 60 * 1000; // 5-minute cooldown per docs/API.md §7.1
+
+/**
+ * Single active execution window in pg-boss (in seconds).
+ * The Gemini API call has a 60s timeout (AbortSignal.timeout(60000)).
+ * Setting active expiration to 120 seconds provides a 100% safety buffer for network/payload overhead.
+ */
+export const ANALYSIS_ACTIVE_EXPIRE_SECONDS = 120; // 2 minutes
+
+/**
+ * Retry parameters for AI resume analysis in pg-boss:
+ * - retryLimit: 2 (total 3 attempts: initial attempt + 2 retries)
+ * - retryDelay: 15 seconds initial delay
+ * - retryBackoff: true (exponential backoff with jitter)
+ */
+export const ANALYSIS_RETRY_LIMIT = 2;
+export const ANALYSIS_RETRY_DELAY_SECONDS = 15;
+
+/**
+ * Stale PROCESSING recovery threshold in milliseconds.
+ *
+ * Maximum legitimate retry/backoff lifecycle:
+ * - Attempt 1 active: up to 60s
+ * - Backoff 1: max 30s (15s base * [1..2] jitter)
+ * - Attempt 2 active: up to 60s
+ * - Backoff 2: max 60s (30s base * [1..2] jitter)
+ * - Attempt 3 active: up to 60s
+ * Total normal execution ceiling = 270s (4.5 minutes).
+ *
+ * Even if an attempt suffers a hard worker process crash taking the full
+ * active expiration (120s): 120s + 30s + 60s + 60s + 60s = 330s (5.5 minutes).
+ *
+ * Setting STALE_PROCESSING_THRESHOLD_MS to 6 minutes (360,000 ms) safely exceeds
+ * the maximum legitimate retry lifecycle while ensuring genuinely abandoned jobs recover.
+ */
+export const STALE_PROCESSING_THRESHOLD_MS = 6 * 60 * 1000; // 6 minutes
 
 @Injectable()
 export class ResumeAnalysisService {
+  private readonly logger = new Logger(ResumeAnalysisService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly studentService: StudentService,
@@ -38,7 +76,7 @@ export class ResumeAnalysisService {
   }
 
   /**
-   * 7.1 Trigger Resume Analysis
+   * 7.1 Trigger Resume AI Analysis
    * POST /api/v1/resumes/:resumeId/analyze
    */
   async triggerAnalysis(
@@ -47,27 +85,29 @@ export class ResumeAnalysisService {
   ): Promise<TriggerAnalysisData> {
     this.validateUuid(resumeId);
 
-    // 1. Resolve student profile from authenticated user ID
+    // 1. Resolve student profile
     const student = await this.studentService.getProfileByUserId(userId);
 
-    // 2. Query resume and its associated analysis
+    // 2. Fetch resume and verify student ownership
     const resume = await this.prisma.resume.findUnique({
       where: { id: resumeId },
-      include: { ai_analysis: true },
+      include: {
+        ai_analysis: true,
+      },
     });
 
     if (!resume) {
       throw new NotFoundException({
         code: 'NOT_FOUND',
-        message: 'Resume does not exist',
+        message: 'Resume not found.',
       });
     }
 
-    // 3. Enforce student ownership
+    // 3. Verify ownership: must belong to the calling student
     if (resume.student_id !== student.id) {
       throw new ForbiddenException({
         code: 'FORBIDDEN',
-        message: 'Resume belongs to a different student',
+        message: 'You are not authorized to analyze this resume.',
       });
     }
 
@@ -95,15 +135,21 @@ export class ResumeAnalysisService {
       );
     }
 
-    // 5. Enforce concurrency and 5-minute cooldown rules
+    // 5. Enforce concurrency, recovery of stale PROCESSING, and 5-minute cooldown rules
     if (resume.ai_analysis) {
       if (resume.ai_analysis.status === AnalysisStatus.PROCESSING) {
-        throw new HttpException(
-          {
-            code: 'RATE_LIMITED',
-            message: 'Please wait before re-analyzing this resume.',
-          },
-          HttpStatus.TOO_MANY_REQUESTS
+        const elapsedMs = Date.now() - resume.ai_analysis.created_at.getTime();
+        if (elapsedMs < STALE_PROCESSING_THRESHOLD_MS) {
+          throw new HttpException(
+            {
+              code: 'RATE_LIMITED',
+              message: 'Please wait before re-analyzing this resume.',
+            },
+            HttpStatus.TOO_MANY_REQUESTS
+          );
+        }
+        this.logger.warn(
+          `Recovering from abandoned PROCESSING analysis for resume ${resumeId} (age: ${Math.round(elapsedMs / 1000)}s)`
         );
       }
 
@@ -139,20 +185,56 @@ export class ResumeAnalysisService {
     });
 
     // 7. Enqueue background analysis job
-    await this.queueService.send<ResumeAnalysisJobData>(
-      QUEUE_NAMES.RESUME_AI_ANALYSIS,
-      {
-        resumeId,
-        studentId: student.id,
-      },
-      {
-        singletonKey: resumeId,
-        retryLimit: 2,
-        retryDelay: 15,
-        retryBackoff: true,
-        expireInSeconds: 120,
-      }
-    );
+    let jobId: string | null = null;
+    try {
+      jobId = await this.queueService.send<ResumeAnalysisJobData>(
+        QUEUE_NAMES.RESUME_AI_ANALYSIS,
+        {
+          resumeId,
+          studentId: student.id,
+        },
+        {
+          singletonKey: resumeId,
+          retryLimit: ANALYSIS_RETRY_LIMIT,
+          retryDelay: ANALYSIS_RETRY_DELAY_SECONDS,
+          retryBackoff: true,
+          expireInSeconds: ANALYSIS_ACTIVE_EXPIRE_SECONDS,
+        }
+      );
+    } catch (enqueueError) {
+      this.logger.error(
+        `Failed to enqueue AI analysis job for resume ${resumeId}`,
+        enqueueError
+      );
+      // Mark as FAILED so student is not locked out for 6 minutes
+      await this.prisma.aiAnalysis
+        .update({
+          where: { resume_id: resumeId },
+          data: {
+            status: AnalysisStatus.FAILED,
+            error_message:
+              'Failed to schedule analysis job. Please try again.',
+          },
+        })
+        .catch(() => {});
+      throw new HttpException(
+        {
+          code: 'QUEUE_ERROR',
+          message: 'Failed to schedule analysis job. Please try again.',
+        },
+        HttpStatus.INTERNAL_SERVER_ERROR
+      );
+    }
+
+    if (jobId) {
+      this.logger.log(
+        `Enqueued resume AI analysis job ${jobId} for resume ${resumeId}`
+      );
+    } else {
+      this.logger.warn(
+        `Job for resume ${resumeId} was deduplicated by queue exclusive policy (job already created/active/retrying in pg-boss).`
+      );
+    }
 
     return {
       resume_id: resumeId,
