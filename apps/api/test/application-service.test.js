@@ -4,10 +4,16 @@ const { Prisma } = require('@prisma/client');
 const {
   ApplicationService,
 } = require('../dist/modules/application/application.service');
+const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
 
 describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () => {
   let service;
   let mockPrisma;
+  let mockQueueService;
+  let mockConfigService;
+  let sentJobs;
+  let applicationCreateCalls;
+  let resumeUpdateCalls;
 
   const validUserId = '11111111-1111-4111-8111-111111111111';
   const validStudentId = '22222222-2222-4222-8222-222222222222';
@@ -18,7 +24,24 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
   const validRecruiterId = '77777777-7777-4777-8777-777777777777';
 
   beforeEach(() => {
+    sentJobs = [];
+    applicationCreateCalls = [];
+    resumeUpdateCalls = [];
+
+    mockQueueService = {
+      send: async (queueName, data, options) => {
+        sentJobs.push({ queueName, data, options });
+        return 'mock-job-id';
+      },
+    };
+
+    mockConfigService = {
+      maxApplicationsPerStudent: 100,
+    };
+
     mockPrisma = {
+      $transaction: async (fn) => fn(mockPrisma),
+      $queryRaw: async () => [],
       recruiter: {
         findUnique: async () => ({
           id: validRecruiterId,
@@ -42,20 +65,30 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
         findUnique: async () => ({
           id: validResumeId,
           student_id: validStudentId,
+          file_url: 'https://cloud-storage.com/resumes/valid.pdf',
+          parsed_text: 'Valid resume parsed text',
+          is_primary: true,
         }),
+        update: async (args) => {
+          resumeUpdateCalls.push(args);
+          return args;
+        },
       },
       application: {
         findUnique: async () => null,
         count: async () => 0,
         findMany: async () => [],
-        create: async ({ data }) => ({
-          id: validApplicationId,
-          job_id: data.job_id,
-          student_id: data.student_id,
-          resume_id: data.resume_id,
-          status: data.status,
-          applied_at: new Date('2024-02-10T14:30:00.000Z'),
-        }),
+        create: async ({ data }) => {
+          applicationCreateCalls.push(data);
+          return {
+            id: validApplicationId,
+            job_id: data.job_id,
+            student_id: data.student_id,
+            resume_id: data.resume_id,
+            status: data.status,
+            applied_at: new Date('2024-02-10T14:30:00.000Z'),
+          };
+        },
         update: async ({ where, data }) => ({
           id: where.id,
           status: data.status,
@@ -64,14 +97,19 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
       },
     };
 
-    service = new ApplicationService(mockPrisma);
+    service = new ApplicationService(
+      mockPrisma,
+      mockQueueService,
+      mockConfigService
+    );
   });
 
   describe('applyToJob', () => {
-    it('1. successful application creation with APPLIED status and documented envelope', async () => {
+    it('1. successful application creation with APPLIED status and enqueues both student and recruiter notifications', async () => {
       let createdData = null;
       mockPrisma.application.create = async ({ data }) => {
         createdData = data;
+        applicationCreateCalls.push(data);
         return {
           id: validApplicationId,
           job_id: data.job_id,
@@ -97,9 +135,31 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
         applied_at: new Date('2024-02-10T14:30:00.000Z'),
         message: 'Successfully applied to the job.',
       });
+
+      // Side-effect assertions: application created, notifications enqueued
+      assert.equal(applicationCreateCalls.length, 1);
+      assert.equal(sentJobs.length, 2);
+      assert.equal(
+        sentJobs[0].queueName,
+        QUEUE_NAMES.NOTIFICATION_EMAIL_APPLICATION_SUBMITTED_STUDENT
+      );
+      assert.deepEqual(sentJobs[0].data, { applicationId: validApplicationId });
+      assert.equal(
+        sentJobs[0].options.singletonKey,
+        `app-sub-student:${validApplicationId}`
+      );
+      assert.equal(
+        sentJobs[1].queueName,
+        QUEUE_NAMES.NOTIFICATION_EMAIL_APPLICATION_SUBMITTED_RECRUITER
+      );
+      assert.deepEqual(sentJobs[1].data, { applicationId: validApplicationId });
+      assert.equal(
+        sentJobs[1].options.singletonKey,
+        `app-sub-recruiter:${validApplicationId}`
+      );
     });
 
-    it('2. rejects invalid jobId UUID with 400 VALIDATION_ERROR', async () => {
+    it('2. rejects invalid jobId UUID with 400 VALIDATION_ERROR and triggers no side effects', async () => {
       await assert.rejects(
         () =>
           service.applyToJob(validUserId, 'not-a-uuid', {
@@ -110,9 +170,12 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           err.response.code === 'VALIDATION_ERROR' &&
           err.response.message.includes('jobId')
       );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+      assert.equal(resumeUpdateCalls.length, 0);
     });
 
-    it('3. rejects invalid resume_id UUID with 400 VALIDATION_ERROR', async () => {
+    it('3. rejects invalid resume_id UUID with 400 VALIDATION_ERROR and triggers no side effects', async () => {
       await assert.rejects(
         () =>
           service.applyToJob(validUserId, validJobId, {
@@ -123,9 +186,12 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           err.response.code === 'VALIDATION_ERROR' &&
           err.response.message.includes('resume_id')
       );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+      assert.equal(resumeUpdateCalls.length, 0);
     });
 
-    it('4. rejects with 404 NOT_FOUND when student profile does not exist', async () => {
+    it('4. rejects with 404 NOT_FOUND when student profile does not exist (no create, no notifications, no mutations)', async () => {
       mockPrisma.student.findUnique = async () => null;
 
       await assert.rejects(
@@ -138,9 +204,12 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           err.response.code === 'NOT_FOUND' &&
           err.response.message === 'Student profile does not exist'
       );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+      assert.equal(resumeUpdateCalls.length, 0);
     });
 
-    it('5. rejects with 404 NOT_FOUND when job does not exist', async () => {
+    it('5. rejects with 404 NOT_FOUND when job does not exist and triggers no side effects', async () => {
       mockPrisma.job.findUnique = async () => null;
 
       await assert.rejects(
@@ -153,9 +222,12 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           err.response.code === 'NOT_FOUND' &&
           err.response.message === 'Job does not exist'
       );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+      assert.equal(resumeUpdateCalls.length, 0);
     });
 
-    it('6. rejects with 400 VALIDATION_ERROR when job is in PENDING status', async () => {
+    it('6. rejects with 400 VALIDATION_ERROR when job is in PENDING status (no create, no notification)', async () => {
       mockPrisma.job.findUnique = async () => ({
         id: validJobId,
         status: 'PENDING',
@@ -171,9 +243,11 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           err.response.code === 'VALIDATION_ERROR' &&
           err.response.message === 'Job is not in ACTIVE status'
       );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
     });
 
-    it('7. rejects with 400 VALIDATION_ERROR when job is in REJECTED status', async () => {
+    it('7. rejects with 400 VALIDATION_ERROR when job is in REJECTED status (no create, no notification)', async () => {
       mockPrisma.job.findUnique = async () => ({
         id: validJobId,
         status: 'REJECTED',
@@ -189,9 +263,71 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           err.response.code === 'VALIDATION_ERROR' &&
           err.response.message === 'Job is not in ACTIVE status'
       );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
     });
 
-    it('8. rejects with 404 NOT_FOUND when resume does not exist', async () => {
+    it('8. rejects with 400 VALIDATION_ERROR when job is in DRAFT status (no create, no notification)', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        id: validJobId,
+        status: 'DRAFT',
+      });
+
+      await assert.rejects(
+        () =>
+          service.applyToJob(validUserId, validJobId, {
+            resume_id: validResumeId,
+          }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message === 'Job is not in ACTIVE status'
+      );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+    });
+
+    it('9. rejects with 400 VALIDATION_ERROR when job is in CLOSED status (no create, no notification)', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        id: validJobId,
+        status: 'CLOSED',
+      });
+
+      await assert.rejects(
+        () =>
+          service.applyToJob(validUserId, validJobId, {
+            resume_id: validResumeId,
+          }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message === 'Job is not in ACTIVE status'
+      );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+    });
+
+    it('10. rejects with 400 VALIDATION_ERROR when job is in ARCHIVED status (no create, no notification)', async () => {
+      mockPrisma.job.findUnique = async () => ({
+        id: validJobId,
+        status: 'ARCHIVED',
+      });
+
+      await assert.rejects(
+        () =>
+          service.applyToJob(validUserId, validJobId, {
+            resume_id: validResumeId,
+          }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message === 'Job is not in ACTIVE status'
+      );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+    });
+
+    it('11. rejects with 404 NOT_FOUND when resume does not exist (no create, no notification)', async () => {
       mockPrisma.resume.findUnique = async () => null;
 
       await assert.rejects(
@@ -204,13 +340,24 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           err.response.code === 'NOT_FOUND' &&
           err.response.message === 'Resume does not exist'
       );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
     });
 
-    it('9. rejects with 403 FORBIDDEN when resume belongs to another student (BOLA/IDOR protection)', async () => {
-      mockPrisma.resume.findUnique = async () => ({
+    it('12. rejects with 403 FORBIDDEN when resume belongs to another student (BOLA/IDOR protection, verify lookup & no mutation)', async () => {
+      let lookupWhere = null;
+      const studentBResume = {
         id: validResumeId,
-        student_id: '99999999-9999-4999-8999-999999999999', // Different student
-      });
+        student_id: '99999999-9999-4999-8999-999999999999', // Student B
+        file_url: 'https://cloud-storage.com/resumes/student-b.pdf',
+        parsed_text: 'Student B private resume content',
+        is_primary: true,
+      };
+
+      mockPrisma.resume.findUnique = async ({ where }) => {
+        lookupWhere = where;
+        return studentBResume;
+      };
 
       await assert.rejects(
         () =>
@@ -223,9 +370,77 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           err.response.message ===
             'Resume does not belong to the authenticated student'
       );
+
+      assert.deepEqual(lookupWhere, { id: validResumeId });
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+      assert.equal(resumeUpdateCalls.length, 0);
+      assert.equal(
+        studentBResume.student_id,
+        '99999999-9999-4999-8999-999999999999'
+      );
     });
 
-    it('10. rejects with 409 CONFLICT when student has already applied to the job (pre-check)', async () => {
+    it('13. allows application when resume strictly belongs to the authenticated student', async () => {
+      let lookupWhere = null;
+      mockPrisma.resume.findUnique = async ({ where }) => {
+        lookupWhere = where;
+        return {
+          id: validResumeId,
+          student_id: validStudentId,
+          file_url: 'https://cloud-storage.com/resumes/student-a.pdf',
+          parsed_text: 'Student A resume',
+          is_primary: true,
+        };
+      };
+
+      const result = await service.applyToJob(validUserId, validJobId, {
+        resume_id: validResumeId,
+      });
+
+      assert.deepEqual(lookupWhere, { id: validResumeId });
+      assert.equal(result.status, 'APPLIED');
+      assert.equal(applicationCreateCalls.length, 1);
+      assert.equal(sentJobs.length, 2);
+    });
+
+    it('14. resume eligibility: permits application with non-primary resume (is_primary: false)', async () => {
+      mockPrisma.resume.findUnique = async () => ({
+        id: validResumeId,
+        student_id: validStudentId,
+        file_url: 'https://cloud-storage.com/resumes/secondary.pdf',
+        parsed_text: 'Secondary tailored resume',
+        is_primary: false,
+      });
+
+      const result = await service.applyToJob(validUserId, validJobId, {
+        resume_id: validResumeId,
+      });
+
+      assert.equal(result.status, 'APPLIED');
+      assert.equal(applicationCreateCalls.length, 1);
+      assert.equal(sentJobs.length, 2);
+    });
+
+    it('15. resume eligibility: permits application when resume parsed_text is null (extraction pending or failed)', async () => {
+      mockPrisma.resume.findUnique = async () => ({
+        id: validResumeId,
+        student_id: validStudentId,
+        file_url: 'https://cloud-storage.com/resumes/unparsed.pdf',
+        parsed_text: null,
+        is_primary: true,
+      });
+
+      const result = await service.applyToJob(validUserId, validJobId, {
+        resume_id: validResumeId,
+      });
+
+      assert.equal(result.status, 'APPLIED');
+      assert.equal(applicationCreateCalls.length, 1);
+      assert.equal(sentJobs.length, 2);
+    });
+
+    it('16. rejects with 409 CONFLICT when student has already applied to the job (pre-check, no notification)', async () => {
       mockPrisma.application.findUnique = async () => ({
         id: 'existing-application-id',
         job_id: validJobId,
@@ -242,9 +457,57 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           err.response.code === 'CONFLICT' &&
           err.response.message === 'Student has already applied to this job'
       );
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
     });
 
-    it('11. rejects with 409 CONFLICT when unique constraint (P2002) is triggered on race condition', async () => {
+    it('17. duplicate application lifecycle: first application succeeds, second application to same job is rejected with 409 CONFLICT', async () => {
+      const existingApps = new Map();
+      mockPrisma.application.findUnique = async ({ where }) => {
+        const key = `${where.job_id_student_id.job_id}:${where.job_id_student_id.student_id}`;
+        return existingApps.get(key) || null;
+      };
+      mockPrisma.application.create = async ({ data }) => {
+        const app = {
+          id: validApplicationId,
+          job_id: data.job_id,
+          student_id: data.student_id,
+          resume_id: data.resume_id,
+          status: data.status,
+          applied_at: new Date('2024-02-10T14:30:00.000Z'),
+        };
+        const key = `${data.job_id}:${data.student_id}`;
+        existingApps.set(key, app);
+        applicationCreateCalls.push(data);
+        return app;
+      };
+
+      // First application succeeds
+      const firstResult = await service.applyToJob(validUserId, validJobId, {
+        resume_id: validResumeId,
+      });
+      assert.equal(firstResult.status, 'APPLIED');
+      assert.equal(applicationCreateCalls.length, 1);
+      assert.equal(sentJobs.length, 2);
+
+      // Second application by same student to same job is rejected
+      await assert.rejects(
+        () =>
+          service.applyToJob(validUserId, validJobId, {
+            resume_id: validResumeId,
+          }),
+        (err) =>
+          err.status === 409 &&
+          err.response.code === 'CONFLICT' &&
+          err.response.message === 'Student has already applied to this job'
+      );
+
+      // Verify no second application created and no additional notifications dispatched
+      assert.equal(applicationCreateCalls.length, 1);
+      assert.equal(sentJobs.length, 2);
+    });
+
+    it('18. rejects with 409 CONFLICT when unique constraint (P2002) is triggered on race condition (no notification)', async () => {
       const p2002Error = new Prisma.PrismaClientKnownRequestError(
         'Unique constraint violation on (job_id, student_id)',
         { code: 'P2002', clientVersion: '5.x' }
@@ -263,12 +526,159 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
           err.response.code === 'CONFLICT' &&
           err.response.message === 'Student has already applied to this job'
       );
+      assert.equal(sentJobs.length, 0);
     });
 
-    it('12. security: student_id and status cannot be manipulated by client', async () => {
+    it('19. application limit: allows application when current count is below limit (99/100)', async () => {
+      mockPrisma.application.count = async ({ where }) => {
+        assert.equal(where.student_id, validStudentId);
+        return 99; // 1 below default limit of 100
+      };
+
+      const result = await service.applyToJob(validUserId, validJobId, {
+        resume_id: validResumeId,
+      });
+
+      assert.equal(result.status, 'APPLIED');
+      assert.equal(applicationCreateCalls.length, 1);
+      assert.equal(sentJobs.length, 2);
+    });
+
+    it('20. application limit: rejects with 400 VALIDATION_ERROR when current count is exactly at limit (100/100, no create, no notification)', async () => {
+      mockPrisma.application.count = async () => 100;
+
+      await assert.rejects(
+        () =>
+          service.applyToJob(validUserId, validJobId, {
+            resume_id: validResumeId,
+          }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message ===
+            'Maximum application limit of 100 reached for this student'
+      );
+
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+    });
+
+    it('21. application limit: rejects with 400 VALIDATION_ERROR when current count exceeds limit (101/100)', async () => {
+      mockPrisma.application.count = async () => 101;
+
+      await assert.rejects(
+        () =>
+          service.applyToJob(validUserId, validJobId, {
+            resume_id: validResumeId,
+          }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message ===
+            'Maximum application limit of 100 reached for this student'
+      );
+
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+    });
+
+    it('22. application limit: respects custom configured limit (e.g. 25 applications)', async () => {
+      const customConfig = { maxApplicationsPerStudent: 25 };
+      const customService = new ApplicationService(
+        mockPrisma,
+        mockQueueService,
+        customConfig
+      );
+
+      mockPrisma.application.count = async () => 25;
+
+      await assert.rejects(
+        () =>
+          customService.applyToJob(validUserId, validJobId, {
+            resume_id: validResumeId,
+          }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message ===
+            'Maximum application limit of 25 reached for this student'
+      );
+
+      assert.equal(applicationCreateCalls.length, 0);
+      assert.equal(sentJobs.length, 0);
+    });
+
+    it('23. application limit: duplicate check returns 409 CONFLICT when under limit, but quota exhaustion returns 400 VALIDATION_ERROR when at limit', async () => {
+      // Under limit with duplicate -> 409 CONFLICT
+      mockPrisma.application.count = async () => 10;
+      mockPrisma.application.findUnique = async () => ({
+        id: 'existing-app',
+      });
+
+      await assert.rejects(
+        () =>
+          service.applyToJob(validUserId, validJobId, {
+            resume_id: validResumeId,
+          }),
+        (err) =>
+          err.status === 409 &&
+          err.response.code === 'CONFLICT' &&
+          err.response.message === 'Student has already applied to this job'
+      );
+
+      // At limit with duplicate -> 400 VALIDATION_ERROR (quota exhaustion checked before duplicate)
+      mockPrisma.application.count = async () => 100;
+
+      await assert.rejects(
+        () =>
+          service.applyToJob(validUserId, validJobId, {
+            resume_id: validResumeId,
+          }),
+        (err) =>
+          err.status === 400 &&
+          err.response.code === 'VALIDATION_ERROR' &&
+          err.response.message.includes('Maximum application limit')
+      );
+    });
+
+    it('24. executes application creation and notification dispatch when prisma.$transaction is undefined (fallback path)', async () => {
+      const nonTxPrisma = { ...mockPrisma };
+      delete nonTxPrisma.$transaction;
+
+      const directService = new ApplicationService(
+        nonTxPrisma,
+        mockQueueService,
+        mockConfigService
+      );
+
+      const result = await directService.applyToJob(validUserId, validJobId, {
+        resume_id: validResumeId,
+      });
+
+      assert.equal(result.status, 'APPLIED');
+      assert.equal(applicationCreateCalls.length, 1);
+      assert.equal(sentJobs.length, 2);
+    });
+
+    it('25. queue error resilience: application creation succeeds even if notification queue enqueue throws an error', async () => {
+      mockQueueService.send = async () => {
+        throw new Error('Queue connection temporarily unavailable');
+      };
+
+      const result = await service.applyToJob(validUserId, validJobId, {
+        resume_id: validResumeId,
+      });
+
+      assert.equal(result.application_id, validApplicationId);
+      assert.equal(result.status, 'APPLIED');
+      assert.equal(applicationCreateCalls.length, 1);
+    });
+
+    it('26. security: student_id and status cannot be manipulated by client', async () => {
       let createdData = null;
       mockPrisma.application.create = async ({ data }) => {
         createdData = data;
+        applicationCreateCalls.push(data);
         return {
           id: validApplicationId,
           job_id: data.job_id,
@@ -290,7 +700,7 @@ describe('ApplicationService Test Suite (Phase 4.4.1 - docs/API.md §8.1)', () =
       assert.equal(createdData.status, 'APPLIED');
     });
 
-    it('13. propagates unexpected database errors cleanly', async () => {
+    it('27. propagates unexpected database errors cleanly', async () => {
       const dbError = new Error('Database query failure');
       mockPrisma.student.findUnique = async () => {
         throw dbError;
