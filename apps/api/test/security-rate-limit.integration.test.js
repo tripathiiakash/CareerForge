@@ -1,7 +1,11 @@
-const { describe, it, beforeEach, after } = require('node:test');
+const { describe, it, beforeEach, after, before } = require('node:test');
 const assert = require('node:assert/strict');
 const { HttpStatus, HttpException, UnprocessableEntityException } = require('@nestjs/common');
-const { PrismaClient } = require('@prisma/client');
+const {
+  createTestPrisma,
+  assertDatabaseReachable,
+  assertMigrationsApplied,
+} = require('./setup/db-test-harness');
 const { RateLimitStore } = require('../dist/core/rate-limit/rate-limit.store');
 const { RateLimitGuard } = require('../dist/core/rate-limit/rate-limit.guard');
 const {
@@ -19,14 +23,25 @@ const {
   ConfigValidationError,
 } = require('../dist/core/config/config.validator');
 
-const prisma = new PrismaClient();
-
 describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
+  let prisma;
+
+  before(async () => {
+    // Safety check: creates client strictly against TEST_DATABASE_URL
+    prisma = createTestPrisma();
+    await assertDatabaseReachable(prisma);
+    await assertMigrationsApplied(prisma);
+  });
+
   after(async () => {
     try {
-      await prisma.$executeRaw`TRUNCATE TABLE "rate_limits"`;
+      if (prisma) {
+        await prisma.$executeRaw`TRUNCATE TABLE "rate_limits"`;
+      }
     } catch (_) {}
-    await prisma.$disconnect();
+    if (prisma) {
+      await prisma.$disconnect();
+    }
   });
 
   describe('1. RateLimitStore', () => {
