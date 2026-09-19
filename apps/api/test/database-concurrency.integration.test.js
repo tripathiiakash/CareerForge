@@ -5,6 +5,7 @@ const {
   UserRole,
   EmploymentType,
   JobStatus,
+  ApplicationStatus,
   Prisma,
 } = require('@prisma/client');
 const {
@@ -617,6 +618,113 @@ describe('Database Concurrency & Unique-Constraint Integration Suite (Phase 6.6-
       assert.equal(jobsInDb[0].name, QUEUE_NAMES.RESUME_AI_ANALYSIS);
       assert.equal(jobsInDb[0].state, 'created');
       assert.equal(jobsInDb[0].policy, 'exclusive');
+    });
+  });
+
+  // =========================================================================
+  // TEST E: REAL APPLICATION STATUS MUTATION CONCURRENCY RACE (FINDING-02)
+  // =========================================================================
+  describe('Test E: Real Application Status Mutation Concurrency Race (FINDING-02)', () => {
+    it('should resolve concurrent conflicting status mutations atomically: exactly 1 wins, 1 receives 409, and only 1 email queued', async () => {
+      const { student, resume } = await createStudentFixture('status-race-stud');
+      const { recruiterUser, jobs } = await createRecruiterAndJobsFixture(1, 'status-race-jobs');
+      const targetJob = jobs[0];
+
+      // Create an application starting in APPLIED status
+      const app = await prisma.application.create({
+        data: {
+          job_id: targetJob.id,
+          student_id: student.id,
+          resume_id: resume.id,
+          status: ApplicationStatus.APPLIED,
+        },
+      });
+      createdAppIds.push(app.id);
+
+      const appService = new ApplicationService(prisma, queueService);
+
+      // Concurrently execute conflicting mutations:
+      // Request A: APPLIED -> REJECTED
+      // Request B: APPLIED -> SHORTLISTED
+      const results = await Promise.allSettled([
+        appService.updateApplicationStatus(recruiterUser.id, app.id, { status: 'REJECTED' }),
+        appService.updateApplicationStatus(recruiterUser.id, app.id, { status: 'SHORTLISTED' }),
+      ]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      // 1. Exactly one mutation must succeed
+      assert.equal(fulfilled.length, 1, 'Exactly one concurrent status mutation must succeed');
+      const winningStatus = fulfilled[0].value.status;
+      assert.ok(
+        winningStatus === 'REJECTED' || winningStatus === 'SHORTLISTED',
+        'Winning status must be REJECTED or SHORTLISTED'
+      );
+
+      // 2. Exactly one mutation must fail with 409 ConflictException
+      assert.equal(rejected.length, 1, 'Exactly one concurrent status mutation must be rejected');
+      const conflictError = rejected[0].reason;
+      assert.equal(
+        conflictError.getStatus?.() ?? conflictError.status,
+        409,
+        'Losing request must receive HTTP 409 CONFLICT'
+      );
+      const errResponse = conflictError.getResponse?.() ?? conflictError;
+      assert.equal(errResponse.code, 'CONFLICT');
+      assert.equal(
+        errResponse.message,
+        'Application status was modified by another request. Please refresh.'
+      );
+
+      // 3. Database state matches winning status
+      const updatedInDb = await prisma.application.findUnique({
+        where: { id: app.id },
+      });
+      assert.equal(
+        updatedInDb.status,
+        winningStatus,
+        'Final application status in database must equal winning transition'
+      );
+
+      // 4. Verify queued notification in pg-boss: only 1 notification enqueued, matching winning status
+      const queuedJobs = await prisma.$queryRaw`
+        SELECT id, name, data->>'status' as status, singleton_key
+        FROM pgboss.job
+        WHERE name = ${QUEUE_NAMES.NOTIFICATION_EMAIL_APPLICATION_STATUS}
+          AND data->>'applicationId' = ${app.id}
+      `;
+      assert.equal(
+        queuedJobs.length,
+        1,
+        'Strictly one status email must be queued in pg-boss; losing transition must not enqueue'
+      );
+      assert.equal(
+        queuedJobs[0].status,
+        winningStatus,
+        'Queued email status must strictly match winning transition'
+      );
+      if (queuedJobs[0].singleton_key) {
+        createdSingletonKeys.push(queuedJobs[0].singleton_key);
+      }
+
+      // 5. Subsequent invalid transition from terminal state (if winningStatus was REJECTED) is rejected with 400
+      if (winningStatus === 'REJECTED') {
+        await assert.rejects(
+          () =>
+            appService.updateApplicationStatus(recruiterUser.id, app.id, { status: 'SHORTLISTED' }),
+          (err) => {
+            assert.equal(err.getStatus?.() ?? err.status, 400);
+            const r = err.getResponse?.() ?? err;
+            assert.equal(r.code, 'VALIDATION_ERROR');
+            return true;
+          }
+        );
+      } else {
+        // If winningStatus was SHORTLISTED, sequential transition to REJECTED still works
+        const seqResult = await appService.updateApplicationStatus(recruiterUser.id, app.id, { status: 'REJECTED' });
+        assert.equal(seqResult.status, 'REJECTED');
+      }
     });
   });
 

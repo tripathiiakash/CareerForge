@@ -484,17 +484,39 @@ export class ApplicationService {
       });
     }
 
-    const updated = await this.prisma.application.update({
-      where: { id },
-      data: {
-        status: dto.status as ApplicationStatus,
-      },
-      select: {
-        id: true,
-        status: true,
-        updated_at: true,
-      },
-    });
+    let updated;
+    try {
+      updated = await this.prisma.application.update({
+        where: {
+          id,
+          status: application.status,
+        },
+        data: {
+          status: dto.status as ApplicationStatus,
+        },
+        select: {
+          id: true,
+          status: true,
+          updated_at: true,
+        },
+      });
+    } catch (error) {
+      if (
+        (error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2025') ||
+        (error &&
+          typeof error === 'object' &&
+          'code' in error &&
+          (error as { code: string }).code === 'P2025')
+      ) {
+        throw new ConflictException({
+          code: 'CONFLICT',
+          message:
+            'Application status was modified by another request. Please refresh.',
+        });
+      }
+      throw error;
+    }
 
     // Asynchronously dispatch application status notification via pg-boss
     if (
