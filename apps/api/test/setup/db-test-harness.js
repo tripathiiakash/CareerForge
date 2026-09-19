@@ -121,7 +121,13 @@ function assertSafeTestDatabase(rawUrl) {
  * @returns {import('@prisma/client').PrismaClient}
  */
 function createTestPrisma(options = {}) {
-  const url = getTestDatabaseUrl();
+  const rawUrl = getTestDatabaseUrl();
+  // On Windows environments where PostgreSQL in Docker is bound strictly to IPv4 127.0.0.1,
+  // connecting to 'localhost' attempts IPv6 (::1) first and incurs a 2000ms connection timeout.
+  // Normalizing to 127.0.0.1 ensures instantaneous, reliable connection pooling.
+  const url = rawUrl
+    .replace('@localhost:', '@127.0.0.1:')
+    .replace('://localhost:', '://127.0.0.1:');
   const { PrismaClient } = require('@prisma/client');
 
   return new PrismaClient({
