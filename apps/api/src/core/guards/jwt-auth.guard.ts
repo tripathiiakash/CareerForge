@@ -58,14 +58,21 @@ export class JwtAuthGuard implements CanActivate {
 
     const payload = await this.tokenService.verifyToken(token);
 
-    // If database access is available, verify the user has not been banned
+    // If database access is available, verify the user exists and has not been banned
     if (this.prisma && typeof this.prisma.user?.findUnique === 'function') {
       const user = await this.prisma.user.findUnique({
         where: { id: payload.sub },
         select: { is_banned: true },
       });
 
-      if (user?.is_banned) {
+      if (!user) {
+        throw new UnauthorizedException({
+          code: 'UNAUTHORIZED',
+          message: 'User account no longer exists',
+        });
+      }
+
+      if (user.is_banned) {
         throw new ForbiddenException({
           code: 'FORBIDDEN',
           message: 'Your account has been suspended. Contact support.',
