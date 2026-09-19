@@ -36,3 +36,9 @@ Thumbs.db
 # Local file uploads
 uploads/
 **/uploads/
+
+# Test artifacts
+test-results/
+**/test-results/
+playwright-report/
+**/playwright-report/

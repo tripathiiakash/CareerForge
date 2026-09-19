@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "node test/setup/run-all-tests.js",
     "test:components": "node --import ./test/setup/register-loader.js --test test/*.test.tsx",
+    "test:e2e": "playwright test",
     "lint": "echo \"web: lint placeholder\""
   },
   "dependencies": {
@@ -29,6 +30,7 @@
   },
   "devDependencies": {
     "@careerforge/config": "*",
+    "@playwright/test": "^1.63.0",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
     "@types/jsdom": "^30.0.0",
