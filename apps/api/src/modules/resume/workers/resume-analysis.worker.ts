@@ -76,8 +76,10 @@ export class ResumeAnalysisWorker implements OnModuleInit {
     const { resumeId, studentId } = job.data;
     const retryCount = job.retryCount ?? 0;
     const retryLimit = job.retryLimit ?? 2;
+    const queueName = job.name || QUEUE_NAMES.RESUME_AI_ANALYSIS;
+
     this.logger.log(
-      `Processing resume AI analysis for resume ${resumeId} (job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1})`
+      `Processing resume AI analysis for resume ${resumeId} (queue: ${queueName}, job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1})`
     );
 
     try {
@@ -158,7 +160,7 @@ export class ResumeAnalysisWorker implements OnModuleInit {
       // Case 1: Permanent/non-retryable failure (e.g. unconfigured key, 4xx error)
       if (!retryable) {
         this.logger.warn(
-          `Non-retryable failure for resume ${resumeId} (attempt ${retryCount + 1}): ${errorMessage}. Recording FAILED state.`
+          `Non-retryable failure for resume ${resumeId} (queue: ${queueName}, job: ${job.id}, attempt ${retryCount + 1}): ${errorMessage}. Recording FAILED state.`
         );
         await this.markAnalysisFailed(
           resumeId,
@@ -171,7 +173,7 @@ export class ResumeAnalysisWorker implements OnModuleInit {
       // Case 2: Final retry exhausted
       if (isFinalAttempt) {
         this.logger.error(
-          `AI analysis failed and retries exhausted for resume ${resumeId} (attempt ${retryCount + 1}/${retryLimit + 1}): ${errorMessage}. Recording FAILED state.`
+          `AI analysis failed and retries exhausted for resume ${resumeId} (queue: ${queueName}, job: ${job.id}, attempt ${retryCount + 1}/${retryLimit + 1}): ${errorMessage}. Recording FAILED state.`
         );
         await this.markAnalysisFailed(
           resumeId,
@@ -183,7 +185,7 @@ export class ResumeAnalysisWorker implements OnModuleInit {
 
       // Case 3: Transient/retryable failure on non-final attempt
       this.logger.warn(
-        `Transient failure during AI analysis for resume ${resumeId} (attempt ${retryCount + 1}/${retryLimit + 1}): ${errorMessage}. Retrying via pg-boss backoff...`
+        `Transient failure during AI analysis for resume ${resumeId} (queue: ${queueName}, job: ${job.id}, attempt ${retryCount + 1}/${retryLimit + 1}): ${errorMessage}. Retrying via pg-boss backoff...`
       );
       // Keep status as PROCESSING in DB to prevent concurrent student re-triggers
       // Rethrow so pg-boss executes the next retry attempt

@@ -455,4 +455,148 @@ describe('ResumeAnalysisWorker Test Suite', () => {
     assert.ok(createdQueues['resume-ai-analysis']);
     assert.deepEqual(createdQueues['resume-ai-analysis'], { policy: 'exclusive' });
   });
+
+  // ---------------------------------------------------------------------------
+  // Phase 6.5-E: Queue Observability & Generic JobEnvelope Contract Tests
+  // ---------------------------------------------------------------------------
+  describe('Phase 6.5-E: Queue Observability & Metadata Tests', () => {
+    it('QueueService preserves all useful pg-boss metadata (singletonKey, policy, retryCount, retryLimit)', async () => {
+      const { QueueService } = require('../dist/core/queue/queue.service');
+      const mockConfig = {
+        databaseUrl: 'postgres://localhost:5432/test',
+        pgBossSchema: 'pgboss',
+      };
+      const queueService = new QueueService(mockConfig);
+      queueService.createQueue = async () => {};
+
+      let capturedHandler = null;
+      queueService.boss.work = async (name, options, handler) => {
+        capturedHandler = handler;
+      };
+
+      let receivedJob = null;
+      await queueService.work('test-metadata-queue', async (job) => {
+        receivedJob = job;
+      });
+
+      // Simulate pg-boss dispatch with full metadata payload
+      await capturedHandler({
+        id: 'job-uuid-777',
+        name: 'test-metadata-queue',
+        data: { test: true },
+        retryCount: 0,
+        retryLimit: 3,
+        singletonKey: 'single-key-123',
+        policy: 'exclusive',
+      });
+
+      assert.ok(receivedJob);
+      assert.equal(receivedJob.id, 'job-uuid-777');
+      assert.equal(receivedJob.name, 'test-metadata-queue');
+      assert.deepEqual(receivedJob.data, { test: true });
+      assert.equal(receivedJob.retryCount, 0);
+      assert.equal(receivedJob.retryLimit, 3);
+      assert.equal(receivedJob.singletonKey, 'single-key-123');
+      assert.equal(receivedJob.policy, 'exclusive');
+    });
+
+    it('QueueService first attempt defaults retryCount to 0 when retryCount is undefined or 0', async () => {
+      const { QueueService } = require('../dist/core/queue/queue.service');
+      const mockConfig = {
+        databaseUrl: 'postgres://localhost:5432/test',
+        pgBossSchema: 'pgboss',
+      };
+      const queueService = new QueueService(mockConfig);
+      queueService.createQueue = async () => {};
+
+      let capturedHandler = null;
+      queueService.boss.work = async (name, options, handler) => {
+        capturedHandler = handler;
+      };
+
+      let receivedJobs = [];
+      await queueService.work('test-first-attempt', async (job) => {
+        receivedJobs.push(job);
+      });
+
+      // 1. undefined retryCount
+      await capturedHandler({
+        id: 'job-attempt-undef',
+        name: 'test-first-attempt',
+        data: {},
+      });
+      assert.equal(receivedJobs[0].retryCount, 0);
+
+      // 2. explicit 0 retryCount
+      await capturedHandler({
+        id: 'job-attempt-zero',
+        name: 'test-first-attempt',
+        data: {},
+        retryCount: 0,
+      });
+      assert.equal(receivedJobs[1].retryCount, 0);
+    });
+
+    it('QueueService subsequent retries pass correctly incremented retryCount (1, 2, 3)', async () => {
+      const { QueueService } = require('../dist/core/queue/queue.service');
+      const mockConfig = {
+        databaseUrl: 'postgres://localhost:5432/test',
+        pgBossSchema: 'pgboss',
+      };
+      const queueService = new QueueService(mockConfig);
+      queueService.createQueue = async () => {};
+
+      let capturedHandler = null;
+      queueService.boss.work = async (name, options, handler) => {
+        capturedHandler = handler;
+      };
+
+      let receivedJobs = [];
+      await queueService.work('test-retries-queue', async (job) => {
+        receivedJobs.push(job);
+      });
+
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        await capturedHandler({
+          id: `job-retry-${attempt}`,
+          name: 'test-retries-queue',
+          data: {},
+          retryCount: attempt,
+          retryLimit: 3,
+        });
+      }
+
+      assert.equal(receivedJobs.length, 3);
+      assert.equal(receivedJobs[0].retryCount, 1);
+      assert.equal(receivedJobs[1].retryCount, 2);
+      assert.equal(receivedJobs[2].retryCount, 3);
+    });
+
+    it('ResumeAnalysisWorker logs structured queue name, job id, and attempt metadata', async () => {
+      const loggedMessages = [];
+      worker.logger = {
+        log: (msg) => loggedMessages.push(msg),
+        warn: (msg) => loggedMessages.push(msg),
+        error: (msg) => loggedMessages.push(msg),
+      };
+
+      const jobWithMeta = {
+        id: 'job-obs-1',
+        name: 'resume-ai-analysis',
+        data: { resumeId, studentId },
+        retryCount: 1,
+        retryLimit: 2,
+      };
+
+      await worker.handleAnalysisJob(jobWithMeta);
+
+      const startLog = loggedMessages.find((m) =>
+        m.includes('Processing resume AI analysis')
+      );
+      assert.ok(startLog, 'Start log must be recorded');
+      assert.ok(startLog.includes('queue: resume-ai-analysis'), 'Must include queue name');
+      assert.ok(startLog.includes('job: job-obs-1'), 'Must include job ID');
+      assert.ok(startLog.includes('attempt: 2/3'), 'Must report attempt 2/3 (retryCount 1 + 1 / retryLimit 2 + 1)');
+    });
+  });
 });

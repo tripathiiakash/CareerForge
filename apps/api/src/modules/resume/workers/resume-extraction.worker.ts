@@ -47,8 +47,12 @@ export class ResumeExtractionWorker implements OnModuleInit {
     job: JobEnvelope<ResumeTextExtractionJobData>
   ): Promise<void> {
     const { resumeId, studentId, fileKey } = job.data;
+    const retryCount = job.retryCount ?? 0;
+    const retryLimit = job.retryLimit ?? 3;
+    const queueName = job.name || QUEUE_NAMES.RESUME_TEXT_EXTRACTION;
+
     this.logger.log(
-      `Processing resume text extraction for resume ${resumeId} (job: ${job.id})`
+      `Processing resume text extraction for resume ${resumeId} (queue: ${queueName}, job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1})`
     );
 
     try {
@@ -118,7 +122,7 @@ export class ResumeExtractionWorker implements OnModuleInit {
         const safeErrorMessage = this.getSafeErrorMessage(error);
 
         this.logger.warn(
-          `Non-retriable extraction failure for resume ${resumeId}: ${errorMessage}. Recording FAILED state in ai_analyses.`
+          `Non-retriable extraction failure for resume ${resumeId} (queue: ${queueName}, job: ${job.id}): ${errorMessage}. Recording FAILED state in ai_analyses.`
         );
 
         await this.prisma.aiAnalysis.upsert({
@@ -139,7 +143,7 @@ export class ResumeExtractionWorker implements OnModuleInit {
       }
 
       this.logger.error(
-        `Transient failure processing text extraction for resume ${resumeId}: ${errorMessage}`
+        `Transient failure processing text extraction for resume ${resumeId} (queue: ${queueName}, job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1}): ${errorMessage}`
       );
       // Rethrow to allow pg-boss to handle retries / backoff for transient infrastructure errors
       throw error;

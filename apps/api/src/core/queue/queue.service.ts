@@ -94,6 +94,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
           data: jobWithMeta.data,
           retryCount: jobWithMeta.retryCount ?? 0,
           retryLimit: jobWithMeta.retryLimit,
+          singletonKey: jobWithMeta.singletonKey ?? null,
+          policy: jobWithMeta.policy,
         });
       }
     });

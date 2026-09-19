@@ -4,6 +4,11 @@ import {
   SendEmailOptions,
   SendEmailResult,
 } from './email-provider.interface';
+import {
+  maskEmailAddress,
+  maskEmailsInText,
+  maskRecipient,
+} from './email-sanitizer.util';
 
 export interface SentEmailRecord {
   to: string[];
@@ -71,8 +76,9 @@ export class MockEmailProvider implements IEmailProvider {
 
     const maskedRecipients = recipients.map((r) => this.maskRecipient(r));
 
+    const safeSubject = maskEmailsInText(options.subject);
     this.logger.log(
-      `[MockEmailProvider] Recorded mock email to [${maskedRecipients.join(', ')}] with subject "${options.subject}" (id: ${messageId}${options.idempotencyKey ? `, idempotencyKey: ${options.idempotencyKey}` : ''})`
+      `[MockEmailProvider] Recorded mock email to [${maskedRecipients.join(', ')}] with subject "${safeSubject}" (id: ${messageId}${options.idempotencyKey ? `, idempotencyKey: ${options.idempotencyKey}` : ''})`
     );
 
     return {
@@ -82,24 +88,11 @@ export class MockEmailProvider implements IEmailProvider {
   }
 
   private maskRecipient(recipient: string): string {
-    const angleMatch = recipient.match(/^(.*)<([^>]+)>$/);
-    if (angleMatch) {
-      const name = angleMatch[1].trim();
-      const email = angleMatch[2].trim();
-      return `${name} <${this.maskEmailAddress(email)}>`;
-    }
-    return this.maskEmailAddress(recipient.trim());
+    return maskRecipient(recipient);
   }
 
   private maskEmailAddress(email: string): string {
-    if (!email || !email.includes('@')) return '[REDACTED]';
-    const parts = email.split('@');
-    const local = parts[0];
-    const domain = parts.slice(1).join('@');
-    if (local.length <= 2) {
-      return `${local[0] || '*'}***@${domain}`;
-    }
-    return `${local[0]}***${local[local.length - 1]}@${domain}`;
+    return maskEmailAddress(email);
   }
 
   getSentEmails(): SentEmailRecord[] {

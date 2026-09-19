@@ -569,4 +569,232 @@ describe('Transactional Email Notification Service (Phase 5.17.0)', () => {
       assert.equal(valid.resendApiKey, 're_production_key_example');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // 6. Phase 6.5-E: Email Log PII & Secret Sanitation Tests
+  // ---------------------------------------------------------------------------
+  describe('Email Log PII & Secret Sanitation (Phase 6.5-E)', () => {
+    const {
+      maskEmailAddress,
+      maskRecipient,
+      maskEmailsInText,
+      sanitizeEmailLogText,
+    } = require('../dist/modules/notifications/email/email-sanitizer.util');
+
+    it('email-sanitizer.util correctly masks various email address formats', () => {
+      assert.equal(maskEmailAddress('john.doe@example.com'), 'j***e@example.com');
+      assert.equal(maskEmailAddress('alex@company.org'), 'a***x@company.org');
+      assert.equal(maskEmailAddress('ab@domain.com'), 'a***@domain.com');
+      assert.equal(maskEmailAddress('a@domain.com'), 'a***@domain.com');
+      assert.equal(maskEmailAddress('invalid-email'), '[REDACTED]');
+      assert.equal(maskEmailAddress(''), '[REDACTED]');
+      assert.equal(maskEmailAddress(null), '[REDACTED]');
+    });
+
+    it('email-sanitizer.util correctly masks recipients with and without display names', () => {
+      assert.equal(
+        maskRecipient('Alice Doe <alice.doe@example.com>'),
+        'Alice Doe <a***e@example.com>'
+      );
+      assert.equal(
+        maskRecipient('bob.smith@domain.net'),
+        'b***h@domain.net'
+      );
+    });
+
+    it('email-sanitizer.util masks embedded email addresses in arbitrary text', () => {
+      const text = 'Failed to deliver message to user1@domain.com and user2@sub.domain.org.';
+      const masked = maskEmailsInText(text);
+      assert.ok(!masked.includes('user1@domain.com'));
+      assert.ok(!masked.includes('user2@sub.domain.org'));
+      assert.ok(masked.includes('u***1@domain.com'));
+      assert.ok(masked.includes('u***2@sub.domain.org'));
+    });
+
+    it('email-sanitizer.util strictly sanitizes API keys, Bearer tokens, and Cookie headers', () => {
+      const sensitiveText =
+        'Error connecting with Authorization: Bearer re_super_secret_token_123; Cookie: session=abc; to candidate@domain.com';
+      const sanitized = sanitizeEmailLogText(sensitiveText, [
+        're_super_secret_token_123',
+      ]);
+      assert.ok(!sanitized.includes('re_super_secret_token_123'));
+      assert.ok(!sanitized.includes('session=abc'));
+      assert.ok(!sanitized.includes('candidate@domain.com'));
+      assert.ok(sanitized.includes('Bearer [REDACTED]'));
+      assert.ok(sanitized.includes('Cookie: [REDACTED]'));
+      assert.ok(sanitized.includes('c***e@domain.com'));
+    });
+
+    it('ResendEmailProvider logs masked email addresses and does not contain full recipient email', async () => {
+      const loggedMessages = [];
+      const mockConfig = {
+        resendApiKey: 're_production_test_key_xyz',
+        emailFrom: 'CareerForge <notifications@careerforge.dev>',
+      };
+      const provider = new ResendEmailProvider(mockConfig);
+      provider.logger = {
+        log: (msg) => loggedMessages.push(msg),
+        warn: (msg) => loggedMessages.push(msg),
+        error: (msg) => loggedMessages.push(msg),
+      };
+
+      const originalFetch = global.fetch;
+      global.fetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'resend_success_id_101' }),
+      });
+
+      try {
+        await provider.send({
+          to: 'candidate.secret@example.com',
+          subject: 'Application received for student.secret@domain.com',
+          text: 'Hello candidate!',
+        });
+
+        assert.equal(loggedMessages.length, 1);
+        const log = loggedMessages[0];
+        // Must contain masked email
+        assert.ok(log.includes('c***t@example.com'), 'Must contain masked recipient email');
+        assert.ok(log.includes('s***t@domain.com'), 'Must contain masked subject email');
+        // Must NOT contain unmasked recipient email
+        assert.equal(
+          log.includes('candidate.secret@example.com'),
+          false,
+          'Log must never contain raw recipient email'
+        );
+        assert.equal(
+          log.includes('student.secret@domain.com'),
+          false,
+          'Log must never contain raw subject email'
+        );
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('ResendEmailProvider error logs sanitize recipient emails in error response bodies', async () => {
+      const errorLogs = [];
+      const mockConfig = {
+        resendApiKey: 're_valid_err_key_999',
+        emailFrom: 'CareerForge <notifications@careerforge.dev>',
+      };
+      const provider = new ResendEmailProvider(mockConfig);
+      provider.logger = {
+        log: () => {},
+        warn: () => {},
+        error: (msg) => errorLogs.push(msg),
+      };
+
+      const originalFetch = global.fetch;
+      global.fetch = async () => ({
+        ok: false,
+        status: 422,
+        text: async () =>
+          JSON.stringify({
+            message: 'Recipient address blocked.user@target.com is in the suppression list.',
+          }),
+      });
+
+      try {
+        await assert.rejects(
+          () =>
+            provider.send({
+              to: 'blocked.user@target.com',
+              subject: 'Notice for user.private@secret.com',
+              text: 'Content',
+            }),
+          (err) => err instanceof EmailDeliveryError
+        );
+
+        assert.ok(errorLogs.length >= 1);
+        const errLog = errorLogs[0];
+        assert.ok(errLog.includes('b***r@target.com'), 'Must mask recipient in error body');
+        assert.ok(errLog.includes('u***e@secret.com'), 'Must mask subject in error log');
+        assert.equal(
+          errLog.includes('blocked.user@target.com'),
+          false,
+          'Must never leak raw recipient email in error log'
+        );
+        assert.equal(
+          errLog.includes('user.private@secret.com'),
+          false,
+          'Must never leak raw subject email in error log'
+        );
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('ResendEmailProvider does not serialize full email request body or HTML into logs', async () => {
+      const allLogs = [];
+      const mockConfig = {
+        resendApiKey: 're_body_leak_test_key',
+        emailFrom: 'CareerForge <notifications@careerforge.dev>',
+      };
+      const provider = new ResendEmailProvider(mockConfig);
+      provider.logger = {
+        log: (msg) => allLogs.push(msg),
+        warn: (msg) => allLogs.push(msg),
+        error: (msg) => allLogs.push(msg),
+      };
+
+      const privateBodyContent = 'SECRET_INTERNAL_STUDENT_RESUME_AND_GPA_DETAILS_CONFIDENTIAL';
+      const originalFetch = global.fetch;
+      global.fetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'resend_msg_body_123' }),
+      });
+
+      try {
+        await provider.send({
+          to: 'student@example.com',
+          subject: 'Confidential Application',
+          html: `<p>${privateBodyContent}</p>`,
+          text: privateBodyContent,
+        });
+
+        for (const log of allLogs) {
+          assert.equal(
+            log.includes(privateBodyContent),
+            false,
+            'Email body text/HTML must never be serialized into logs'
+          );
+        }
+      } finally {
+        global.fetch = originalFetch;
+      }
+    });
+
+    it('MockEmailProvider follows the safe logging convention: masks recipient and subject emails', async () => {
+      const mockLogs = [];
+      const provider = new MockEmailProvider();
+      provider.logger = {
+        log: (msg) => mockLogs.push(msg),
+        warn: (msg) => mockLogs.push(msg),
+        error: (msg) => mockLogs.push(msg),
+      };
+
+      await provider.send({
+        to: 'candidate.intern@startup.io',
+        subject: 'Status update for candidate.intern@startup.io',
+        text: 'Private test message',
+      });
+
+      assert.equal(mockLogs.length, 1);
+      const log = mockLogs[0];
+      assert.ok(log.includes('c***n@startup.io'), 'Must mask recipient in MockEmailProvider log');
+      assert.equal(
+        log.includes('candidate.intern@startup.io'),
+        false,
+        'MockEmailProvider log must never contain raw recipient email'
+      );
+      assert.equal(
+        log.includes('Private test message'),
+        false,
+        'MockEmailProvider log must never contain raw email body'
+      );
+    });
+  });
 });

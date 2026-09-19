@@ -5,6 +5,12 @@ import {
   SendEmailOptions,
   SendEmailResult,
 } from './email-provider.interface';
+import {
+  maskEmailAddress,
+  maskEmailsInText,
+  maskRecipient,
+  sanitizeEmailLogText,
+} from './email-sanitizer.util';
 
 export class EmailDeliveryError extends Error {
   constructor(
@@ -89,11 +95,12 @@ export class ResendEmailProvider implements IEmailProvider {
           // Fallback to generic status message
         }
 
-        // Strictly sanitize any potential occurrence of the API key
-        safeErrorMessage = this.redactSecret(safeErrorMessage, apiKey);
+        // Strictly sanitize any potential occurrence of the API key, tokens, and recipient emails
+        safeErrorMessage = sanitizeEmailLogText(safeErrorMessage, [apiKey]);
+        const safeSubject = sanitizeEmailLogText(options.subject, [apiKey]);
 
         this.logger.error(
-          `Email delivery failed for subject "${this.redactSecret(options.subject, apiKey)}": ${safeErrorMessage}`
+          `Email delivery failed for subject "${safeSubject}": ${safeErrorMessage}`
         );
 
         throw new EmailDeliveryError(safeErrorMessage, response.status);
@@ -102,8 +109,9 @@ export class ResendEmailProvider implements IEmailProvider {
       const responseData = (await response.json()) as { id?: string };
       const messageId = responseData?.id || undefined;
 
+      const safeSubject = maskEmailsInText(options.subject);
       this.logger.log(
-        `Email delivered successfully to [${maskedRecipients.join(', ')}] with subject "${options.subject}" (id: ${messageId || 'unknown'})`
+        `Email delivered successfully to [${maskedRecipients.join(', ')}] with subject "${safeSubject}" (id: ${messageId || 'unknown'})`
       );
 
       return {
@@ -117,9 +125,9 @@ export class ResendEmailProvider implements IEmailProvider {
 
       const rawMessage =
         error instanceof Error ? error.message : 'Unknown network failure';
-      const safeMessage = this.redactSecret(
+      const safeMessage = sanitizeEmailLogText(
         `Resend network error: ${rawMessage}`,
-        apiKey
+        [apiKey]
       );
 
       this.logger.error(
@@ -144,30 +152,14 @@ export class ResendEmailProvider implements IEmailProvider {
   }
 
   private maskRecipient(recipient: string): string {
-    const angleMatch = recipient.match(/^(.*)<([^>]+)>$/);
-    if (angleMatch) {
-      const name = angleMatch[1].trim();
-      const email = angleMatch[2].trim();
-      return `${name} <${this.maskEmailAddress(email)}>`;
-    }
-    return this.maskEmailAddress(recipient.trim());
+    return maskRecipient(recipient);
   }
 
   private maskEmailAddress(email: string): string {
-    if (!email || !email.includes('@')) return '[REDACTED]';
-    const parts = email.split('@');
-    const local = parts[0];
-    const domain = parts.slice(1).join('@');
-    if (local.length <= 2) {
-      return `${local[0] || '*'}***@${domain}`;
-    }
-    return `${local[0]}***${local[local.length - 1]}@${domain}`;
+    return maskEmailAddress(email);
   }
 
   private redactSecret(text: string, secret: string): string {
-    if (!secret || secret.length < 4) return text;
-    // Escape regex special chars
-    const escaped = secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return text.replace(new RegExp(escaped, 'g'), '[REDACTED]');
+    return sanitizeEmailLogText(text, [secret]);
   }
 }

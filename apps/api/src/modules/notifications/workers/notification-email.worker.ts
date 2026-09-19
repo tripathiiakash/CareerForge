@@ -10,6 +10,10 @@ import {
 } from '../../../core/queue/queue.types';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
+import {
+  maskEmailsInText,
+  sanitizeEmailLogText,
+} from '../email/email-sanitizer.util';
 
 /**
  * NotificationEmailWorker handles asynchronous dispatch of transactional emails.
@@ -58,8 +62,12 @@ export class NotificationEmailWorker implements OnModuleInit {
    */
   async handleWelcomeJob(job: JobEnvelope<WelcomeEmailJobData>): Promise<void> {
     const { userId, email, role } = job.data;
+    const retryCount = job.retryCount ?? 0;
+    const retryLimit = job.retryLimit ?? 3;
+    const queueName = job.name || QUEUE_NAMES.NOTIFICATION_EMAIL_WELCOME;
+
     this.logger.log(
-      `Processing welcome email for user ${userId} (${role}) [job: ${job.id}]`
+      `Processing welcome email for user ${userId} (${role}) [queue: ${queueName}, job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1}]`
     );
 
     // 1. Verify user exists in database and is active
@@ -147,8 +155,13 @@ export class NotificationEmailWorker implements OnModuleInit {
     job: JobEnvelope<ApplicationSubmittedStudentEmailJobData>
   ): Promise<void> {
     const { applicationId } = job.data;
+    const retryCount = job.retryCount ?? 0;
+    const retryLimit = job.retryLimit ?? 3;
+    const queueName =
+      job.name || QUEUE_NAMES.NOTIFICATION_EMAIL_APPLICATION_SUBMITTED_STUDENT;
+
     this.logger.log(
-      `Processing student application confirmation for application ${applicationId} [job: ${job.id}]`
+      `Processing student application confirmation for application ${applicationId} [queue: ${queueName}, job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1}]`
     );
 
     const application = await this.prisma.application.findUnique({
@@ -222,8 +235,13 @@ export class NotificationEmailWorker implements OnModuleInit {
     job: JobEnvelope<ApplicationSubmittedRecruiterEmailJobData>
   ): Promise<void> {
     const { applicationId } = job.data;
+    const retryCount = job.retryCount ?? 0;
+    const retryLimit = job.retryLimit ?? 3;
+    const queueName =
+      job.name || QUEUE_NAMES.NOTIFICATION_EMAIL_APPLICATION_SUBMITTED_RECRUITER;
+
     this.logger.log(
-      `Processing recruiter applicant alert for application ${applicationId} [job: ${job.id}]`
+      `Processing recruiter applicant alert for application ${applicationId} [queue: ${queueName}, job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1}]`
     );
 
     const application = await this.prisma.application.findUnique({
@@ -303,8 +321,13 @@ export class NotificationEmailWorker implements OnModuleInit {
     job: JobEnvelope<ApplicationStatusEmailJobData>
   ): Promise<void> {
     const { applicationId, status } = job.data;
+    const retryCount = job.retryCount ?? 0;
+    const retryLimit = job.retryLimit ?? 3;
+    const queueName =
+      job.name || QUEUE_NAMES.NOTIFICATION_EMAIL_APPLICATION_STATUS;
+
     this.logger.log(
-      `Processing status update (${status}) for application ${applicationId} [job: ${job.id}]`
+      `Processing status update (${status}) for application ${applicationId} [queue: ${queueName}, job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1}]`
     );
 
     if (status !== 'SHORTLISTED' && status !== 'REJECTED') {
@@ -515,7 +538,9 @@ export class NotificationEmailWorker implements OnModuleInit {
           });
         } catch (updateErr: unknown) {
           this.logger.warn(
-            `Could not increment attempts for ${idempotencyKey}: ${updateErr instanceof Error ? updateErr.message : 'Unknown'}`
+            sanitizeEmailLogText(
+              `Could not increment attempts for ${idempotencyKey}: ${updateErr instanceof Error ? updateErr.message : 'Unknown'}`
+            )
           );
         }
       }
@@ -580,6 +605,7 @@ export class NotificationEmailWorker implements OnModuleInit {
 
       const rawError =
         error instanceof Error ? error.message : 'Unknown delivery error';
+      const safeError = maskEmailsInText(rawError);
 
       if (this.prisma && this.prisma.emailDelivery) {
         try {
@@ -587,12 +613,14 @@ export class NotificationEmailWorker implements OnModuleInit {
             where: { idempotency_key: idempotencyKey },
             data: {
               status: is409 ? 'PENDING' : 'FAILED',
-              error_message: rawError,
+              error_message: safeError,
             },
           });
         } catch (dbErr: unknown) {
           this.logger.error(
-            `Failed to record email delivery state in database for ${idempotencyKey}: ${dbErr instanceof Error ? dbErr.message : 'Unknown'}`
+            sanitizeEmailLogText(
+              `Failed to record email delivery state in database for ${idempotencyKey}: ${dbErr instanceof Error ? dbErr.message : 'Unknown'}`
+            )
           );
         }
       }

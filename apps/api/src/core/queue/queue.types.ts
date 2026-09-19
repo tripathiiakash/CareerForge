@@ -1,4 +1,5 @@
 import { UserRole } from '@prisma/client';
+import type { QueuePolicy } from 'pg-boss';
 
 export const QUEUE_NAMES = {
   RESUME_TEXT_EXTRACTION: 'resume-text-extraction',
@@ -51,6 +52,8 @@ export interface JobEnvelope<T> {
   data: T;
   retryCount?: number;
   retryLimit?: number;
+  singletonKey?: string | null;
+  policy?: QueuePolicy;
 }
 
 export type JobHandler<T> = (job: JobEnvelope<T>) => Promise<void>;
