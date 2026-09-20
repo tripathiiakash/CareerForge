@@ -80,32 +80,43 @@ The primary objective of Phase 6.6 was to eliminate testing blind spots across t
 
 | Suite / Check | Scope | Passed | Failed | Status |
 | :--- | :--- | :---: | :---: | :---: |
-| **API Unit & Mock Tests** | `@careerforge/api` | 665 | 0 | **PASS** |
+| **API Unit & Regression Tests** | `@careerforge/api` | 689 | 0 | **PASS** |
 | **Web Unit & DOM Tests** | `@careerforge/web` | 610 | 0 | **PASS** |
-| **Database Integration Tests** | `careerforge_test` | 82 | 0 | **PASS** |
+| **Database Integration Tests** | `careerforge_test` | 91 | 0 | **PASS** |
 | **Playwright E2E Tests** | `careerforge_e2e` (Chromium) | 9 | 0 | **PASS** |
 | **API Typecheck** | `tsc --noEmit` | — | — | **PASS** |
 | **Web Typecheck** | `tsc --noEmit` | — | — | **PASS** |
-| **API Build** | Production bundle | — | — | **PASS** |
+| **API Build** | Production bundle (`nest build`) | — | — | **PASS** |
 | **Web Build** | Vite production bundle | — | — | **PASS** |
-| **Total Automated Tests** | All Suites | **1,366** | **0** | **100% PASS** |
+| **Total Automated Tests** | All Suites | **1,399** | **0** | **100% PASS** |
 
 ---
 
 ## 4. Security & Reliability Properties Covered
 
-| Property ID | Category | Description | Verification Method |
-| :--- | :--- | :--- | :--- |
-| **SEC-01** | Session Security | HttpOnly, Secure, SameSite=Lax cookie session management; zero tokens in `localStorage` or response bodies. | Phase 6.6-F HTTP Contract & Phase 6.6-H E2E |
-| **SEC-02** | Access Control | Role-Based Access Control (RBAC) across student, recruiter, and admin routes; banned user lockout. | Phase 6.6-F HTTP Contract & Phase 6.6-H E2E |
-| **SEC-03** | BOLA / IDOR | Explicit user-ownership verification on resumes, jobs, applications, and profile mutations. | API Unit Suites & 6.6-E3 Lifecycle Tests |
-| **SEC-04** | Info Leakage | Masking of unhandled 500 errors; zero leakage of stack traces, database credentials, SQL, or system paths. | Phase 6.6-F HTTP Contract Integration |
-| **SEC-05** | CSRF Defense | Strict Origin validation on state-changing mutation requests from untrusted origins. | Phase 6.6-F HTTP Contract Integration |
-| **SEC-06** | Defensive Headers | Enforced `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and CSP headers. | Phase 6.6-F HTTP Contract Integration |
-| **REL-01** | Concurrency Safety | Pessimistic locking (`SELECT FOR UPDATE`) and database unique constraints preventing duplicate applications. | Phase 6.6-E2 Concurrency Integration |
-| **REL-02** | Queue Idempotency | PgBoss `singletonKey` deduplication and `exclusive` queue policies preventing double processing. | Phase 6.6-E2 Concurrency Integration |
-| **REL-03** | Relational Atomicity | Multi-table administrative deletion inside atomic `$transaction` with zero orphan records. | Phase 6.6-E3 Deletion Lifecycle Integration |
-| **REL-04** | Client Resilience | Accessible form validation, error boundaries, empty states, and manual retry triggers. | Phase 6.6-G Frontend DOM Component Suite |
+The following security and reliability invariants are enforced across CareerForge, distinguished by whether their guarantees are verified through automated regression tests or established via architectural hardening:
+
+| Property ID | Category | Description | Verification Type | Verification Mechanism |
+| :--- | :--- | :--- | :--- | :--- |
+| **SEC-01** | Session Security | HttpOnly, Secure, SameSite=Lax cookie session management; zero tokens in `localStorage` or response bodies. | Verified through tests | Phase 6.6-F HTTP Contract & Phase 6.6-H E2E |
+| **SEC-01b** | Session Revocation | Active JWT sessions for deleted users are immediately rejected on subsequent requests via database existence check in `JwtStrategy`. (Finding F01) | Verified through tests | `auth-cookie-security.integration.test.js` |
+| **SEC-02** | Access Control | Role-Based Access Control (RBAC) across student, recruiter, and admin routes; banned user lockout. | Verified through tests | Phase 6.6-F HTTP Contract & Phase 6.6-H E2E |
+| **SEC-03** | BOLA / IDOR | Explicit user-ownership verification on resumes, jobs, applications, and profile mutations. | Verified through tests | API Unit Suites & 6.6-E3 Lifecycle Tests |
+| **SEC-04** | Info Leakage | Masking of unhandled 500 errors; zero leakage of stack traces, database credentials, SQL, or system paths. | Verified through tests | Phase 6.6-F HTTP Contract Integration |
+| **SEC-05** | CSRF Defense | Stricter CSRF handling: rejects state-changing requests carrying auth cookies when Origin/Referer are absent; validates Origin against whitelist. (Finding F08) | Verified through tests | `auth-cookie-security.test.js` & Phase 6.6-F |
+| **SEC-06** | Defensive Headers | Enforced `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and CSP headers. | Verified through tests | Phase 6.6-F HTTP Contract Integration |
+| **SEC-07** | Rate Limiting | RateLimitGuard resolves authenticated user identity before keying, ensuring independent quotas for users sharing an IP; spoofing prevention. (Finding F04) | Verified through tests | `security-rate-limit.integration.test.js` |
+| **SEC-08** | Header Injection | Resume download `Content-Disposition` filenames sanitize control characters, quotes, semicolons, and CRLF with deterministic fallback. (Finding F03) | Verified through tests | `resume-storage-key.test.js` |
+| **SEC-09** | Oracle Elimination | Resume identifier lookup enforces exact key/URL boundary matching, preventing substring query existence oracles. (Finding F06) | Verified through tests | `resume-storage-key.test.js` |
+| **SEC-10** | Credential Secrecy | Google Gemini API credentials transmitted exclusively via `x-goog-api-key` HTTP header, never in URL query strings or logs. (Finding F07) | Verified through tests | `ai-provider.test.js` |
+| **REL-01** | Concurrency Safety | Pessimistic locking (`SELECT FOR UPDATE`) and database unique constraints preventing duplicate applications. | Verified through tests | Phase 6.6-E2 Concurrency Integration |
+| **REL-01b** | State Transitions | Application status mutations execute atomically with conditional `updateMany` concurrency guards, preventing invalid or race-condition state overwrites. (Finding F02) | Verified through tests | `database-concurrency.integration.test.js` |
+| **REL-02** | Queue Idempotency | PgBoss `singletonKey` deduplication and `exclusive` queue policies preventing double processing. | Verified through tests | Phase 6.6-E2 Concurrency Integration |
+| **REL-02b** | Stale Recovery | Stale Resume AI analysis recovery with transactional lock clearing, pg-boss singleton queue deduplication, and cooldown bypass. (Finding F05) | Verified through tests | `resume-analysis-service.test.js` & Integration |
+| **REL-03** | Relational Atomicity | Multi-table administrative deletion inside atomic `$transaction` with zero orphan records. | Verified through tests | Phase 6.6-E3 Deletion Lifecycle Integration |
+| **REL-04** | Client Resilience | Accessible form validation, error boundaries, empty states, and manual retry triggers. | Verified through tests | Phase 6.6-G Frontend DOM Component Suite |
+| **ARCH-01** | Modular Monolith | Clear domain module boundaries with strict TypeScript contracts, preventing leaky cross-domain abstractions. | Architectural hardening | Workspace structure & Typecheck suites |
+| **ARCH-02** | Defense-in-Depth | Multiple validation layers: frontend Zod schema &rarr; backend DTO validation pipe &rarr; service authorization &rarr; database constraints. | Architectural hardening | Multi-tier validation pipeline |
 
 ---
 
@@ -147,52 +158,66 @@ The browser E2E testing strategy verifies end-to-end user journeys using Microso
 
 ## 8. Remaining Known Testing Limitations
 
-While Phase 6.6 establishes robust test coverage, the following limitations are explicitly noted:
+While Phase 6 establishes robust test coverage and hardened security controls, the following limitations are explicitly documented:
 
-1. **Browser Engine Coverage**: E2E browser automation currently executes exclusively on Chromium. Firefox and WebKit browser engines are not yet included in the test matrix.
+1. **Browser Engine Coverage**: E2E browser automation currently executes exclusively on Chromium. Firefox and WebKit browser engines are not yet included in the test suite, remaining an area for future testing expansion.
 2. **Mobile Gestures & Viewports**: Current E2E tests run against standard desktop viewports (1280x720). Dedicated mobile touch interaction and responsive viewport testing are not yet automated in CI.
-3. **External LLM Network Calls**: Gemini API integrations are verified using deterministic mocks and fixtures. Automated suites do not execute live LLM calls to prevent non-deterministic failures, API quota exhaustion, and network flakiness.
-4. **Outbound SMTP Socket Delivery**: Transactional email flows are verified through database ledger persistence (`email_deliveries`) and queue scheduling, but live SMTP socket transmission to external mail relays is mocked.
-5. **High-Volume Stress & Load Testing**: Concurrency tests verified transactional safety under 2–4 simultaneous race conditions per row; long-running high-throughput load testing (e.g., 1,000+ RPS sustained) has not yet been conducted.
+3. **External LLM Network Calls**: Gemini API integrations are verified using deterministic mocks, HTTP header assertions, and fixtures. Automated test suites do not execute live LLM network calls to prevent non-deterministic failures, API quota exhaustion, and network flakiness.
+4. **Transactional Email Delivery**: Transactional email flows are verified through database ledger persistence (`email_deliveries`) and pg-boss queue scheduling. In production, email delivery is handled via Resend (HTTP API), while automated test suites utilize `MockEmailProvider` to ensure deterministic execution without external network transmission.
+5. **High-Volume Stress & Load Testing**: Concurrency tests verified transactional safety under simultaneous race conditions per row; long-running high-throughput load testing (e.g., 1,000+ RPS sustained) has not yet been conducted.
+6. **Security Scope & Absence of Vulnerability Proof**: The targeted adversarial review by Claude Opus 4.6 Thinking covered the identified high-risk surface areas (F01–F08), all of which have been remediated and regression-tested. However, an adversarial code audit is not a formal mathematical proof of absolute security. The system cannot claim an absolute guarantee of the absence of future undiscovered vulnerabilities. Ongoing defense-in-depth, dependency vulnerability scanning, and environment security remain essential.
 
 ---
 
-## 9. Pending Claude Opus Security Audit
+## 9. Phase 6 Security Audit & Remediation — Complete
 
-> [!IMPORTANT]
-> **Adversarial Security Audit Status: PENDING**
->
-> The comprehensive, targeted adversarial security review by **Claude Opus** is **STILL PENDING** and has **NOT** been performed or completed.
->
-> Testing in Phase 6.6 proved that existing controls operate as designed; it does not constitute an adversarial security audit signoff.
+A targeted adversarial security review of the CareerForge codebase was conducted by **Claude Opus 4.6 Thinking**. The audit identified eight specific security findings (F01 through F08). Every finding was independently verified against active code, remediated with minimal isolated changes, and hardened with focused regression tests. None remain pending.
 
-The pending Claude Opus security audit must evaluate high-risk vectors, including:
-- Token forgery, cookie manipulation, and session fixation attacks.
-- PDF upload parser vulnerability analysis (malicious PDF payloads, zip bombs, memory exhaustion).
-- Multi-tenant BOLA / IDOR edge cases across application, resume, and recruiter endpoints.
-- Rate limit bypass under distributed origin spoofing.
-- Prompt injection resilience and data exfiltration vectors in AI analysis workflows.
+### Summary of Audit Findings & Remediations
 
----
+| Finding ID | Title & Summary | Status | Remediation Commit | Regression Test Suite |
+| :--- | :--- | :---: | :---: | :--- |
+| **F01** | **Deleted-user active JWT session reuse**<br>Active JWT sessions remained valid until expiration after an administrator deleted the user account. Remediated by adding a database existence check in `JwtStrategy`. | Confirmed, Remediated, Tested | `ffabfa2` | `auth-cookie-security.integration.test.js` |
+| **F02** | **Concurrent application status mutation race condition**<br>Simultaneous recruiter status updates could overwrite intermediate state transitions non-atomically. Remediated using Prisma conditional `updateMany` for atomic status transitions. | Confirmed, Remediated, Tested | `2d33092` | `database-concurrency.integration.test.js` |
+| **F03** | **Resume Content-Disposition filename safety**<br>Quotes, semicolons, and control characters in student names could interfere with HTTP `Content-Disposition` headers. Remediated with filename sanitization and deterministic fallback. | Confirmed, Remediated, Tested | `b23807a` | `resume-storage-key.test.js` |
+| **F04** | **Authenticated per-user rate-limit identity resolution**<br>Execution order in `RateLimitGuard` caused authenticated users on shared IPs to share rate limit quotas. Remediated by resolving user identity prior to quota key evaluation. | Confirmed, Remediated, Tested | `43a4f09` | `security-rate-limit.integration.test.js` |
+| **F05** | **Stale Resume AI analysis recovery / queue singleton collision**<br>Analyses stuck in `PROCESSING` could not be re-triggered due to cooldowns and pg-boss singleton collisions. Remediated with transactional recovery, lock clearing, and cooldown bypass. | Confirmed, Remediated, Tested | `558f3b5` | `resume-analysis-service.test.js` & `database-concurrency.integration.test.js` |
+| **F06** | **Resume identifier substring lookup oracle**<br>Loose `{ contains: identifier }` filter allowed attackers to infer resume existence via 403 vs 404 responses. Remediated by restricting lookup to exact file keys, exact URLs, and `/identifier` path suffixes. | Confirmed, Remediated, Tested | `b23807a` | `resume-storage-key.test.js` |
+| **F07** | **Gemini API key URL query string exposure**<br>API credentials in the query string (`?key=...`) risked exposure in URL logs, proxies, and error messages. Remediated by passing the key via the `x-goog-api-key` HTTP header. | Confirmed, Remediated, Tested | `b23807a` | `ai-provider.test.js` |
+| **F08** | **CSRF when Origin and Referer headers are absent**<br>State-changing requests carrying auth cookies were accepted when Origin/Referer were absent. Remediated by requiring Origin or Referer for cookie-authenticated mutations while preserving Bearer/CLI clients. | Confirmed, Remediated, Tested | `b23807a` | `auth-cookie-security.test.js` |
 
-## 10. Conditions Required Before Phase 6 is Declared Fully Closed
-
-Phase 6 will be formally declared complete only when the following conditions are satisfied:
-
-1. **Adversarial Security Audit Execution**: Completion of the targeted high-risk security review by Claude Opus.
-2. **Zero High/Critical Vulnerabilities**: Remediation and re-verification of any findings identified during the adversarial audit.
-3. **Regression Integrity**: Full test suite (1,366 tests across unit, integration, and E2E) continues to pass cleanly with zero failures.
-4. **Repository Cleanliness**: Working tree is clean, with all closeout documentation committed and tagged.
+All eight findings confirmed by the audit are now fully remediated and validated by automated tests.
 
 ---
 
-## 11. Recommended Next Phase: Phase 7
+## 10. Phase 6 Status: PHASE 6 — COMPLETE
 
-Following completion of the security audit and formal closure of Phase 6, the project should advance to:
+**All planned Phase 6 security hardening, reliability remediation, testing expansion, adversarial audit findings, and regression verification are complete.**
 
-**Phase 7: Deployment, Infrastructure & Production Readiness**
+All four conditions required for Phase 6 closure have been satisfied:
+1. **Adversarial Security Audit Execution**: Targeted high-risk security review by Claude Opus 4.6 Thinking completed.
+2. **Zero Unremediated Findings**: All eight findings (F01–F08) remediated, verified, and backed by focused regression tests.
+3. **Regression Integrity**: Full test suite (1,399 tests across unit, integration, and E2E) passes with 100% success rate.
+4. **Repository Cleanliness**: Working tree is clean, with all remediation commits and closeout documentation tracked on `main`.
+
+---
+
+## 11. Next Planned Phase: Phase 7 — Selective Microservice Extraction & Service-Boundary Evaluation
+
+Following the formal completion of Phase 6, the project advances to:
+
+**Phase 7: Selective Microservice Extraction & Service-Boundary Evaluation**
+- **Domain Service Boundary Evaluation**: Systematically validate domain module boundaries (Auth, Profiles, Jobs, Applications, AI & Resumes) within the modular monolith to ensure strict decoupled interfaces and zero leaky cross-domain abstractions.
+- **Selective Microservice Extraction Strategy**: In accordance with the architectural migration plan (Strangler Fig pattern), the modular monolith remains the default, authoritative architecture. Microservice extraction is strictly selective and will be executed only when justified by concrete operational, team scaling, or high-throughput compute requirements (such as isolating compute-heavy AI resume parsing workers onto independent hardware).
+- **Decoupled Relational & Event Interfaces**: Maintain clean service-to-service contracts, pg-boss asynchronous queue isolation, and internal event-driven communication to preserve extraction readiness without prematurely incurring distributed system operational overhead.
+
+### Subsequent Roadmap Phase: Phase 8 — Deployment, Infrastructure & Production Readiness
+
+To preserve clear roadmap separation between architecture boundary evaluation and production operations, infrastructure work is scheduled for:
+
+**Phase 8: Deployment, Infrastructure & Production Readiness**
 - Containerization and Docker multi-stage production builds for API and Web.
-- Production environment provisioning (PostgreSQL database, managed Redis / pg-boss queue, object storage for PDF resumes).
+- Production environment provisioning (PostgreSQL database with pg-boss queues, cloud object storage for PDF resumes).
 - CI/CD pipeline automation (linting, typechecks, unit tests, integration tests, E2E browser suites).
 - Production observability (structured JSON logging, health probes, performance metrics, and error alerting).
 - Staging deployment verification and final production launch checklist.
