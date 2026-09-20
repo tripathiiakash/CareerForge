@@ -8,6 +8,8 @@ const {
 } = require('./setup/db-test-harness');
 const { RateLimitStore } = require('../dist/core/rate-limit/rate-limit.store');
 const { RateLimitGuard } = require('../dist/core/rate-limit/rate-limit.guard');
+const { JwtService } = require('@nestjs/jwt');
+const { TokenService } = require('../dist/modules/auth/token.service');
 const {
   RATE_LIMIT_KEY,
   SKIP_RATE_LIMIT_KEY,
@@ -213,6 +215,67 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
     });
   });
 
+  function createMockContext({
+    user,
+    ip = '127.0.0.1',
+    forwardedFor,
+    authorization,
+    cookies,
+    cookieHeader,
+    handlerOptions,
+    classOptions,
+    skip = false,
+  }) {
+    const headers = {};
+    const responseHeaders = {};
+
+    if (forwardedFor) {
+      headers['x-forwarded-for'] = forwardedFor;
+    }
+    if (authorization) {
+      headers['authorization'] = authorization;
+    }
+    if (cookieHeader) {
+      headers['cookie'] = cookieHeader;
+    }
+
+    const req = {
+      ip,
+      headers,
+      cookies: cookies || {},
+      socket: { remoteAddress: ip },
+      user,
+    };
+
+    const res = {
+      setHeader(name, value) {
+        responseHeaders[name] = value;
+      },
+      getHeader(name) {
+        return responseHeaders[name];
+      },
+    };
+
+    const reflector = {
+      getAllAndOverride(key) {
+        if (key === SKIP_RATE_LIMIT_KEY) return skip;
+        if (key === RATE_LIMIT_KEY) return handlerOptions || classOptions;
+        return undefined;
+      },
+    };
+
+    const context = {
+      switchToHttp: () => ({
+        getRequest: () => req,
+        getResponse: () => res,
+      }),
+      getHandler: () => ({}),
+      getClass: () => ({}),
+    };
+
+    return { context, req, res, reflector, responseHeaders };
+  }
+
   describe('2. RateLimitGuard Evaluation', () => {
     let store;
     let mockConfig;
@@ -227,56 +290,6 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
       };
     });
 
-    function createMockContext({
-      user,
-      ip = '127.0.0.1',
-      forwardedFor,
-      handlerOptions,
-      classOptions,
-      skip = false,
-    }) {
-      const headers = {};
-      const responseHeaders = {};
-
-      if (forwardedFor) {
-        headers['x-forwarded-for'] = forwardedFor;
-      }
-
-      const req = {
-        ip,
-        headers,
-        socket: { remoteAddress: ip },
-        user,
-      };
-
-      const res = {
-        setHeader(name, value) {
-          responseHeaders[name] = value;
-        },
-        getHeader(name) {
-          return responseHeaders[name];
-        },
-      };
-
-      const reflector = {
-        getAllAndOverride(key) {
-          if (key === SKIP_RATE_LIMIT_KEY) return skip;
-          if (key === RATE_LIMIT_KEY) return handlerOptions || classOptions;
-          return undefined;
-        },
-      };
-
-      const context = {
-        switchToHttp: () => ({
-          getRequest: () => req,
-          getResponse: () => res,
-        }),
-        getHandler: () => ({}),
-        getClass: () => ({}),
-      };
-
-      return { context, req, res, reflector, responseHeaders };
-    }
 
     it('should allow requests within limit and attach X-RateLimit headers', async () => {
       const { context, responseHeaders, reflector } = createMockContext({
@@ -495,6 +508,258 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
           return true;
         }
       );
+    });
+  });
+
+  describe('2b. RateLimitGuard Token & Identity Resolution (Phase 6 Finding-04)', () => {
+    let store;
+    let mockConfig;
+    let tokenService;
+
+    beforeEach(async () => {
+      store = new RateLimitStore(prisma);
+      await store.clear();
+      mockConfig = {
+        rateLimitEnabled: true,
+        rateLimitGlobalMax: 120,
+        rateLimitWindowSeconds: 60,
+        authCookieName: 'cf_auth',
+        jwtSecret: 'test-rate-limit-jwt-secret-key-32-chars-long!',
+        jwtExpiresIn: '1h',
+      };
+      const jwtService = new JwtService();
+      tokenService = new TokenService(jwtService, mockConfig);
+    });
+
+    it('1. should give two authenticated users sharing the same IP independent quotas', async () => {
+      const tokenUser1 = await tokenService.signToken({
+        id: 'user-shared-ip-1',
+        email: 'user1@test.com',
+        role: 'STUDENT',
+      });
+      const tokenUser2 = await tokenService.signToken({
+        id: 'user-shared-ip-2',
+        email: 'user2@test.com',
+        role: 'STUDENT',
+      });
+
+      const sharedIp = '198.51.100.77';
+
+      // User 1 context: limit 1, keyPrefix 'independent'
+      const { context: ctxUser1 } = createMockContext({
+        ip: sharedIp,
+        authorization: `Bearer ${tokenUser1}`,
+        handlerOptions: { limit: 1, keyPrefix: 'independent' },
+      });
+
+      // User 2 context: same shared IP
+      const { context: ctxUser2 } = createMockContext({
+        ip: sharedIp,
+        authorization: `Bearer ${tokenUser2}`,
+        handlerOptions: { limit: 1, keyPrefix: 'independent' },
+      });
+
+      const guard = new RateLimitGuard(
+        store,
+        { getAllAndOverride: (key) => key === RATE_LIMIT_KEY ? { limit: 1, keyPrefix: 'independent' } : undefined },
+        mockConfig,
+        tokenService
+      );
+
+      // User 1 first request succeeds
+      assert.equal(await guard.canActivate(ctxUser1), true);
+
+      // User 1 second request is rate-limited
+      await assert.rejects(() => guard.canActivate(ctxUser1), (err) => {
+        assert.equal(err.getStatus(), HttpStatus.TOO_MANY_REQUESTS);
+        return true;
+      });
+
+      // User 2 on the EXACT SAME IP must NOT be blocked by User 1's exhaustion
+      assert.equal(await guard.canActivate(ctxUser2), true);
+
+      // Inspect PostgreSQL rate_limits table
+      const user1Record = await prisma.rateLimit.findUnique({
+        where: { key: 'independent:user:user-shared-ip-1' },
+      });
+      const user2Record = await prisma.rateLimit.findUnique({
+        where: { key: 'independent:user:user-shared-ip-2' },
+      });
+      const ipRecord = await prisma.rateLimit.findUnique({
+        where: { key: `independent:ip:${sharedIp}` },
+      });
+
+      assert.ok(user1Record, 'User 1 record must be stored under user:id');
+      assert.equal(user1Record.hits, 2);
+      assert.ok(user2Record, 'User 2 record must be stored under user:id');
+      assert.equal(user2Record.hits, 1);
+      assert.equal(ipRecord, null, 'IP counter must not be created for authenticated users');
+    });
+
+    it('2. should store authenticated request under user:<id>', async () => {
+      const token = await tokenService.signToken({
+        id: 'student-uuid-42',
+        email: 'student42@test.com',
+        role: 'STUDENT',
+      });
+
+      const { context, reflector } = createMockContext({
+        ip: '192.0.2.1',
+        authorization: `Bearer ${token}`,
+        handlerOptions: { limit: 10, keyPrefix: 'profile' },
+      });
+
+      const guard = new RateLimitGuard(
+        store,
+        reflector,
+        mockConfig,
+        tokenService
+      );
+      await guard.canActivate(context);
+
+      const record = await prisma.rateLimit.findUnique({
+        where: { key: 'profile:user:student-uuid-42' },
+      });
+      assert.ok(record, 'Must record rate limit under user:id key');
+      assert.equal(record.hits, 1);
+    });
+
+    it('3. should store unauthenticated request under ip:<ip>', async () => {
+      const clientIp = '203.0.113.88';
+      const { context, reflector } = createMockContext({
+        ip: clientIp,
+        handlerOptions: { limit: 10, keyPrefix: 'public' },
+      });
+
+      const guard = new RateLimitGuard(
+        store,
+        reflector,
+        mockConfig,
+        tokenService
+      );
+      await guard.canActivate(context);
+
+      const record = await prisma.rateLimit.findUnique({
+        where: { key: `public:ip:${clientIp}` },
+      });
+      assert.ok(record, 'Must record rate limit under ip:clientIp key');
+      assert.equal(record.hits, 1);
+    });
+
+    it('4. should not allow invalid or forged token to bypass rate limiting (falls back to ip:<ip>)', async () => {
+      const clientIp = '198.51.100.99';
+      const { context, reflector } = createMockContext({
+        ip: clientIp,
+        authorization: 'Bearer invalid.tampered.signature',
+        handlerOptions: { limit: 2, keyPrefix: 'probe' },
+      });
+
+      const guard = new RateLimitGuard(
+        store,
+        reflector,
+        mockConfig,
+        tokenService
+      );
+
+      // Hit 1 & 2
+      await guard.canActivate(context);
+      await guard.canActivate(context);
+
+      // Hit 3 -> must be rate limited by IP
+      await assert.rejects(
+        () => guard.canActivate(context),
+        (err) => {
+          assert.equal(err.getStatus(), HttpStatus.TOO_MANY_REQUESTS);
+          return true;
+        }
+      );
+
+      // Verify stored under ip, not any forged user key
+      const ipRecord = await prisma.rateLimit.findUnique({
+        where: { key: `probe:ip:${clientIp}` },
+      });
+      assert.ok(ipRecord);
+      assert.equal(ipRecord.hits, 3);
+    });
+
+    it('5. should behave consistently for cookie-authenticated and bearer-authenticated requests', async () => {
+      const tokenCookie = await tokenService.signToken({
+        id: 'user-via-cookie',
+        email: 'cookie@test.com',
+        role: 'STUDENT',
+      });
+      const tokenBearer = await tokenService.signToken({
+        id: 'user-via-bearer',
+        email: 'bearer@test.com',
+        role: 'STUDENT',
+      });
+      const tokenFallback = await tokenService.signToken({
+        id: 'user-via-header-cookie',
+        email: 'header@test.com',
+        role: 'STUDENT',
+      });
+
+      // Cookie (via req.cookies)
+      const { context: ctxCookie, reflector: refCookie } = createMockContext({
+        ip: '10.1.1.1',
+        cookies: { cf_auth: tokenCookie },
+        handlerOptions: { limit: 10, keyPrefix: 'unified' },
+      });
+      const guardCookie = new RateLimitGuard(store, refCookie, mockConfig, tokenService);
+      await guardCookie.canActivate(ctxCookie);
+
+      // Bearer (via Authorization header)
+      const { context: ctxBearer, reflector: refBearer } = createMockContext({
+        ip: '10.1.1.2',
+        authorization: `Bearer ${tokenBearer}`,
+        handlerOptions: { limit: 10, keyPrefix: 'unified' },
+      });
+      const guardBearer = new RateLimitGuard(store, refBearer, mockConfig, tokenService);
+      await guardBearer.canActivate(ctxBearer);
+
+      // Raw Cookie header fallback (via req.headers.cookie)
+      const { context: ctxHeaderCookie, reflector: refHeader } = createMockContext({
+        ip: '10.1.1.3',
+        cookieHeader: `other=1; cf_auth=${tokenFallback}; other2=2`,
+        handlerOptions: { limit: 10, keyPrefix: 'unified' },
+      });
+      const guardHeader = new RateLimitGuard(store, refHeader, mockConfig, tokenService);
+      await guardHeader.canActivate(ctxHeaderCookie);
+
+      const cookieRec = await prisma.rateLimit.findUnique({ where: { key: 'unified:user:user-via-cookie' } });
+      const bearerRec = await prisma.rateLimit.findUnique({ where: { key: 'unified:user:user-via-bearer' } });
+      const headerRec = await prisma.rateLimit.findUnique({ where: { key: 'unified:user:user-via-header-cookie' } });
+
+      assert.ok(cookieRec, 'Cookie auth must key by user:id');
+      assert.ok(bearerRec, 'Bearer auth must key by user:id');
+      assert.ok(headerRec, 'Header cookie fallback must key by user:id');
+    });
+
+    it('6. should populate request.user for downstream handlers when verifying token', async () => {
+      const token = await tokenService.signToken({
+        id: 'user-downstream-test',
+        email: 'downstream@test.com',
+        role: 'RECRUITER',
+      });
+
+      const { context, req, reflector } = createMockContext({
+        authorization: `Bearer ${token}`,
+        handlerOptions: { limit: 10, keyPrefix: 'test' },
+      });
+
+      const guard = new RateLimitGuard(
+        store,
+        reflector,
+        mockConfig,
+        tokenService
+      );
+      await guard.canActivate(context);
+
+      assert.deepEqual(req.user, {
+        userId: 'user-downstream-test',
+        email: 'downstream@test.com',
+        role: 'RECRUITER',
+      });
     });
   });
 
