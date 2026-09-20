@@ -217,7 +217,8 @@ export class ResumeService {
         : {
             OR: [
               { file_key: identifier },
-              { file_url: { contains: identifier } },
+              { file_url: identifier },
+              { file_url: { endsWith: `/${identifier}` } },
             ],
           },
       include: {
@@ -301,13 +302,40 @@ export class ResumeService {
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/i.test(
         fileKey
       );
-    const humanFileName = `${resume.student.first_name || 'Student'}_${resume.student.last_name || 'Candidate'}_Resume.pdf`.replace(
-      /\s+/g,
-      '_'
+    const safeFirst = this.sanitizeFilenameComponent(
+      resume.student.first_name,
+      'Student'
     );
-    const fileName = isUuidKey ? humanFileName : fileKey;
+    const safeLast = this.sanitizeFilenameComponent(
+      resume.student.last_name,
+      'Candidate'
+    );
+    const humanFileName = `${safeFirst}_${safeLast}_Resume.pdf`;
+    const safeKey = this.sanitizeFilenameComponent(fileKey, 'Resume.pdf');
+    const fileName = isUuidKey
+      ? humanFileName
+      : safeKey.endsWith('.pdf')
+      ? safeKey
+      : `${safeKey}.pdf`;
 
     return { buffer, fileName };
+  }
+
+  /**
+   * Sanitizes a string component for safe inclusion in HTTP Content-Disposition headers.
+   * Strips quotes, semicolons, control characters, CR, LF, path separators, and collapses whitespace.
+   */
+  private sanitizeFilenameComponent(
+    name?: string | null,
+    fallback = ''
+  ): string {
+    if (!name || typeof name !== 'string') return fallback;
+    const cleaned = name
+      .replace(/[\x00-\x1F\x7F"'\\;/:\r\n?*<>|]/g, '')
+      .replace(/\s+/g, '_')
+      .replace(/_+/g, '_')
+      .trim();
+    return cleaned.length > 0 ? cleaned : fallback;
   }
 
   /**

@@ -20,8 +20,9 @@ describe('AI Provider Test Suite', () => {
     });
 
     it('should resolve gemini-2.5-flash model and send application/json mime type', async () => {
-      let capturedUrl = '';
+      let capturedUrl = null;
       let capturedBody = null;
+      let capturedHeaders = null;
 
       const mockConfigService = { geminiApiKey: 'secret-server-key-123' };
       const provider = new GeminiProvider(mockConfigService);
@@ -31,6 +32,7 @@ describe('AI Provider Test Suite', () => {
       global.fetch = async (url, options) => {
         capturedUrl = url;
         capturedBody = JSON.parse(options.body);
+        capturedHeaders = options.headers;
         return {
           ok: true,
           json: async () => ({
@@ -58,16 +60,22 @@ describe('AI Provider Test Suite', () => {
           resumeText: 'Full-stack TypeScript developer with React & NestJS',
         });
 
-        // 1. Verify model in request URL
+        // 1. Verify model in request URL and confirm no credentials in query string (Finding-07)
         assert.ok(
           capturedUrl.includes('/models/gemini-2.5-flash:generateContent'),
           `URL should target gemini-2.5-flash but was: ${capturedUrl}`
         );
+        assert.equal(
+          capturedUrl.includes('key='),
+          false,
+          'URL must NOT contain the API key in query string (Finding-07)'
+        );
 
-        // 2. Verify server-side API key passed
-        assert.ok(
-          capturedUrl.includes('key=secret-server-key-123'),
-          'URL should contain the configured server API key'
+        // 2. Verify server-side API key passed securely via x-goog-api-key header
+        assert.equal(
+          capturedHeaders['x-goog-api-key'],
+          'secret-server-key-123',
+          'API key must be passed via x-goog-api-key header'
         );
 
         // 3. Verify structured JSON output configuration

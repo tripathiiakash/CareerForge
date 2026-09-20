@@ -60,8 +60,31 @@ export class CsrfMiddleware implements NestMiddleware {
       }
     }
 
-    // 3. If neither Origin nor Referer is present, allow request (server-to-server, curl, tests)
+    // Check if the request carries cookie authentication (cf_auth)
+    const hasAuthCookie = Boolean(
+      (req.cookies &&
+        typeof req.cookies.cf_auth === 'string' &&
+        req.cookies.cf_auth.trim().length > 0) ||
+      (typeof req.headers?.cookie === 'string' &&
+        /(?:^|;\s*)cf_auth=([^;]+)/.test(req.headers.cookie))
+    );
+
+    // 3. If neither Origin nor Referer is present:
+    // Cookie-authenticated state-changing requests MUST have a valid Origin or Referer.
+    // Reject requests with auth cookies that omit both headers (browser CSRF defense).
+    // Non-cookie requests (server-to-server, curl, Bearer auth, test clients) are permitted.
     if (!origin || typeof origin !== 'string') {
+      if (hasAuthCookie) {
+        res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message:
+              'Cross-origin request rejected: Origin or Referer header required for cookie-authenticated requests',
+          },
+        });
+        return;
+      }
       return next();
     }
 

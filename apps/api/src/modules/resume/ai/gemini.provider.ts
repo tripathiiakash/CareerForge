@@ -52,7 +52,7 @@ ${sanitizedText}
 
 Return strictly a raw JSON object matching the schema. Do not wrap in markdown tags or include conversational commentary.`;
 
-    const requestUrl = `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+    const requestUrl = `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent`;
 
     const requestBody = {
       contents: [
@@ -72,6 +72,7 @@ Return strictly a raw JSON object matching the schema. Do not wrap in markdown t
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
         },
         body: JSON.stringify(requestBody),
         signal: AbortSignal.timeout(60000), // 60-second timeout

@@ -549,6 +549,125 @@ describe('SEC-01: JWT to HttpOnly Cookie Security Test Suite', () => {
       csrf.use(req, {}, next);
       assert.equal(nextCalled, true, 'Must allow valid Referer');
     });
+
+    it('should reject state-changing POST when auth cookie is present but Origin and Referer are missing (Finding-08)', () => {
+      let nextCalled = false;
+      let statusSent = null;
+      let jsonSent = null;
+      const req = {
+        method: 'POST',
+        headers: {}, // missing origin and referer
+        cookies: { cf_auth: 'valid-session-jwt-token' },
+      };
+      const res = {
+        status(code) {
+          statusSent = code;
+          return {
+            json(data) {
+              jsonSent = data;
+            },
+          };
+        },
+      };
+      const next = () => {
+        nextCalled = true;
+      };
+
+      csrf.use(req, res, next);
+      assert.equal(nextCalled, false, 'Next must not be called when auth cookie lacks Origin/Referer');
+      assert.equal(statusSent, 403, 'Must reject with 403');
+      assert.equal(jsonSent.success, false);
+      assert.equal(jsonSent.error.code, 'FORBIDDEN');
+    });
+
+    it('should reject state-changing POST when raw cookie header has cf_auth but Origin and Referer are missing (Finding-08)', () => {
+      let nextCalled = false;
+      let statusSent = null;
+      const req = {
+        method: 'POST',
+        headers: { cookie: 'other=123; cf_auth=valid-session-jwt; other2=456' },
+      };
+      const res = {
+        status(code) {
+          statusSent = code;
+          return {
+            json() {},
+          };
+        },
+      };
+
+      csrf.use(req, res, () => {
+        nextCalled = true;
+      });
+      assert.equal(nextCalled, false, 'Next must not be called');
+      assert.equal(statusSent, 403, 'Must reject raw auth cookie without Origin');
+    });
+
+    it('should allow state-changing POST with Bearer auth without Origin or Referer (server-to-server / CLI client)', () => {
+      let nextCalled = false;
+      const req = {
+        method: 'POST',
+        headers: { authorization: 'Bearer api-key-or-jwt-token' },
+      };
+      const next = () => {
+        nextCalled = true;
+      };
+
+      csrf.use(req, {}, next);
+      assert.equal(nextCalled, true, 'Bearer auth without Origin should be permitted');
+    });
+
+    it('should allow state-changing POST when auth cookie is present and valid configured Origin is provided', () => {
+      let nextCalled = false;
+      const req = {
+        method: 'POST',
+        headers: { origin: 'http://localhost:5173' },
+        cookies: { cf_auth: 'valid-token' },
+      };
+      const next = () => {
+        nextCalled = true;
+      };
+
+      csrf.use(req, {}, next);
+      assert.equal(nextCalled, true, 'Cookie request with valid Origin must be allowed');
+    });
+
+    it('should reject state-changing POST when auth cookie is present and invalid Origin is provided', () => {
+      let nextCalled = false;
+      let statusSent = null;
+      const req = {
+        method: 'POST',
+        headers: { origin: 'https://evil.com' },
+        cookies: { cf_auth: 'valid-token' },
+      };
+      const res = {
+        status(code) {
+          statusSent = code;
+          return { json() {} };
+        },
+      };
+
+      csrf.use(req, res, () => {
+        nextCalled = true;
+      });
+      assert.equal(nextCalled, false);
+      assert.equal(statusSent, 403);
+    });
+
+    it('should allow safe methods (GET, HEAD, OPTIONS) with auth cookie even when Origin and Referer are missing', () => {
+      for (const method of ['GET', 'HEAD', 'OPTIONS']) {
+        let nextCalled = false;
+        const req = {
+          method,
+          headers: {},
+          cookies: { cf_auth: 'valid-token' },
+        };
+        csrf.use(req, {}, () => {
+          nextCalled = true;
+        });
+        assert.equal(nextCalled, true, `${method} must be allowed without Origin`);
+      }
+    });
   });
 
   // --------------------------------------------------------------------------

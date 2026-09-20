@@ -279,6 +279,182 @@ describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', ()
         (err) => err.status === 404 && err.response.code === 'FILE_NOT_FOUND'
       );
     });
+
+    // -----------------------------------------------------------------------
+    // Phase 6 Finding-03: Filename Header Sanitization
+    // -----------------------------------------------------------------------
+    it('Finding-03: should sanitize malicious student names containing quotes, semicolons, CR/LF, and control chars in humanFileName', async () => {
+      const mockPrisma = {
+        resume: {
+          findFirst: async () => ({
+            id: '11111111-2222-3333-4444-555555555555',
+            student_id: 'student-profile-1',
+            file_key: '11111111-2222-3333-4444-555555555555.pdf',
+            file_url: 'http://localhost:5000/api/v1/resumes/file/11111111-2222-3333-4444-555555555555.pdf',
+            student: {
+              user_id: 'student-user-1',
+              first_name: 'John" ;dummy=\r\nInjected-Header: evil\x00\x1f',
+              last_name: 'Doe/..\\<script>;foo',
+            },
+          }),
+        },
+      };
+
+      const service = new ResumeService(
+        mockPrisma,
+        {},
+        mockStorageService,
+        {}
+      );
+
+      const result = await service.getResumeFile('student-user-1', 'STUDENT', '11111111-2222-3333-4444-555555555555');
+
+      assert.ok(result.fileName.endsWith('.pdf'), 'Must preserve .pdf extension');
+      assert.equal(result.fileName.includes('"'), false, 'Must not contain double quotes');
+      assert.equal(result.fileName.includes(';'), false, 'Must not contain semicolons');
+      assert.equal(result.fileName.includes('\r'), false, 'Must not contain carriage returns');
+      assert.equal(result.fileName.includes('\n'), false, 'Must not contain newlines');
+      assert.equal(result.fileName.includes('/'), false, 'Must not contain slashes');
+      assert.equal(result.fileName.includes('\\'), false, 'Must not contain backslashes');
+      assert.equal(/[\x00-\x1F\x7F]/.test(result.fileName), false, 'Must not contain control characters');
+
+      // Verify simulated Content-Disposition header formatting is safe
+      const contentDisposition = `inline; filename="${result.fileName}"`;
+      assert.equal(contentDisposition.includes('\r'), false);
+      assert.equal(contentDisposition.includes('\n'), false);
+      // Ensure quotes are matched pairs only (one at filename=", one at end)
+      const quoteCount = (contentDisposition.match(/"/g) || []).length;
+      assert.equal(quoteCount, 2, 'Content-Disposition must contain exactly 2 quotes encapsulating filename');
+    });
+
+    it('Finding-03: should fallback deterministically to Student_Candidate_Resume.pdf if sanitization empties the names', async () => {
+      const mockPrisma = {
+        resume: {
+          findFirst: async () => ({
+            id: '11111111-2222-3333-4444-555555555555',
+            student_id: 'student-profile-1',
+            file_key: '11111111-2222-3333-4444-555555555555.pdf',
+            file_url: 'http://localhost:5000/api/v1/resumes/file/11111111-2222-3333-4444-555555555555.pdf',
+            student: {
+              user_id: 'student-user-1',
+              first_name: '";\r\n\x00',
+              last_name: ';;";/\\',
+            },
+          }),
+        },
+      };
+
+      const service = new ResumeService(
+        mockPrisma,
+        {},
+        mockStorageService,
+        {}
+      );
+
+      const result = await service.getResumeFile('student-user-1', 'STUDENT', '11111111-2222-3333-4444-555555555555');
+      assert.equal(result.fileName, 'Student_Candidate_Resume.pdf');
+    });
+
+    // -----------------------------------------------------------------------
+    // Phase 6 Finding-06: Elimination of Substring Lookup Oracle
+    // -----------------------------------------------------------------------
+    it('Finding-06: should prevent substring queries from acting as an existence oracle for another student resume', async () => {
+      const mockDatabaseResumes = [
+        {
+          id: '22222222-2222-4222-8222-222222222222',
+          student_id: 'student-profile-other',
+          file_key: 'other-student-file.pdf',
+          file_url: 'http://localhost:5000/api/v1/resumes/file/secret-token-12345.pdf',
+          student: {
+            user_id: 'other-student-user-id',
+            first_name: 'Bob',
+            last_name: 'Smith',
+          },
+        },
+        {
+          id: '33333333-3333-4333-8333-333333333333',
+          student_id: 'student-profile-own',
+          file_key: 'my-own-file.pdf',
+          file_url: 'http://localhost:5000/api/v1/resumes/file/my-own-file.pdf',
+          student: {
+            user_id: 'attacker-student-user-id',
+            first_name: 'Alice',
+            last_name: 'Attacker',
+          },
+        },
+      ];
+
+      // Emulate Prisma findFirst logic matching our exact query definition
+      const mockPrisma = {
+        resume: {
+          findFirst: async ({ where }) => {
+            if (where.id) {
+              return mockDatabaseResumes.find((r) => r.id === where.id) || null;
+            }
+            if (where.OR) {
+              return (
+                mockDatabaseResumes.find((r) =>
+                  where.OR.some((clause) => {
+                    if (clause.file_key && r.file_key === clause.file_key) return true;
+                    if (clause.file_url && typeof clause.file_url === 'string' && r.file_url === clause.file_url) return true;
+                    if (clause.file_url?.endsWith && r.file_url.endsWith(clause.file_url.endsWith)) return true;
+                    return false;
+                  })
+                ) || null
+              );
+            }
+            return null;
+          },
+        },
+      };
+
+      const service = new ResumeService(
+        mockPrisma,
+        {},
+        mockStorageService,
+        {}
+      );
+
+      const attackerUserId = 'attacker-student-user-id';
+
+      // 1. Attacker tests substrings of other student's URL: "secret", "token", "12345", "resumes"
+      // MUST return 404 NOT_FOUND, NOT 403 FORBIDDEN (cannot act as existence oracle)
+      for (const substring of ['secret', 'token', '12345', 'resumes', 'file']) {
+        await assert.rejects(
+          () => service.getResumeFile(attackerUserId, 'STUDENT', substring),
+          (err) => {
+            assert.equal(err.status, 404, `Substring "${substring}" must return 404, not reveal existence`);
+            assert.equal(err.response.code, 'NOT_FOUND');
+            return true;
+          }
+        );
+      }
+
+      // 2. Exact match of other student's full file segment properly enforces authorization (403 FORBIDDEN)
+      await assert.rejects(
+        () => service.getResumeFile(attackerUserId, 'STUDENT', 'secret-token-12345.pdf'),
+        (err) => {
+          assert.equal(err.status, 403, 'Exact match of other user file must be 403 Forbidden');
+          assert.equal(err.response.code, 'FORBIDDEN');
+          return true;
+        }
+      );
+
+      // 3. Own resume succeeds with 200 OK
+      const ownResult = await service.getResumeFile(attackerUserId, 'STUDENT', 'my-own-file.pdf');
+      assert.ok(ownResult.buffer);
+      assert.equal(ownResult.fileName, 'my-own-file.pdf');
+
+      // 4. Nonexistent identifier returns 404
+      await assert.rejects(
+        () => service.getResumeFile(attackerUserId, 'STUDENT', 'totally-nonexistent.pdf'),
+        (err) => {
+          assert.equal(err.status, 404);
+          assert.equal(err.response.code, 'NOT_FOUND');
+          return true;
+        }
+      );
+    });
   });
 
   describe('3. ResumeExtractionWorker - Extraction using Canonical file_key', () => {
