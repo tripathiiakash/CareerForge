@@ -136,6 +136,7 @@ export class ResumeAnalysisService {
     }
 
     // 5. Enforce concurrency, recovery of stale PROCESSING, and 5-minute cooldown rules
+    let isStaleProcessing = false;
     if (resume.ai_analysis) {
       if (resume.ai_analysis.status === AnalysisStatus.PROCESSING) {
         const elapsedMs = Date.now() - resume.ai_analysis.created_at.getTime();
@@ -148,6 +149,7 @@ export class ResumeAnalysisService {
             HttpStatus.TOO_MANY_REQUESTS
           );
         }
+        isStaleProcessing = true;
         this.logger.warn(
           `Recovering from abandoned PROCESSING analysis for resume ${resumeId} (age: ${Math.round(elapsedMs / 1000)}s)`
         );
@@ -167,24 +169,7 @@ export class ResumeAnalysisService {
       }
     }
 
-    // 6. Upsert the AiAnalysis record to state PROCESSING
-    await this.prisma.aiAnalysis.upsert({
-      where: { resume_id: resumeId },
-      create: {
-        resume_id: resumeId,
-        status: AnalysisStatus.PROCESSING,
-      },
-      update: {
-        status: AnalysisStatus.PROCESSING,
-        score: null,
-        missing_skills: [],
-        formatting_tips: [],
-        error_message: null,
-        created_at: new Date(),
-      },
-    });
-
-    // 7. Enqueue background analysis job
+    // 6. Enqueue background analysis job
     let jobId: string | null = null;
     try {
       jobId = await this.queueService.send<ResumeAnalysisJobData>(
@@ -201,6 +186,35 @@ export class ResumeAnalysisService {
           expireInSeconds: ANALYSIS_ACTIVE_EXPIRE_SECONDS,
         }
       );
+
+      // If recovering from stale PROCESSING and initial send was deduplicated,
+      // supervise the queue to transition any expired active jobs and retry once
+      if (!jobId && isStaleProcessing && typeof this.queueService.supervise === 'function') {
+        this.logger.warn(
+          `Stale recovery for resume ${resumeId} collided with existing job in queue. Supervising queue to clear expired jobs...`
+        );
+        try {
+          await this.queueService.supervise();
+          jobId = await this.queueService.send<ResumeAnalysisJobData>(
+            QUEUE_NAMES.RESUME_AI_ANALYSIS,
+            {
+              resumeId,
+              studentId: student.id,
+            },
+            {
+              singletonKey: resumeId,
+              retryLimit: ANALYSIS_RETRY_LIMIT,
+              retryDelay: ANALYSIS_RETRY_DELAY_SECONDS,
+              retryBackoff: true,
+              expireInSeconds: ANALYSIS_ACTIVE_EXPIRE_SECONDS,
+            }
+          );
+        } catch (superviseErr) {
+          this.logger.warn(
+            `Queue supervision during stale recovery failed for resume ${resumeId}: ${superviseErr}`
+          );
+        }
+      }
     } catch (enqueueError) {
       this.logger.error(
         `Failed to enqueue AI analysis job for resume ${resumeId}`,
@@ -226,14 +240,49 @@ export class ResumeAnalysisService {
       );
     }
 
+    // 7. Upsert the AiAnalysis record in database
+    // CRITICAL (Finding-05): Only reset created_at when a new job was actually enqueued (jobId !== null).
+    // If deduplicated against an active/retrying singleton (jobId === null), preserve the existing created_at
+    // so the stale recovery clock is NOT falsely restarted.
     if (jobId) {
       this.logger.log(
         `Enqueued resume AI analysis job ${jobId} for resume ${resumeId}`
       );
+      await this.prisma.aiAnalysis.upsert({
+        where: { resume_id: resumeId },
+        create: {
+          resume_id: resumeId,
+          status: AnalysisStatus.PROCESSING,
+          created_at: new Date(),
+        },
+        update: {
+          status: AnalysisStatus.PROCESSING,
+          score: null,
+          missing_skills: [],
+          formatting_tips: [],
+          error_message: null,
+          created_at: new Date(),
+        },
+      });
     } else {
       this.logger.warn(
-        `Job for resume ${resumeId} was deduplicated by queue exclusive policy (job already created/active/retrying in pg-boss).`
+        `Job for resume ${resumeId} was deduplicated by queue exclusive policy (job already created/active/retrying in pg-boss). Preserving original created_at timestamp.`
       );
+      await this.prisma.aiAnalysis.upsert({
+        where: { resume_id: resumeId },
+        create: {
+          resume_id: resumeId,
+          status: AnalysisStatus.PROCESSING,
+        },
+        update: {
+          status: AnalysisStatus.PROCESSING,
+          score: null,
+          missing_skills: [],
+          formatting_tips: [],
+          error_message: null,
+          // Note: created_at is intentionally omitted to preserve existing analysis age
+        },
+      });
     }
 
     return {

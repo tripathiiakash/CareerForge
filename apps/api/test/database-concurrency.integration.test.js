@@ -6,6 +6,7 @@ const {
   EmploymentType,
   JobStatus,
   ApplicationStatus,
+  AnalysisStatus,
   Prisma,
 } = require('@prisma/client');
 const {
@@ -15,6 +16,8 @@ const {
   getTestDatabaseUrl,
 } = require('./setup/db-test-harness');
 const { ApplicationService } = require('../dist/modules/application/application.service');
+const { ResumeAnalysisService } = require('../dist/modules/resume/services/resume-analysis.service');
+const { StudentService } = require('../dist/modules/student/student.service');
 const { QueueService } = require('../dist/core/queue/queue.service');
 const { QUEUE_NAMES } = require('../dist/core/queue/queue.types');
 
@@ -76,6 +79,9 @@ describe('Database Concurrency & Unique-Constraint Integration Suite (Phase 6.6-
           });
         }
         if (createdResumeIds.length > 0) {
+          await prisma.aiAnalysis.deleteMany({
+            where: { resume_id: { in: createdResumeIds } },
+          });
           await prisma.resume.deleteMany({
             where: { id: { in: createdResumeIds } },
           });
@@ -618,6 +624,124 @@ describe('Database Concurrency & Unique-Constraint Integration Suite (Phase 6.6-
       assert.equal(jobsInDb[0].name, QUEUE_NAMES.RESUME_AI_ANALYSIS);
       assert.equal(jobsInDb[0].state, 'created');
       assert.equal(jobsInDb[0].policy, 'exclusive');
+    });
+
+    it('Phase 6 Finding-05: stale recovery with existing singleton in pg-boss preserves created_at and does not reset recovery clock', async () => {
+      const { user, student, resume } = await createStudentFixture('f05-dedup');
+      await prisma.resume.update({
+        where: { id: resume.id },
+        data: { parsed_text: 'Sample valid resume text for AI analysis test' },
+      });
+      createdSingletonKeys.push(resume.id);
+
+      // Create initial AiAnalysis in PROCESSING set 8 minutes ago (stale)
+      const eightMinutesAgo = new Date(Date.now() - 8 * 60 * 1000);
+      await prisma.aiAnalysis.create({
+        data: {
+          resume_id: resume.id,
+          status: AnalysisStatus.PROCESSING,
+          created_at: eightMinutesAgo,
+        },
+      });
+
+      // Send an exclusive pg-boss job with singletonKey = resume.id
+      const initialJobId = await queueService.send(
+        QUEUE_NAMES.RESUME_AI_ANALYSIS,
+        { resumeId: resume.id, studentId: student.id },
+        { singletonKey: resume.id }
+      );
+      assert.ok(initialJobId, 'Initial job must be created in pg-boss');
+
+      const studentService = new StudentService(prisma);
+      const analysisService = new ResumeAnalysisService(prisma, studentService, queueService);
+
+      // Trigger stale recovery while job is still queued in pg-boss
+      const result = await analysisService.triggerAnalysis(user.id, resume.id);
+      assert.equal(result.status, 'PROCESSING');
+      assert.equal(result.resume_id, resume.id);
+
+      // Verify in PostgreSQL that ai_analyses.created_at was NOT reset to NOW (Finding-05 contract)
+      const recordAfter = await prisma.aiAnalysis.findUnique({
+        where: { resume_id: resume.id },
+      });
+      assert.equal(
+        recordAfter.created_at.getTime(),
+        eightMinutesAgo.getTime(),
+        'created_at must remain the original timestamp and not be overwritten when deduplicated against an active singleton'
+      );
+
+      // Verify that no duplicate job was created in pg-boss
+      const jobsInQueue = await prisma.$queryRaw`
+        SELECT id, state, singleton_key
+        FROM pgboss.job
+        WHERE singleton_key = ${resume.id}
+      `;
+      assert.equal(jobsInQueue.length, 1, 'Exactly one job must exist in pg-boss');
+      assert.equal(jobsInQueue[0].id, initialJobId);
+    });
+
+    it('Phase 6 Finding-05: stale recovery with expired active job supervises and re-enqueues successfully', async () => {
+      const { user, student, resume } = await createStudentFixture('f05-expire');
+      await prisma.resume.update({
+        where: { id: resume.id },
+        data: { parsed_text: 'Sample valid resume text for AI analysis test' },
+      });
+      createdSingletonKeys.push(resume.id);
+
+      // Create initial AiAnalysis in PROCESSING set 8 minutes ago (stale)
+      const eightMinutesAgo = new Date(Date.now() - 8 * 60 * 1000);
+      await prisma.aiAnalysis.create({
+        data: {
+          resume_id: resume.id,
+          status: AnalysisStatus.PROCESSING,
+          created_at: eightMinutesAgo,
+        },
+      });
+
+      // Send initial job with expireInSeconds: 2, retryLimit: 0 and simulate worker crash in 'active' state
+      const initialJobId = await queueService.send(
+        QUEUE_NAMES.RESUME_AI_ANALYSIS,
+        { resumeId: resume.id, studentId: student.id },
+        { singletonKey: resume.id, expireInSeconds: 2, retryLimit: 0 }
+      );
+      assert.ok(initialJobId);
+
+      // Simulate worker crashed 10 seconds ago leaving job in 'active' state past its 2-second expiration
+      await prisma.$executeRawUnsafe(
+        `UPDATE pgboss.job SET state = 'active', started_on = now() - interval '10 seconds', expire_seconds = 2, retry_limit = 0 WHERE id = '${initialJobId}'::uuid`
+      );
+      // Ensure queue monitor cadence allows immediate supervision in this test
+      await prisma.$executeRawUnsafe(
+        `UPDATE pgboss.queue SET monitor_claim_on = now() - interval '10 minutes' WHERE name = '${QUEUE_NAMES.RESUME_AI_ANALYSIS}'`
+      );
+
+      const studentService = new StudentService(prisma);
+      const analysisService = new ResumeAnalysisService(prisma, studentService, queueService);
+
+      // Trigger stale recovery: should detect collision, supervise queue to transition expired job to failed, and re-enqueue a fresh job
+      const result = await analysisService.triggerAnalysis(user.id, resume.id);
+      assert.equal(result.status, 'PROCESSING');
+
+      // Verify that a fresh job was enqueued and ai_analyses.created_at was refreshed to NOW
+      const recordAfter = await prisma.aiAnalysis.findUnique({
+        where: { resume_id: resume.id },
+      });
+      assert.ok(
+        recordAfter.created_at.getTime() > eightMinutesAgo.getTime(),
+        'created_at must be refreshed to a new timestamp because a new recovery job was successfully enqueued'
+      );
+
+      // Verify pg-boss states: old job is failed, new job is created
+      const jobsInDb = await prisma.$queryRaw`
+        SELECT id, state, singleton_key
+        FROM pgboss.job
+        WHERE singleton_key = ${resume.id}
+        ORDER BY created_on ASC
+      `;
+      assert.equal(jobsInDb.length, 2, 'Should have old failed job and new created job');
+      assert.equal(jobsInDb[0].id, initialJobId);
+      assert.equal(jobsInDb[0].state, 'failed');
+      assert.equal(jobsInDb[1].state, 'created');
     });
   });
 

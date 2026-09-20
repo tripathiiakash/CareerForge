@@ -79,6 +79,10 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     return this.boss.send(name, data, options);
   }
 
+  async supervise(): Promise<void> {
+    await this.boss.supervise();
+  }
+
   async work<T extends object>(
     name: string,
     handler: JobHandler<T>

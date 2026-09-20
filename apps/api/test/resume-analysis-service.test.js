@@ -354,6 +354,12 @@ describe('ResumeAnalysisService Test Suite', () => {
         },
       });
 
+      let upsertArgs = null;
+      mockPrisma.aiAnalysis.upsert = async (args) => {
+        upsertArgs = args;
+        return {};
+      };
+
       // B & D. A corresponding pg-boss job exists in retry or active state in the queue.
       // In PostgreSQL, pg-boss index job_i6 enforces UNIQUE(name, COALESCE(singleton_key, '')) WHERE state <= 'active' AND policy = 'exclusive'.
       // Therefore, pg-boss insertJobs encounters conflict, performs ON CONFLICT DO NOTHING, and returns null.
@@ -372,6 +378,53 @@ describe('ResumeAnalysisService Test Suite', () => {
       assert.equal(sendCalled, true);
       assert.equal(result.status, 'PROCESSING');
       assert.equal(result.resume_id, resumeId);
+      assert.ok(upsertArgs, 'upsert must be called to update analysis state');
+      assert.equal(
+        upsertArgs.update.created_at,
+        undefined,
+        'created_at must NOT be updated when job is deduplicated, preserving existing analysis age (Finding-05)'
+      );
+    });
+
+    it('stale recovery: should supervise queue when colliding with expired job and re-enqueue with fresh timestamp', async () => {
+      const sevenMinutesAgo = new Date(Date.now() - 7 * 60 * 1000);
+      mockPrisma.resume.findUnique = async () => ({
+        id: resumeId,
+        student_id: studentProfileId,
+        parsed_text: 'Valid resume text',
+        ai_analysis: {
+          status: 'PROCESSING',
+          created_at: sevenMinutesAgo,
+        },
+      });
+
+      let superviseCalled = false;
+      mockQueueService.supervise = async () => {
+        superviseCalled = true;
+      };
+
+      let sendCalls = 0;
+      mockQueueService.send = async (queueName, data, options) => {
+        sendCalls++;
+        if (sendCalls === 1) return null; // First send collides with expired active job
+        return 'recovered-job-id'; // Second send after supervise succeeds
+      };
+
+      let upsertArgs = null;
+      mockPrisma.aiAnalysis.upsert = async (args) => {
+        upsertArgs = args;
+        return {};
+      };
+
+      const result = await service.triggerAnalysis(validStudentUserId, resumeId);
+
+      assert.equal(result.status, 'PROCESSING');
+      assert.equal(superviseCalled, true, 'Queue supervise must be called during stale recovery collision');
+      assert.equal(sendCalls, 2, 'send must be retried after queue supervision');
+      assert.ok(
+        upsertArgs.update.created_at instanceof Date,
+        'created_at must be refreshed when recovery job is successfully enqueued'
+      );
     });
 
     it('should catch queue enqueue error, rollback DB to FAILED, and not lock user out for 6 minutes', async () => {
