@@ -552,4 +552,72 @@ export class ApplicationService {
       updated_at: updated.updated_at,
     };
   }
+
+  /**
+   * Retrieves an application record by job ID and student ID.
+   * Public domain query interface used by InterviewPrepService to verify application status.
+   */
+  async getApplicationByJobAndStudent(
+    jobId: string,
+    studentId: string
+  ): Promise<{ id: string; status: ApplicationStatus } | null> {
+    return this.prisma.application.findUnique({
+      where: {
+        job_id_student_id: {
+          job_id: jobId,
+          student_id: studentId,
+        },
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+  }
+
+  /**
+   * Verifies if a student user has applied to a given job.
+   * Public domain query interface used by JobService to populate 'hasApplied'.
+   */
+  async hasStudentAppliedToJob(
+    jobId: string,
+    studentUserId: string
+  ): Promise<boolean> {
+    const application = await this.prisma.application.findFirst({
+      where: {
+        job_id: jobId,
+        student: {
+          user_id: studentUserId,
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+    return Boolean(application);
+  }
+
+  /**
+   * Verifies if a recruiter has legitimate access to download an applicant's resume.
+   * Public domain query interface used by ResumeService.
+   */
+  async hasRecruiterAccessToResume(
+    resumeId: string,
+    recruiterUserId: string
+  ): Promise<boolean> {
+    const application = await this.prisma.application.findFirst({
+      where: {
+        resume_id: resumeId,
+        job: {
+          recruiter: {
+            user_id: recruiterUserId,
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+    return Boolean(application);
+  }
 }

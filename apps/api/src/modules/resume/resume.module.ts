@@ -4,6 +4,7 @@ import { ConfigService } from '../../core/config/config.service';
 import { QueueModule } from '../../core/queue/queue.module';
 import { AuthModule } from '../auth/auth.module';
 import { StudentModule } from '../student/student.module';
+import { ApplicationModule } from '../application/application.module';
 import { AI_PROVIDER_TOKEN } from './ai/ai-provider.interface';
 import { GeminiProvider } from './ai/gemini.provider';
 import { MockAiProvider } from './ai/mock-ai.provider';
@@ -18,7 +19,7 @@ import { ResumeAnalysisWorker } from './workers/resume-analysis.worker';
 import { ResumeExtractionWorker } from './workers/resume-extraction.worker';
 
 @Module({
-  imports: [ConfigModule, QueueModule, AuthModule, StudentModule],
+  imports: [ConfigModule, QueueModule, AuthModule, StudentModule, ApplicationModule],
   controllers: [ResumeController],
   providers: [
     ResumeService,

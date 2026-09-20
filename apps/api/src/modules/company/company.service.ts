@@ -52,4 +52,31 @@ export class CompanyService {
       logo_url: company.logo_url,
     };
   }
+
+  /**
+   * Retrieves a company by ID adhering to docs/API.md §3.1 shape.
+   * Public domain query interface used across modules (e.g. RecruiterService).
+   */
+  async getCompanyById(id: string): Promise<CompanyData | null> {
+    const company = await this.prisma.company.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        website: true,
+        logo_url: true,
+      },
+    });
+
+    if (!company) {
+      return null;
+    }
+
+    return {
+      id: company.id,
+      name: company.name,
+      website: company.website,
+      logo_url: company.logo_url,
+    };
+  }
 }

@@ -3,11 +3,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { EmploymentType, JobStatus, Prisma, UserRole } from '@prisma/client';
 import { sanitizeHtml } from '../../core/utils/sanitize-html.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
+import { ApplicationService } from '../application/application.service';
 import { CreateJobDto } from './dto/create-job.dto';
 import {
   JobCreatedData,
@@ -27,7 +29,11 @@ import { UUID_REGEX } from '../../core/utils/uuid.util';
 
 @Injectable()
 export class JobService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly applicationService?: ApplicationService
+  ) {}
 
   private validateUuid(id: string, fieldName = 'jobId'): void {
     if (!id || !UUID_REGEX.test(id)) {
@@ -457,20 +463,27 @@ export class JobService {
 
     let hasApplied: boolean | undefined = undefined;
 
-    if (user?.role === UserRole.STUDENT && this.prisma.application) {
-      const application = await this.prisma.application.findFirst({
-        where: {
-          job_id: id,
-          student: {
-            user_id: user.userId,
+    if (user?.role === UserRole.STUDENT) {
+      if (this.applicationService) {
+        hasApplied = await this.applicationService.hasStudentAppliedToJob(
+          id,
+          user.userId
+        );
+      } else if (this.prisma.application) {
+        const application = await this.prisma.application.findFirst({
+          where: {
+            job_id: id,
+            student: {
+              user_id: user.userId,
+            },
           },
-        },
-        select: {
-          id: true,
-        },
-      });
+          select: {
+            id: true,
+          },
+        });
 
-      hasApplied = Boolean(application);
+        hasApplied = Boolean(application);
+      }
     }
 
     const data: JobDetailData = {
@@ -586,5 +599,49 @@ export class JobService {
         totalPages,
       },
     };
+  }
+
+  /**
+   * Retrieves all jobs posted by a recruiter by recruiter ID.
+   * Public domain query interface used by RecruiterService.
+   */
+  async listJobsByRecruiterId(recruiterId: string): Promise<
+    Array<{
+      id: string;
+      title: string;
+      description: string;
+      required_skills: string[];
+      employment_type: EmploymentType;
+      status: JobStatus;
+      created_at: Date;
+      company: {
+        id: string;
+        name: string;
+        website: string | null;
+        logo_url: string | null;
+      };
+    }>
+  > {
+    return this.prisma.job.findMany({
+      where: { recruiter_id: recruiterId },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        required_skills: true,
+        employment_type: true,
+        status: true,
+        created_at: true,
+        company: {
+          select: {
+            id: true,
+            name: true,
+            website: true,
+            logo_url: true,
+          },
+        },
+      },
+    });
   }
 }

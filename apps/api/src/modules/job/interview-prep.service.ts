@@ -6,11 +6,13 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ApplicationStatus, JobStatus } from '@prisma/client';
 import { interviewPrepOutputSchema } from '@careerforge/validation';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StudentService } from '../student/student.service';
+import { ApplicationService } from '../application/application.service';
 import {
   IInterviewPrepProvider,
   INTERVIEW_PREP_PROVIDER_TOKEN,
@@ -32,7 +34,9 @@ export class InterviewPrepService {
     @Inject(INTERVIEW_PREP_PROVIDER_TOKEN)
     private readonly aiProvider: IInterviewPrepProvider,
     @Inject(INTERVIEW_PREP_QUOTA_STORE_TOKEN)
-    private readonly quotaStore: IInterviewPrepQuotaStore
+    private readonly quotaStore: IInterviewPrepQuotaStore,
+    @Optional()
+    private readonly applicationService?: ApplicationService
   ) {}
 
   private validateUuid(id: string, fieldName = 'jobId'): void {
@@ -91,14 +95,19 @@ export class InterviewPrepService {
       });
     }
 
-    const application = await this.prisma.application.findUnique({
-      where: {
-        job_id_student_id: {
-          job_id: jobId,
-          student_id: student.id,
-        },
-      },
-    });
+    const application = this.applicationService
+      ? await this.applicationService.getApplicationByJobAndStudent(
+          jobId,
+          student.id
+        )
+      : await this.prisma.application.findUnique({
+          where: {
+            job_id_student_id: {
+              job_id: jobId,
+              student_id: student.id,
+            },
+          },
+        });
 
     if (!application) {
       throw new BadRequestException({

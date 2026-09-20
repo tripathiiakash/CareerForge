@@ -5,6 +5,7 @@ import {
   HttpStatus,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import * as path from 'path';
 import { UserRole } from '@prisma/client';
@@ -15,6 +16,7 @@ import {
 } from '../../core/queue/queue.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StudentService } from '../student/student.service';
+import { ApplicationService } from '../application/application.service';
 import { ResumeListItemDto } from './dto/resume-response.dto';
 import { UploadResumeData } from './dto/upload-resume-response.dto';
 import { UploadedFile } from './interfaces/uploaded-file.interface';
@@ -34,7 +36,9 @@ export class ResumeService {
     private readonly prisma: PrismaService,
     private readonly studentService: StudentService,
     private readonly resumeStorageService: ResumeStorageService,
-    private readonly queueService: QueueService
+    private readonly queueService: QueueService,
+    @Optional()
+    private readonly applicationService?: ApplicationService
   ) {}
 
   /**
@@ -250,16 +254,24 @@ export class ResumeService {
       }
     } else if (userRole === UserRole.RECRUITER) {
       // Recruiter may only access if the student applied to a job posted by this recruiter
-      const hasApplication = await this.prisma.application.findFirst({
-        where: {
-          resume_id: resume.id,
-          job: {
-            recruiter: {
-              user_id: userId,
-            },
-          },
-        },
-      });
+      const hasApplication = this.applicationService
+        ? await this.applicationService.hasRecruiterAccessToResume(
+            resume.id,
+            userId
+          )
+        : Boolean(
+            await this.prisma.application.findFirst({
+              where: {
+                resume_id: resume.id,
+                job: {
+                  recruiter: {
+                    user_id: userId,
+                  },
+                },
+              },
+              select: { id: true },
+            })
+          );
 
       if (!hasApplication) {
         throw new ForbiddenException({

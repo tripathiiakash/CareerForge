@@ -1,12 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CompanyService } from '../company/company.service';
+import { JobService } from '../job/job.service';
 import { RecruiterJobItem } from './dto/recruiter-jobs-response.dto';
 import { RecruiterProfileData } from './dto/recruiter-profile-response.dto';
 import { UpdateRecruiterProfileDto } from './dto/update-recruiter-profile.dto';
 
 @Injectable()
 export class RecruiterService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly companyService?: CompanyService,
+    @Optional()
+    private readonly jobService?: JobService
+  ) {}
 
   /**
    * Retrieves recruiter profile data by associated user ID.
@@ -64,9 +72,11 @@ export class RecruiterService {
 
     // Verify company existence if company_id is provided
     if (dto.company_id !== undefined) {
-      const company = await this.prisma.company.findUnique({
-        where: { id: dto.company_id },
-      });
+      const company = this.companyService
+        ? await this.companyService.getCompanyById(dto.company_id)
+        : await this.prisma.company.findUnique({
+            where: { id: dto.company_id },
+          });
 
       if (!company) {
         throw new NotFoundException({
@@ -123,27 +133,29 @@ export class RecruiterService {
       });
     }
 
-    const jobs = await this.prisma.job.findMany({
-      where: { recruiter_id: recruiter.id },
-      orderBy: { created_at: 'desc' },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        required_skills: true,
-        employment_type: true,
-        status: true,
-        created_at: true,
-        company: {
+    const jobs = this.jobService
+      ? await this.jobService.listJobsByRecruiterId(recruiter.id)
+      : await this.prisma.job.findMany({
+          where: { recruiter_id: recruiter.id },
+          orderBy: { created_at: 'desc' },
           select: {
             id: true,
-            name: true,
-            website: true,
-            logo_url: true,
+            title: true,
+            description: true,
+            required_skills: true,
+            employment_type: true,
+            status: true,
+            created_at: true,
+            company: {
+              select: {
+                id: true,
+                name: true,
+                website: true,
+                logo_url: true,
+              },
+            },
           },
-        },
-      },
-    });
+        });
 
     return jobs.map((job) => ({
       id: job.id,
