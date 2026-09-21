@@ -7,6 +7,7 @@ const {
 describe('RecruiterService Test Suite', () => {
   let service;
   let mockPrisma;
+  let mockCompanyService;
 
   const validUserId = '11111111-1111-4111-8111-111111111111';
   const recruiterId = '22222222-2222-4222-8222-222222222222';
@@ -36,12 +37,16 @@ describe('RecruiterService Test Suite', () => {
         findUnique: async () => null,
         update: async () => null,
       },
-      company: {
-        findUnique: async () => null,
+    };
+
+    mockCompanyService = {
+      getCompanyById: async (id) => {
+        if (id === companyId) return sampleCompany;
+        return null;
       },
     };
 
-    service = new RecruiterService(mockPrisma);
+    service = new RecruiterService(mockPrisma, mockCompanyService);
   });
 
   describe('getProfileByUserId', () => {
@@ -87,7 +92,7 @@ describe('RecruiterService Test Suite', () => {
 
     it('should throw 404 NotFoundException if specified company_id does not exist in companies table', async () => {
       mockPrisma.recruiter.findUnique = async () => sampleRecruiter;
-      mockPrisma.company.findUnique = async () => null; // Nonexistent company
+      mockCompanyService.getCompanyById = async () => null; // Nonexistent company
 
       await assert.rejects(
         () =>
@@ -138,8 +143,8 @@ describe('RecruiterService Test Suite', () => {
       };
 
       mockPrisma.recruiter.findUnique = async () => sampleRecruiter;
-      mockPrisma.company.findUnique = async ({ where }) => {
-        if (where.id === newCompanyId) return newCompany;
+      mockCompanyService.getCompanyById = async (id) => {
+        if (id === newCompanyId) return newCompany;
         return null;
       };
 

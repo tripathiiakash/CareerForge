@@ -3,11 +3,9 @@ const assert = require('node:assert/strict');
 const { Reflector } = require('@nestjs/core');
 const { RolesGuard } = require('../dist/core/guards/roles.guard');
 const {
-  RecruiterController,
-} = require('../dist/modules/recruiter/recruiter.controller');
-const {
-  RecruiterService,
-} = require('../dist/modules/recruiter/recruiter.service');
+  RecruiterJobController,
+} = require('../dist/modules/job/recruiter-job.controller');
+const { JobService } = require('../dist/modules/job/job.service');
 const { ROLES_KEY } = require('../dist/core/decorators/roles.decorator');
 
 describe('Recruiter Jobs Endpoint Test Suite (GET /api/v1/recruiters/me/jobs)', () => {
@@ -25,35 +23,43 @@ describe('Recruiter Jobs Endpoint Test Suite (GET /api/v1/recruiters/me/jobs)', 
   };
 
   let mockPrisma;
+  let mockRecruiterService;
   let service;
 
   beforeEach(() => {
-    mockPrisma = {
-      recruiter: {
-        findUnique: async ({ where }) => {
-          if (where.user_id === validUserId) {
-            return {
-              id: validRecruiterId,
-              user_id: validUserId,
-              company_id: validCompanyId,
-              first_name: 'Sarah',
-              last_name: 'Connor',
-              is_approved: true,
-            };
-          }
-          if (where.user_id === otherUserId) {
-            return {
-              id: otherRecruiterId,
-              user_id: otherUserId,
-              company_id: validCompanyId,
-              first_name: 'John',
-              last_name: 'Doe',
-              is_approved: true,
-            };
-          }
-          return null;
-        },
+    mockRecruiterService = {
+      getProfileByUserId: async (userId) => {
+        if (userId === validUserId) {
+          return {
+            id: validRecruiterId,
+            user_id: validUserId,
+            company_id: validCompanyId,
+            first_name: 'Sarah',
+            last_name: 'Connor',
+            is_approved: true,
+            company: mockCompany,
+          };
+        }
+        if (userId === otherUserId) {
+          return {
+            id: otherRecruiterId,
+            user_id: otherUserId,
+            company_id: validCompanyId,
+            first_name: 'John',
+            last_name: 'Doe',
+            is_approved: true,
+            company: mockCompany,
+          };
+        }
+        const { NotFoundException } = require('@nestjs/common');
+        throw new NotFoundException({
+          code: 'NOT_FOUND',
+          message: 'Recruiter profile does not exist',
+        });
       },
+    };
+
+    mockPrisma = {
       job: {
         findMany: async ({ where, orderBy }) => {
           assert.equal(orderBy?.created_at, 'desc');
@@ -110,12 +116,13 @@ describe('Recruiter Jobs Endpoint Test Suite (GET /api/v1/recruiters/me/jobs)', 
       },
     };
 
-    service = new RecruiterService(mockPrisma);
+    const mockAppService = {};
+    service = new JobService(mockPrisma, mockRecruiterService, mockAppService);
   });
 
-  describe('RecruiterService.getJobsByUserId', () => {
+  describe('JobService.getJobsByRecruiterUserId', () => {
     it('1. returns all jobs owned by authenticated recruiter with real statuses', async () => {
-      const jobs = await service.getJobsByUserId(validUserId);
+      const jobs = await service.getJobsByRecruiterUserId(validUserId);
 
       assert.equal(jobs.length, 3);
 
@@ -137,13 +144,13 @@ describe('Recruiter Jobs Endpoint Test Suite (GET /api/v1/recruiters/me/jobs)', 
     });
 
     it('2. strictly isolates recruiter jobs (does not see another recruiter jobs)', async () => {
-      const jobs = await service.getJobsByUserId(validUserId);
+      const jobs = await service.getJobsByRecruiterUserId(validUserId);
       const containsOther = jobs.some((j) => j.id === 'other-job-999');
       assert.equal(containsOther, false);
     });
 
     it('3. does not expose recruiter_id, user_id, or internal database fields', async () => {
-      const jobs = await service.getJobsByUserId(validUserId);
+      const jobs = await service.getJobsByRecruiterUserId(validUserId);
       for (const job of jobs) {
         assert.equal(job.recruiter_id, undefined);
         assert.equal(job.user_id, undefined);
@@ -153,7 +160,7 @@ describe('Recruiter Jobs Endpoint Test Suite (GET /api/v1/recruiters/me/jobs)', 
 
     it('4. throws 404 NOT_FOUND when recruiter profile does not exist', async () => {
       await assert.rejects(
-        () => service.getJobsByUserId('non-existent-user-id'),
+        () => service.getJobsByRecruiterUserId('non-existent-user-id'),
         (err) =>
           err.status === 404 &&
           err.response.code === 'NOT_FOUND' &&
@@ -163,16 +170,16 @@ describe('Recruiter Jobs Endpoint Test Suite (GET /api/v1/recruiters/me/jobs)', 
 
     it('5. returns empty array when recruiter has no posted jobs', async () => {
       mockPrisma.job.findMany = async () => [];
-      const jobs = await service.getJobsByUserId(validUserId);
+      const jobs = await service.getJobsByRecruiterUserId(validUserId);
       assert.deepEqual(jobs, []);
     });
   });
 
-  describe('RecruiterController Routing & Security Guards', () => {
+  describe('RecruiterJobController Routing & Security Guards', () => {
     const reflector = new Reflector();
 
     it('1. verifies controller has class-level RECRUITER role requirement', () => {
-      const roles = reflector.get(ROLES_KEY, RecruiterController);
+      const roles = reflector.get(ROLES_KEY, RecruiterJobController);
       assert.deepEqual(roles, ['RECRUITER']);
     });
 
@@ -186,7 +193,7 @@ describe('Recruiter Jobs Endpoint Test Suite (GET /api/v1/recruiters/me/jobs)', 
           getRequest: () => studentRequest,
         }),
         getHandler: () => () => {},
-        getClass: () => RecruiterController,
+        getClass: () => RecruiterJobController,
       };
 
       assert.throws(
@@ -208,7 +215,7 @@ describe('Recruiter Jobs Endpoint Test Suite (GET /api/v1/recruiters/me/jobs)', 
           getRequest: () => adminRequest,
         }),
         getHandler: () => () => {},
-        getClass: () => RecruiterController,
+        getClass: () => RecruiterJobController,
       };
 
       assert.throws(
@@ -230,7 +237,7 @@ describe('Recruiter Jobs Endpoint Test Suite (GET /api/v1/recruiters/me/jobs)', 
           getRequest: () => recruiterRequest,
         }),
         getHandler: () => () => {},
-        getClass: () => RecruiterController,
+        getClass: () => RecruiterJobController,
       };
 
       const allowed = guard.canActivate(mockContext);
@@ -252,13 +259,13 @@ describe('Recruiter Jobs Endpoint Test Suite (GET /api/v1/recruiters/me/jobs)', 
       ];
 
       const mockService = {
-        getJobsByUserId: async (userId) => {
+        getJobsByRecruiterUserId: async (userId) => {
           assert.equal(userId, validUserId);
           return mockJobs;
         },
       };
 
-      const controller = new RecruiterController(mockService);
+      const controller = new RecruiterJobController(mockService);
       const response = await controller.getMyJobs(validUserId);
 
       assert.deepEqual(response, {
