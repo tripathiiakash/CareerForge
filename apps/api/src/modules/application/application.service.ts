@@ -19,6 +19,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '../../core/config/config.service';
 import {
   ApplicationCreatedData,
+  ApplicationStatusSummaryDto,
   ApplicationStatusUpdatedData,
   JobApplicantItem,
   ListJobApplicantsMeta,
@@ -560,7 +561,7 @@ export class ApplicationService {
   async getApplicationByJobAndStudent(
     jobId: string,
     studentId: string
-  ): Promise<{ id: string; status: ApplicationStatus } | null> {
+  ): Promise<ApplicationStatusSummaryDto | null> {
     return this.prisma.application.findUnique({
       where: {
         job_id_student_id: {

@@ -84,3 +84,14 @@ export interface UpdateApplicationStatusResponseDto {
   success: true;
   data: ApplicationStatusUpdatedData;
 }
+
+import { ApplicationStatus } from '@prisma/client';
+
+/**
+ * Public domain query DTO representing an application status summary.
+ * Used across modules (e.g. InterviewPrepService).
+ */
+export interface ApplicationStatusSummaryDto {
+  id: string;
+  status: ApplicationStatus;
+}
