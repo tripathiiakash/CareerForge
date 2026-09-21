@@ -91,7 +91,44 @@ describe('JobService Test Suite (Phase 4.3.1 - docs/API.md §5.1)', () => {
       $transaction: async (cb) => cb(mockPrisma),
     };
 
-    service = new JobService(mockPrisma);
+    const mockRecruiterService = {
+      getProfileByUserId: async (userId) => {
+        const recruiter = await mockPrisma.recruiter.findUnique({
+          where: { user_id: userId },
+        });
+        if (!recruiter) {
+          const { NotFoundException } = require('@nestjs/common');
+          throw new NotFoundException({
+            code: 'NOT_FOUND',
+            message: 'Recruiter profile does not exist',
+          });
+        }
+        return {
+          id: recruiter.id,
+          first_name: recruiter.first_name,
+          last_name: recruiter.last_name,
+          is_approved: recruiter.is_approved,
+          company: recruiter.company,
+        };
+      },
+    };
+
+    const mockApplicationService = {
+      hasStudentAppliedToJob: async (jobId, studentUserId) => {
+        if (mockPrisma.application?.findFirst) {
+          const app = await mockPrisma.application.findFirst({
+            where: {
+              job_id: jobId,
+              student: { user_id: studentUserId },
+            },
+          });
+          return Boolean(app);
+        }
+        return false;
+      },
+    };
+
+    service = new JobService(mockPrisma, mockRecruiterService, mockApplicationService);
   });
 
   describe('createJob', () => {

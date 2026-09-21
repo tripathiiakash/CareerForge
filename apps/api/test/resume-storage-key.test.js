@@ -7,6 +7,7 @@ const {
 
 describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', () => {
   const mockBuffer = Buffer.from('%PDF-1.4 Mock PDF content');
+  const mockApplicationService = { hasRecruiterAccessToResume: async () => true };
 
   describe('1. ResumeService - Upload with Canonical file_key Persistence', () => {
     let mockPrisma;
@@ -62,7 +63,8 @@ describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', ()
         mockPrisma,
         mockStudentService,
         mockStorageService,
-        mockQueueService
+        mockQueueService,
+        mockApplicationService
       );
 
       const fakeFile = {
@@ -111,7 +113,8 @@ describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', ()
         mockPrisma,
         mockStudentService,
         mockStorageService,
-        mockQueueService
+        mockQueueService,
+        mockApplicationService
       );
 
       const fakeFile = {
@@ -167,7 +170,8 @@ describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', ()
         mockPrisma,
         {},
         mockStorageService,
-        {}
+        {},
+        mockApplicationService
       );
 
       const result = await service.getResumeFile('student-user-1', 'STUDENT', 'resume-uuid-1');
@@ -204,7 +208,8 @@ describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', ()
         mockPrisma,
         {},
         mockStorageService,
-        {}
+        {},
+        mockApplicationService
       );
 
       const result = await service.getResumeFile('student-user-1', 'STUDENT', 'lookup-by-key.pdf');
@@ -241,7 +246,8 @@ describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', ()
         mockPrisma,
         {},
         mockStorageService,
-        {}
+        {},
+        mockApplicationService
       );
 
       const result = await service.getResumeFile('student-user-1', 'STUDENT', 'resume-uuid-legacy');
@@ -271,7 +277,8 @@ describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', ()
         mockPrisma,
         {},
         mockStorageService,
-        {}
+        {},
+        mockApplicationService
       );
 
       await assert.rejects(
@@ -304,7 +311,8 @@ describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', ()
         mockPrisma,
         {},
         mockStorageService,
-        {}
+        {},
+        mockApplicationService
       );
 
       const result = await service.getResumeFile('student-user-1', 'STUDENT', '11111111-2222-3333-4444-555555555555');
@@ -348,7 +356,8 @@ describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', ()
         mockPrisma,
         {},
         mockStorageService,
-        {}
+        {},
+        mockApplicationService
       );
 
       const result = await service.getResumeFile('student-user-1', 'STUDENT', '11111111-2222-3333-4444-555555555555');
@@ -412,7 +421,8 @@ describe('Phase 6.3-B (ENG-01): Resume Storage-Key Handling Hardening Suite', ()
         mockPrisma,
         {},
         mockStorageService,
-        {}
+        {},
+        mockApplicationService
       );
 
       const attackerUserId = 'attacker-student-user-id';

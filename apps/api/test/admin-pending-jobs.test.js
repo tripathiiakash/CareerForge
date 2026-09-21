@@ -202,7 +202,7 @@ describe('Phase 5.13.0 — Admin Pending Jobs Backend Contract Test Suite', () =
         },
       };
 
-      service = new JobService(mockPrisma);
+      service = new JobService(mockPrisma, {}, {});
     });
 
     it('5. Only PENDING jobs are queried from the database', async () => {

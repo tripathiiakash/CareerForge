@@ -170,13 +170,13 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
         },
       };
 
-      const jobService = new JobService(mockPrisma);
+      const jobService = new JobService(mockPrisma, {}, {});
       const jobs = await jobService.listJobsByRecruiterId(recruiterId);
       assert.equal(jobs.length, 1);
       assert.equal(jobs[0].title, 'Software Engineer');
     });
 
-    it('getJobById delegates hasApplied check to ApplicationService when provided', async () => {
+    it('getJobById delegates hasApplied check to ApplicationService', async () => {
       let delegatedCheck = false;
       const mockAppService = {
         hasStudentAppliedToJob: async (jId, uId) => {
@@ -208,7 +208,7 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
         },
       };
 
-      const jobService = new JobService(mockPrisma, mockAppService);
+      const jobService = new JobService(mockPrisma, {}, mockAppService);
       const result = await jobService.getJobById(jobId, {
         userId: studentUserId,
         role: 'STUDENT',
@@ -218,10 +218,102 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
       assert.equal(delegatedCheck, true);
       assert.equal(result.has_applied, true);
     });
+
+    it('createJob delegates recruiter verification to RecruiterService', async () => {
+      let recruiterServiceCalled = false;
+      const mockRecruiterService = {
+        getProfileByUserId: async (uId) => {
+          assert.equal(uId, recruiterUserId);
+          recruiterServiceCalled = true;
+          return {
+            id: recruiterId,
+            first_name: 'Sarah',
+            last_name: 'Connor',
+            is_approved: true,
+            company: {
+              id: companyId,
+              name: 'Acme Systems',
+            },
+          };
+        },
+      };
+
+      const mockPrisma = {
+        job: {
+          create: async ({ data }) => {
+            assert.equal(data.recruiter_id, recruiterId);
+            assert.equal(data.company_id, companyId);
+            return { id: jobId, status: 'PENDING' };
+          },
+        },
+      };
+
+      const jobService = new JobService(mockPrisma, mockRecruiterService, {});
+      const created = await jobService.createJob(recruiterUserId, {
+        title: 'Platform Engineer',
+        description: 'Design and build cloud infrastructure using modern tooling.',
+        required_skills: ['Kubernetes', 'Go'],
+        employment_type: 'FULL_TIME',
+      });
+
+      assert.equal(recruiterServiceCalled, true);
+      assert.equal(created.id, jobId);
+      assert.equal(created.status, 'PENDING');
+    });
+
+    it('getJobsByRecruiterUserId delegates recruiter profile lookup to RecruiterService', async () => {
+      let recruiterServiceCalled = false;
+      const mockRecruiterService = {
+        getProfileByUserId: async (uId) => {
+          assert.equal(uId, recruiterUserId);
+          recruiterServiceCalled = true;
+          return {
+            id: recruiterId,
+            first_name: 'Sarah',
+            last_name: 'Connor',
+            is_approved: true,
+            company: { id: companyId, name: 'Acme' },
+          };
+        },
+      };
+
+      const mockPrisma = {
+        job: {
+          findMany: async ({ where, orderBy }) => {
+            assert.equal(where.recruiter_id, recruiterId);
+            assert.equal(orderBy?.created_at, 'desc');
+            return [
+              {
+                id: jobId,
+                title: 'Backend Engineer',
+                description: 'Backend work',
+                required_skills: ['Go', 'Postgres'],
+                employment_type: 'FULL_TIME',
+                status: 'ACTIVE',
+                created_at: new Date(),
+                company: {
+                  id: companyId,
+                  name: 'Acme Inc',
+                  website: null,
+                  logo_url: null,
+                },
+              },
+            ];
+          },
+        },
+      };
+
+      const jobService = new JobService(mockPrisma, mockRecruiterService, {});
+      const jobs = await jobService.getJobsByRecruiterUserId(recruiterUserId);
+
+      assert.equal(recruiterServiceCalled, true);
+      assert.equal(jobs.length, 1);
+      assert.equal(jobs[0].title, 'Backend Engineer');
+    });
   });
 
   describe('RecruiterService boundary delegation', () => {
-    it('updateProfileByUserId delegates company existence check to CompanyService when provided', async () => {
+    it('updateProfileByUserId delegates company existence check to CompanyService', async () => {
       let companyServiceCalled = false;
       const mockCompanyService = {
         getCompanyById: async (id) => {
@@ -256,8 +348,7 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
 
       const recruiterService = new RecruiterService(
         mockPrisma,
-        mockCompanyService,
-        null
+        mockCompanyService
       );
 
       const updated = await recruiterService.updateProfileByUserId(
@@ -267,50 +358,6 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
 
       assert.equal(companyServiceCalled, true);
       assert.equal(updated.first_name, 'Jane');
-    });
-
-    it('getJobsByUserId delegates job list retrieval to JobService when provided', async () => {
-      let jobServiceCalled = false;
-      const mockJobService = {
-        listJobsByRecruiterId: async (rId) => {
-          assert.equal(rId, recruiterId);
-          jobServiceCalled = true;
-          return [
-            {
-              id: jobId,
-              title: 'Backend Engineer',
-              description: 'Backend work',
-              required_skills: ['Go', 'Postgres'],
-              employment_type: 'FULL_TIME',
-              status: 'ACTIVE',
-              created_at: new Date(),
-              company: {
-                id: companyId,
-                name: 'Acme Inc',
-                website: null,
-                logo_url: null,
-              },
-            },
-          ];
-        },
-      };
-
-      const mockPrisma = {
-        recruiter: {
-          findUnique: async () => ({ id: recruiterId, user_id: recruiterUserId }),
-        },
-      };
-
-      const recruiterService = new RecruiterService(
-        mockPrisma,
-        null,
-        mockJobService
-      );
-
-      const jobs = await recruiterService.getJobsByUserId(recruiterUserId);
-      assert.equal(jobServiceCalled, true);
-      assert.equal(jobs.length, 1);
-      assert.equal(jobs[0].title, 'Backend Engineer');
     });
   });
 

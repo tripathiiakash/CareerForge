@@ -351,6 +351,28 @@ describe('Resume Controller & Security Guards Test Suite', () => {
     };
     const mockStudentService = {};
     const mockQueueService = {};
+    let currentPrisma = null;
+    const mockApplicationService = {
+      hasRecruiterAccessToResume: async (resumeId, userId) => {
+        if (currentPrisma?.application?.findFirst) {
+          const app = await currentPrisma.application.findFirst({
+            where: { resume_id: resumeId, job: { recruiter: { user_id: userId } } },
+          });
+          return Boolean(app);
+        }
+        return true;
+      },
+    };
+    function createService(mockPrisma) {
+      currentPrisma = mockPrisma;
+      return new ResumeService(
+        mockPrisma,
+        mockStudentService,
+        mockStorageService,
+        mockQueueService,
+        mockApplicationService
+      );
+    }
 
     it('should throw 404 NOT_FOUND if resume record cannot be found', async () => {
       const mockPrisma = {
@@ -359,12 +381,7 @@ describe('Resume Controller & Security Guards Test Suite', () => {
         },
       };
 
-      const service = new ResumeService(
-        mockPrisma,
-        mockStudentService,
-        mockStorageService,
-        mockQueueService
-      );
+      const service = createService(mockPrisma);
 
       await assert.rejects(
         () =>
@@ -396,12 +413,7 @@ describe('Resume Controller & Security Guards Test Suite', () => {
         },
       };
 
-      const service = new ResumeService(
-        mockPrisma,
-        mockStudentService,
-        mockStorageService,
-        mockQueueService
-      );
+      const service = createService(mockPrisma);
 
       // User B attempts to access User A's resume
       await assert.rejects(
@@ -429,12 +441,7 @@ describe('Resume Controller & Security Guards Test Suite', () => {
         },
       };
 
-      const service = new ResumeService(
-        mockPrisma,
-        mockStudentService,
-        mockStorageService,
-        mockQueueService
-      );
+      const service = createService(mockPrisma);
 
       const result = await service.getResumeFile(
         'user-A',
@@ -467,12 +474,7 @@ describe('Resume Controller & Security Guards Test Suite', () => {
         },
       };
 
-      const service = new ResumeService(
-        mockPrisma,
-        mockStudentService,
-        mockStorageService,
-        mockQueueService
-      );
+      const service = createService(mockPrisma);
 
       await assert.rejects(
         () => service.getResumeFile('recruiter-user-1', 'RECRUITER', 'resume-uuid-1'),
@@ -502,12 +504,7 @@ describe('Resume Controller & Security Guards Test Suite', () => {
         },
       };
 
-      const service = new ResumeService(
-        mockPrisma,
-        mockStudentService,
-        mockStorageService,
-        mockQueueService
-      );
+      const service = createService(mockPrisma);
 
       const result = await service.getResumeFile(
         'recruiter-user-1',
@@ -535,12 +532,7 @@ describe('Resume Controller & Security Guards Test Suite', () => {
         },
       };
 
-      const service = new ResumeService(
-        mockPrisma,
-        mockStudentService,
-        mockStorageService,
-        mockQueueService
-      );
+      const service = createService(mockPrisma);
 
       const result = await service.getResumeFile('admin-user-1', 'ADMIN', 'resume-uuid-1');
       assert.ok(result.buffer);

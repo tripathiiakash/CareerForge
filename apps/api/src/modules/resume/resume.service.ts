@@ -5,7 +5,6 @@ import {
   HttpStatus,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import * as path from 'path';
 import { UserRole } from '@prisma/client';
@@ -37,8 +36,7 @@ export class ResumeService {
     private readonly studentService: StudentService,
     private readonly resumeStorageService: ResumeStorageService,
     private readonly queueService: QueueService,
-    @Optional()
-    private readonly applicationService?: ApplicationService
+    private readonly applicationService: ApplicationService
   ) {}
 
   /**
@@ -254,24 +252,11 @@ export class ResumeService {
       }
     } else if (userRole === UserRole.RECRUITER) {
       // Recruiter may only access if the student applied to a job posted by this recruiter
-      const hasApplication = this.applicationService
-        ? await this.applicationService.hasRecruiterAccessToResume(
-            resume.id,
-            userId
-          )
-        : Boolean(
-            await this.prisma.application.findFirst({
-              where: {
-                resume_id: resume.id,
-                job: {
-                  recruiter: {
-                    user_id: userId,
-                  },
-                },
-              },
-              select: { id: true },
-            })
-          );
+      const hasApplication =
+        await this.applicationService.hasRecruiterAccessToResume(
+          resume.id,
+          userId
+        );
 
       if (!hasApplication) {
         throw new ForbiddenException({

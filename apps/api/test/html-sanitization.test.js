@@ -251,8 +251,14 @@ describe('Phase 6.4-A: HTML Sanitization Security Hardening Suite', () => {
           },
         },
       };
-
-      const service = new JobService(mockPrisma);
+      const mockRecruiterService = {
+        getProfileByUserId: async () => ({
+          id: 'recruiter-profile-1',
+          is_approved: true,
+          company: { id: 'company-uuid-1', name: 'TechCorp' },
+        }),
+      };
+      const service = new JobService(mockPrisma, mockRecruiterService, {});
 
       const maliciousDto = {
         title: 'Backend Engineer',
@@ -307,7 +313,14 @@ describe('Phase 6.4-A: HTML Sanitization Security Hardening Suite', () => {
         },
       };
 
-      const service = new JobService(mockPrisma);
+      const mockRecruiterService = {
+        getProfileByUserId: async () => ({
+          id: 'recruiter-profile-1',
+          is_approved: true,
+          company: { id: 'company-uuid-1', name: 'TechCorp' },
+        }),
+      };
+      const service = new JobService(mockPrisma, mockRecruiterService, {});
 
       const maliciousUpdateDto = {
         description:

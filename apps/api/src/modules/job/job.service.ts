@@ -3,13 +3,14 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { EmploymentType, JobStatus, Prisma, UserRole } from '@prisma/client';
 import { sanitizeHtml } from '../../core/utils/sanitize-html.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
 import { ApplicationService } from '../application/application.service';
+import { RecruiterService } from '../recruiter/recruiter.service';
+import { RecruiterJobItem } from '../recruiter/dto/recruiter-jobs-response.dto';
 import { CreateJobDto } from './dto/create-job.dto';
 import {
   JobCreatedData,
@@ -27,12 +28,28 @@ import { ModerateJobStatusDto } from './dto/moderate-job-status.dto';
 import { UpdateJobDto } from './dto/update-job.dto';
 import { UUID_REGEX } from '../../core/utils/uuid.util';
 
+export interface RecruiterJobSummaryItem {
+  id: string;
+  title: string;
+  description: string;
+  required_skills: string[];
+  employment_type: EmploymentType;
+  status: JobStatus;
+  created_at: Date;
+  company: {
+    id: string;
+    name: string;
+    website: string | null;
+    logo_url: string | null;
+  };
+}
+
 @Injectable()
 export class JobService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional()
-    private readonly applicationService?: ApplicationService
+    private readonly recruiterService: RecruiterService,
+    private readonly applicationService: ApplicationService
   ) {}
 
   private validateUuid(id: string, fieldName = 'jobId'): void {
@@ -52,17 +69,7 @@ export class JobService {
    * - Defaults initial status to PENDING awaiting admin approval.
    */
   async createJob(userId: string, dto: CreateJobDto): Promise<JobCreatedData> {
-    const recruiter = await this.prisma.recruiter.findUnique({
-      where: { user_id: userId },
-      include: { company: true },
-    });
-
-    if (!recruiter) {
-      throw new NotFoundException({
-        code: 'NOT_FOUND',
-        message: 'Recruiter profile does not exist',
-      });
-    }
+    const recruiter = await this.recruiterService.getProfileByUserId(userId);
 
     if (!recruiter.is_approved) {
       throw new ForbiddenException({
@@ -72,8 +79,8 @@ export class JobService {
     }
 
     if (
-      !recruiter.company_id ||
       !recruiter.company ||
+      !recruiter.company.id ||
       !recruiter.company.name ||
       recruiter.company.name.trim() === ''
     ) {
@@ -88,7 +95,7 @@ export class JobService {
     const job = await this.prisma.job.create({
       data: {
         recruiter_id: recruiter.id,
-        company_id: recruiter.company_id,
+        company_id: recruiter.company.id,
         title: dto.title.trim(),
         description: sanitizedDescription,
         required_skills: dto.required_skills.map((s) => s.trim()),
@@ -122,16 +129,7 @@ export class JobService {
   ): Promise<JobUpdatedData> {
     this.validateUuid(jobId);
 
-    const recruiter = await this.prisma.recruiter.findUnique({
-      where: { user_id: userId },
-    });
-
-    if (!recruiter) {
-      throw new NotFoundException({
-        code: 'NOT_FOUND',
-        message: 'Recruiter profile does not exist',
-      });
-    }
+    const recruiter = await this.recruiterService.getProfileByUserId(userId);
 
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
@@ -201,16 +199,7 @@ export class JobService {
   async deleteJob(userId: string, jobId: string): Promise<{ message: string }> {
     this.validateUuid(jobId);
 
-    const recruiter = await this.prisma.recruiter.findUnique({
-      where: { user_id: userId },
-    });
-
-    if (!recruiter) {
-      throw new NotFoundException({
-        code: 'NOT_FOUND',
-        message: 'Recruiter profile does not exist',
-      });
-    }
+    const recruiter = await this.recruiterService.getProfileByUserId(userId);
 
     const job = await this.prisma.job.findUnique({
       where: { id: jobId },
@@ -464,26 +453,10 @@ export class JobService {
     let hasApplied: boolean | undefined = undefined;
 
     if (user?.role === UserRole.STUDENT) {
-      if (this.applicationService) {
-        hasApplied = await this.applicationService.hasStudentAppliedToJob(
-          id,
-          user.userId
-        );
-      } else if (this.prisma.application) {
-        const application = await this.prisma.application.findFirst({
-          where: {
-            job_id: id,
-            student: {
-              user_id: user.userId,
-            },
-          },
-          select: {
-            id: true,
-          },
-        });
-
-        hasApplied = Boolean(application);
-      }
+      hasApplied = await this.applicationService.hasStudentAppliedToJob(
+        id,
+        user.userId
+      );
     }
 
     const data: JobDetailData = {
@@ -602,26 +575,61 @@ export class JobService {
   }
 
   /**
-   * Retrieves all jobs posted by a recruiter by recruiter ID.
-   * Public domain query interface used by RecruiterService.
+   * Retrieves all jobs posted by the recruiter associated with the given user ID.
+   * Adheres to docs/API.md §4.3.
+   * - Scoped strictly to the authenticated recruiter's recruiter_id.
+   * - Returns live status from the database.
+   * - Does not expose internal audit or recruiter ID fields.
    */
-  async listJobsByRecruiterId(recruiterId: string): Promise<
-    Array<{
-      id: string;
-      title: string;
-      description: string;
-      required_skills: string[];
-      employment_type: EmploymentType;
-      status: JobStatus;
-      created_at: Date;
+  async getJobsByRecruiterUserId(userId: string): Promise<RecruiterJobItem[]> {
+    const recruiter = await this.recruiterService.getProfileByUserId(userId);
+
+    const jobs = await this.prisma.job.findMany({
+      where: { recruiter_id: recruiter.id },
+      orderBy: { created_at: 'desc' },
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        required_skills: true,
+        employment_type: true,
+        status: true,
+        created_at: true,
+        company: {
+          select: {
+            id: true,
+            name: true,
+            website: true,
+            logo_url: true,
+          },
+        },
+      },
+    });
+
+    return jobs.map((job) => ({
+      id: job.id,
+      title: job.title,
+      description: job.description,
+      required_skills: job.required_skills,
+      employment_type: job.employment_type,
+      status: job.status,
       company: {
-        id: string;
-        name: string;
-        website: string | null;
-        logo_url: string | null;
-      };
-    }>
-  > {
+        id: job.company.id,
+        name: job.company.name,
+        website: job.company.website,
+        logo_url: job.company.logo_url,
+      },
+      created_at: job.created_at,
+    }));
+  }
+
+  /**
+   * Retrieves all jobs posted by a recruiter by recruiter ID.
+   * Public domain query interface with named return type.
+   */
+  async listJobsByRecruiterId(
+    recruiterId: string
+  ): Promise<RecruiterJobSummaryItem[]> {
     return this.prisma.job.findMany({
       where: { recruiter_id: recruiterId },
       orderBy: { created_at: 'desc' },

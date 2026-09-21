@@ -38,6 +38,7 @@ describe('Phase 5.16.0 — AI Interview Preparation Backend Hardening Test Suite
   let controller;
   let reflector;
   let rolesGuard;
+  let mockApplicationService;
 
   beforeEach(() => {
     inMemoryDbLogs = [];
@@ -190,11 +191,28 @@ describe('Phase 5.16.0 — AI Interview Preparation Backend Hardening Test Suite
     mockAiProvider = new MockInterviewPrepProvider();
     quotaStore = new PostgresInterviewPrepQuotaStore(mockPrisma);
 
+    mockApplicationService = {
+      getApplicationByJobAndStudent: async (jId, sId) => {
+        if (mockPrisma.application?.findUnique) {
+          return mockPrisma.application.findUnique({
+            where: {
+              job_id_student_id: {
+                job_id: jId,
+                student_id: sId,
+              },
+            },
+          });
+        }
+        return null;
+      },
+    };
+
     service = new InterviewPrepService(
       mockPrisma,
       mockStudentService,
       mockAiProvider,
-      quotaStore
+      quotaStore,
+      mockApplicationService
     );
 
     const mockJobService = {};
@@ -252,7 +270,8 @@ describe('Phase 5.16.0 — AI Interview Preparation Backend Hardening Test Suite
         mockPrisma,
         mockStudentService,
         trackingAiProvider,
-        quotaStore
+        quotaStore,
+        mockApplicationService
       );
 
       // Calls 1 to 3
@@ -318,7 +337,8 @@ describe('Phase 5.16.0 — AI Interview Preparation Backend Hardening Test Suite
         mockPrisma,
         mockStudentService,
         failingAiProvider,
-        quotaStore
+        quotaStore,
+        mockApplicationService
       );
 
       // Call 1 fails -> must throw error AND refund slot
@@ -368,13 +388,15 @@ describe('Phase 5.16.0 — AI Interview Preparation Backend Hardening Test Suite
         mockPrisma,
         mockStudentService,
         mockAiProvider,
-        new PostgresInterviewPrepQuotaStore(mockPrisma)
+        new PostgresInterviewPrepQuotaStore(mockPrisma),
+        mockApplicationService
       );
       const instanceB = new InterviewPrepService(
         mockPrisma,
         mockStudentService,
         mockAiProvider,
-        new PostgresInterviewPrepQuotaStore(mockPrisma)
+        new PostgresInterviewPrepQuotaStore(mockPrisma),
+        mockApplicationService
       );
 
       // Instance A takes call 1 and 2
@@ -538,8 +560,8 @@ describe('Phase 5.16.0 — AI Interview Preparation Backend Hardening Test Suite
         generateQuestions: async () => ({ job_title: 'T', questions: ['Q1', 'Q2', 'Q3', 'Q4', 'Q5', 'Q6'] }),
       };
 
-      const svcShort = new InterviewPrepService(mockPrisma, mockStudentService, invalidProviderShort, quotaStore);
-      const svcLong = new InterviewPrepService(mockPrisma, mockStudentService, invalidProviderLong, quotaStore);
+      const svcShort = new InterviewPrepService(mockPrisma, mockStudentService, invalidProviderShort, quotaStore, mockApplicationService);
+      const svcLong = new InterviewPrepService(mockPrisma, mockStudentService, invalidProviderLong, quotaStore, mockApplicationService);
 
       await assert.rejects(() => svcShort.generateInterviewPrep(studentUserId, jobId));
       await assert.rejects(() => svcLong.generateInterviewPrep(studentUserId, jobId));

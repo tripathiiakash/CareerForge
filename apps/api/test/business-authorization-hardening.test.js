@@ -26,6 +26,23 @@ describe('Phase 6.3-A: Business Authorization & Abuse-Control Hardening Suite', 
       employment_type: 'FULL_TIME',
     };
 
+    function createJobService(mockPrisma) {
+      const mockRecruiterService = {
+        getProfileByUserId: async (userId) => {
+          const recruiter = await mockPrisma.recruiter.findUnique({ where: { user_id: userId } });
+          if (!recruiter) {
+            const { NotFoundException } = require('@nestjs/common');
+            throw new NotFoundException({
+              code: 'NOT_FOUND',
+              message: 'Recruiter profile does not exist',
+            });
+          }
+          return recruiter;
+        },
+      };
+      return new JobService(mockPrisma, mockRecruiterService, {});
+    }
+
     it('should permit job creation when recruiter is_approved is true', async () => {
       const mockPrisma = {
         recruiter: {
@@ -42,7 +59,7 @@ describe('Phase 6.3-A: Business Authorization & Abuse-Control Hardening Suite', 
         },
       };
 
-      const jobService = new JobService(mockPrisma);
+      const jobService = createJobService(mockPrisma);
       const result = await jobService.createJob(validUserId, validDto);
 
       assert.equal(result.id, validJobId);
@@ -63,7 +80,7 @@ describe('Phase 6.3-A: Business Authorization & Abuse-Control Hardening Suite', 
         },
       };
 
-      const jobService = new JobService(mockPrisma);
+      const jobService = createJobService(mockPrisma);
 
       await assert.rejects(
         () => jobService.createJob(validUserId, validDto),
@@ -83,7 +100,7 @@ describe('Phase 6.3-A: Business Authorization & Abuse-Control Hardening Suite', 
         },
       };
 
-      const jobService = new JobService(mockPrisma);
+      const jobService = createJobService(mockPrisma);
 
       await assert.rejects(
         () => jobService.createJob(validUserId, validDto),
