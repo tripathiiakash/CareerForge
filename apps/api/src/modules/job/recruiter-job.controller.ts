@@ -17,6 +17,7 @@ import { JobService } from './job.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.RECRUITER)
 export class RecruiterJobController {
+
   constructor(private readonly jobService: JobService) {}
 
   /**
