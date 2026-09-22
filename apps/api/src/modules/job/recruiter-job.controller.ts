@@ -30,6 +30,7 @@ export class RecruiterJobController {
     @CurrentUser('userId') userId: string
   ): Promise<RecruiterJobsResponseDto> {
     const data = await this.jobService.getJobsByRecruiterUserId(userId);
+
     return {
       success: true,
       data,
