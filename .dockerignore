@@ -1,0 +1,40 @@
+# Git and version control
+.git
+.gitignore
+
+# Package manager and dependencies
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Build artifacts and caches
+dist
+build
+.turbo
+.next
+.cache
+
+# Environment variables and secrets (Strictly excluded)
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Test and coverage artifacts
+coverage
+playwright-report
+test-results
+.nyc_output
+
+# Documentation and editor artifacts
+.vscode
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.md
+!README.md

@@ -1,0 +1,108 @@
+# ==============================================================================
+# CareerForge — Production Simulation Docker Compose (docker-compose.prod.yml)
+# Used for local production simulation, staging verification, and deployment testing.
+# Architecture: NestJS Modular Monolith + Nginx React SPA + PostgreSQL (Prisma + pg-boss)
+# ==============================================================================
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: careerforge-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-careerforge_prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-careerforge_prod_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-careerforge_prod}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-careerforge_prod} -d ${POSTGRES_DB:-careerforge_prod}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - careerforge-prod-net
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: careerforge-prod-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-careerforge_prod}:${POSTGRES_PASSWORD:-careerforge_prod_secret}@postgres:5432/${POSTGRES_DB:-careerforge_prod}?schema=public
+      PG_BOSS_SCHEMA: ${PG_BOSS_SCHEMA:-pgboss}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-min-32-characters}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      AUTH_COOKIE_NAME: ${AUTH_COOKIE_NAME:-cf_auth}
+      AUTH_COOKIE_MAX_AGE_SEC: ${AUTH_COOKIE_MAX_AGE_SEC:-604800}
+      AUTH_COOKIE_SAMESITE: ${AUTH_COOKIE_SAMESITE:-lax}
+      MAX_APPLICATIONS_PER_STUDENT: ${MAX_APPLICATIONS_PER_STUDENT:-100}
+      STORAGE_PROVIDER: ${STORAGE_PROVIDER:-local}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-mock}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-CareerForge <notifications@careerforge.dev>}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    ports:
+      # Bound strictly to 127.0.0.1 for local production testing; in cloud, only Nginx or reverse proxy is exposed
+      - "127.0.0.1:5000:5000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:5000/api/v1/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    networks:
+      - careerforge-prod-net
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api/v1}
+    container_name: careerforge-prod-web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      # Production simulation entrypoint (serves SPA and proxies /api/ requests to the API service)
+      - "127.0.0.1:8080:80"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --quiet --tries=1 --spider http://127.0.0.1/nginx-health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - careerforge-prod-net
+
+volumes:
+  postgres_prod_data:
+    name: careerforge_prod_postgres_data
+
+networks:
+  careerforge-prod-net:
+    name: careerforge_prod_network
