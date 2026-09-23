@@ -16,6 +16,7 @@ const DEFAULT_QUEUE_POLICIES: Partial<Record<string, QueuePolicy>> = {
 export class QueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(QueueService.name);
   private readonly boss: PgBoss;
+  private isStarted = false;
 
   constructor(private readonly configService: ConfigService) {
     this.boss = new PgBoss({
@@ -32,6 +33,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     try {
       this.logger.log('Starting PgBoss queue engine...');
       await this.boss.start();
+      this.isStarted = true;
       this.logger.log(
         `PgBoss queue engine started successfully (schema: ${this.configService.pgBossSchema})`
       );
@@ -44,6 +46,7 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
         'PgBoss application queues verified/created successfully'
       );
     } catch (error: unknown) {
+      this.isStarted = false;
       this.logger.error('Failed to start PgBoss queue engine', error);
       throw error;
     }
@@ -53,10 +56,18 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     try {
       this.logger.log('Stopping PgBoss queue engine gracefully...');
       await this.boss.stop({ graceful: true, timeout: 5000 });
+      this.isStarted = false;
       this.logger.log('PgBoss queue engine stopped');
     } catch (error: unknown) {
       this.logger.error('Error stopping PgBoss queue engine', error);
     }
+  }
+
+  /**
+   * Returns whether the PgBoss queue engine is actively running.
+   */
+  isReady(): boolean {
+    return this.isStarted;
   }
 
   async createQueue(

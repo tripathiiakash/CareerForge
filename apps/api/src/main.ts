@@ -6,13 +6,23 @@ import { AppModule } from './app.module';
 import { ConfigService } from './core/config/config.service';
 import { loadEnvironment } from './core/config/env-loader';
 import { AllExceptionsFilter } from './core/filters/all-exceptions.filter';
+import { JsonLoggerService } from './core/logging/json-logger.service';
 
 async function bootstrap() {
   // 1. Pre-load .env into process.env before any service initialization
   loadEnvironment();
 
-  const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule, { bodyParser: false });
+  const isProduction =
+    process.env.NODE_ENV === 'production' ||
+    process.env.LOG_FORMAT === 'json';
+  const customLogger = isProduction
+    ? new JsonLoggerService()
+    : new Logger('Bootstrap');
+
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false,
+    logger: isProduction ? new JsonLoggerService() : ['log', 'warn', 'error'],
+  });
 
   // 2. Retrieve validated configuration
   const config = app.get(ConfigService);
@@ -42,8 +52,10 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // 5. Global API prefix – matches the finalized API spec base URL
-  app.setGlobalPrefix('api/v1');
+  // 5. Global API prefix – matches the finalized API spec base URL (excludes root health/ready probes)
+  app.setGlobalPrefix('api/v1', {
+    exclude: ['health', 'ready'],
+  });
 
   // 6. Standardized Global Exception Handling adhering to docs/API.md
   app.useGlobalFilters(new AllExceptionsFilter(config));
@@ -53,7 +65,7 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   await app.listen(config.port);
-  logger.log(
+  customLogger.log(
     `CareerForge API is running in ${config.nodeEnv} mode on http://localhost:${config.port}/api/v1`
   );
 }
