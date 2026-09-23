@@ -14,6 +14,7 @@ export interface IStorageProvider {
   upload(input: StorageUploadInput): Promise<StorageUploadResult>;
   delete(fileKey: string): Promise<void>;
   getBuffer(fileKey: string): Promise<Buffer>;
+  getPresignedUrl?(fileKey: string, expiresInSeconds?: number): Promise<string>;
 }
 
 export const STORAGE_PROVIDER_TOKEN = Symbol('STORAGE_PROVIDER_TOKEN');

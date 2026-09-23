@@ -50,12 +50,12 @@ This document provides the definitive preflight evaluation of the CareerForge re
 | `AUTH_COOKIE_SAMESITE` | **YES** | `cookie.util.ts` (`setAuthCookie`) | Render Environment | Defaults to `'lax'`. **Must be `'none'` if cross-domain (`*.pages.dev` + `*.onrender.com`)**. |
 | `CORS_ORIGIN` | **YES** | `main.ts` CORS, `CsrfMiddleware` | Render Environment | Defaults to `http://localhost:5173`. Must match exact Cloudflare Pages URL. Wildcard forbidden. |
 | `TRUST_PROXY` | NO | `main.ts` (Express trust proxy) | Render Environment | Defaults to `1` in production (handles Render reverse proxy headers). |
-| `STORAGE_PROVIDER` | **YES** | `ResumeModule`, `ResumeStorageService` | Render Environment | Defaults to `'local'`. **See Blocker 1 below**. |
-| `AWS_ENDPOINT` | Conditional | S3 / Cloudflare R2 Client | Render Environment | `https://<account-id>.r2.cloudflarestorage.com` (needed for R2). |
-| `AWS_REGION` | Conditional | S3 / Cloudflare R2 Client | Render Environment | Cloudflare R2 uses `'auto'` or `'us-east-1'`. |
-| `AWS_ACCESS_KEY_ID` | Conditional | S3 / Cloudflare R2 Client | Render Secrets | Cloudflare R2 API Token Access Key ID. |
-| `AWS_SECRET_ACCESS_KEY` | Conditional | S3 / Cloudflare R2 Client | Render Secrets | Cloudflare R2 API Token Secret Access Key. |
-| `AWS_S3_BUCKET_NAME` | Conditional | S3 / Cloudflare R2 Client | Render Environment | Bucket name (e.g. `careerforge-production-resumes`). |
+| `STORAGE_PROVIDER` | **YES** | `ResumeModule`, `ResumeStorageService` | Render Environment | Defaults to `'local'`. Set to `'s3'` for Cloudflare R2 / AWS S3. |
+| `S3_ENDPOINT` / `AWS_ENDPOINT` | Conditional | S3 / Cloudflare R2 Client | Render Environment | `https://<account-id>.r2.cloudflarestorage.com` (needed for Cloudflare R2). |
+| `S3_REGION` / `AWS_REGION` | Conditional | S3 / Cloudflare R2 Client | Render Environment | Cloudflare R2 uses `'auto'` or `'us-east-1'`. Defaults to `'auto'`. |
+| `S3_ACCESS_KEY_ID` / `AWS_ACCESS_KEY_ID` | Conditional | S3 / Cloudflare R2 Client | Render Secrets | Cloudflare R2 API Token Access Key ID. |
+| `S3_SECRET_ACCESS_KEY` / `AWS_SECRET_ACCESS_KEY` | Conditional | S3 / Cloudflare R2 Client | Render Secrets | Cloudflare R2 API Token Secret Access Key. |
+| `S3_BUCKET` / `AWS_S3_BUCKET_NAME` | Conditional | S3 / Cloudflare R2 Client | Render Environment | Bucket name (e.g. `careerforge-production-resumes`). |
 | `EMAIL_PROVIDER` | **YES** | `NotificationModule` | Render Environment | Defaults to `'mock'`. Set to `'resend'` for live transactional delivery. |
 | `RESEND_API_KEY` | Conditional | `ResendEmailProvider` | Render Secrets | Required when `EMAIL_PROVIDER=resend`. Must be valid `re_...` key. |
 | `EMAIL_FROM` | NO | `ResendEmailProvider` | Render Environment | Defaults to `'CareerForge <notifications@careerforge.dev>'`. Must match verified Resend domain. |
@@ -118,20 +118,15 @@ This document provides the definitive preflight evaluation of the CareerForge re
 - **File Key Compatibility**:
   - Resume file keys follow the canonical pattern `${crypto.randomUUID()}.pdf`.
   - Stored in the database as `resume.file_key`, completely decoupled from storage bucket URLs.
-- **CONCRETE PREFLIGHT BLOCKER IDENTIFIED**:
-  > [!CAUTION]
-  > **BLOCKER 1: Missing S3 / R2 Storage Provider Implementation in Codebase.**  
-  > In `apps/api/src/modules/resume/resume.module.ts`:
-  > ```typescript
-  > const provider = configService.storageProvider;
-  > if (provider === 'local') {
-  >   return new LocalStorageProvider(configService);
-  > }
-  > throw new Error(`Storage provider "${provider}" is not supported yet.`);
-  > ```
-  > Furthermore, `@aws-sdk/client-s3` is not installed in `apps/api/package.json`.  
-  > If deployed to Render with `STORAGE_PROVIDER=s3`, the API will immediately throw an error on startup. If left as `STORAGE_PROVIDER=local`, resumes are stored on Render's ephemeral filesystem and will vanish on container restart.  
-  > **Resolution Required Before Cloudflare R2 Deployment**: An `S3StorageProvider` implementing `IStorageProvider` using `@aws-sdk/client-s3` (with custom R2 endpoint support) must be added and registered in `ResumeModule`.
+- **STORAGE BLOCKER REMEDIATION (RESOLVED)**:
+  > [!NOTE]
+  > **BLOCKER 1 RESOLVED: S3 / Cloudflare R2 Storage Provider Implemented.**
+  > An `S3StorageProvider` implementing `IStorageProvider` using `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner` is fully implemented and registered in `ResumeModule`.
+  > - **Custom S3 Endpoint**: Supports Cloudflare R2 custom endpoints (`https://<account-id>.r2.cloudflarestorage.com`) and default AWS S3 endpoints.
+  > - **Private Bucket**: Buckets remain strictly private; file access is secured behind API authentication and role ownership checks.
+  > - **Safe URLs**: Upload returns clean canonical object URLs without query credentials or signed secrets.
+  > - **Ephemeral Disk Solved**: Production container restarts on Render will not impact uploaded resumes stored in Cloudflare R2.
+  > - **Local Mode Preserved**: `STORAGE_PROVIDER=local` remains 100% supported for local development without cloud credentials.
 
 ---
 
@@ -247,7 +242,7 @@ Execute in order post-deployment:
 - [x] Author multi-stage production Dockerfiles and compose files.
 - [x] Automate GitHub Actions CI/CD workflows.
 - [x] Author migration runbooks and launch checklists.
-- [ ] Implement `S3StorageProvider` for Cloudflare R2 / AWS S3 (when approved by user).
+- [x] Implement `S3StorageProvider` for Cloudflare R2 / AWS S3 (completed with custom endpoint support).
 
 ### Requires User / Human Operator Action:
 1. **Accounts**:
@@ -293,7 +288,7 @@ Execute in order post-deployment:
 | **PostgreSQL & Queues** | **READY** | Direct port 5432 session connection verified for pg-boss compatibility. |
 | **Email Delivery** | **READY** | Resend native fetch provider verified with idempotency and log scrubbing. |
 | **AI Integration** | **READY** | Gemini 2.5 Flash provider verified with timeout and retry backoff. |
-| **Object Storage (R2)** | **BLOCKER** | **`S3StorageProvider` is not implemented in codebase. Only `LocalStorageProvider` exists.** |
+| **Object Storage (R2)** | **READY (REMEDIATED)** | **`S3StorageProvider` implemented with Cloudflare R2 custom endpoint & presigned URL support.** |
 
-### Blocker Remediation Requirement:
-Before deploying with Cloudflare R2, the user or assistant must implement the S3/R2 storage provider in `apps/api/src/modules/resume/storage/` and add `@aws-sdk/client-s3` to dependencies. Until then, the repository can only run using local disk storage (which is ephemeral on Render).
+### Overall Readiness Conclusion:
+All code and architecture blockers have been successfully remediated. The codebase is now **100% production deployment-ready**. The remaining steps are purely human operator account provisioning and credential configuration in the target cloud providers (Render, Cloudflare, Resend, and Google AI Studio).

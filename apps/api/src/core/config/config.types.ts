@@ -24,4 +24,10 @@ export interface AppConfig {
   readonly authCookieMaxAgeSec?: number;
   readonly authCookieSameSite?: 'lax' | 'strict' | 'none';
   readonly maxApplicationsPerStudent?: number;
+  readonly s3Endpoint?: string;
+  readonly s3Region?: string;
+  readonly s3Bucket?: string;
+  readonly s3AccessKeyId?: string;
+  readonly s3SecretAccessKey?: string;
+  readonly s3ForcePathStyle?: boolean;
 }

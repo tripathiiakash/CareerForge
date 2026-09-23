@@ -62,6 +62,30 @@ export class ConfigService {
     return this.config.storageProvider ?? 'local';
   }
 
+  get s3Endpoint(): string | undefined {
+    return this.config.s3Endpoint;
+  }
+
+  get s3Region(): string {
+    return this.config.s3Region ?? 'auto';
+  }
+
+  get s3Bucket(): string | undefined {
+    return this.config.s3Bucket;
+  }
+
+  get s3AccessKeyId(): string | undefined {
+    return this.config.s3AccessKeyId;
+  }
+
+  get s3SecretAccessKey(): string | undefined {
+    return this.config.s3SecretAccessKey;
+  }
+
+  get s3ForcePathStyle(): boolean {
+    return this.config.s3ForcePathStyle ?? false;
+  }
+
   get emailProvider(): string {
     return this.config.emailProvider ?? 'mock';
   }

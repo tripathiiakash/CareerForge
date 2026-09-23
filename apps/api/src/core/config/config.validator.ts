@@ -94,7 +94,73 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
 
   // 8. GEMINI_API_KEY & STORAGE_PROVIDER
   const geminiApiKey = env.GEMINI_API_KEY?.trim() || undefined;
-  const storageProvider = env.STORAGE_PROVIDER?.trim() || 'local';
+  const rawStorageProvider = env.STORAGE_PROVIDER?.trim().toLowerCase();
+  const storageProvider = rawStorageProvider || 'local';
+
+  if (rawStorageProvider && !['local', 's3'].includes(rawStorageProvider)) {
+    errors.push(
+      `STORAGE_PROVIDER must be one of: 'local', 's3' (received "${rawStorageProvider}")`
+    );
+  }
+
+  // S3 / Cloudflare R2 Configuration (supports S3_* and AWS_* aliases)
+  const s3Endpoint =
+    env.S3_ENDPOINT?.trim() || env.AWS_ENDPOINT?.trim() || undefined;
+  const s3Region =
+    env.S3_REGION?.trim() ||
+    env.AWS_REGION?.trim() ||
+    (s3Endpoint ? 'auto' : 'us-east-1');
+  const s3Bucket =
+    env.S3_BUCKET?.trim() || env.AWS_S3_BUCKET_NAME?.trim() || undefined;
+  const s3AccessKeyId =
+    env.S3_ACCESS_KEY_ID?.trim() || env.AWS_ACCESS_KEY_ID?.trim() || undefined;
+  const s3SecretAccessKey =
+    env.S3_SECRET_ACCESS_KEY?.trim() ||
+    env.AWS_SECRET_ACCESS_KEY?.trim() ||
+    undefined;
+  const s3ForcePathStyle =
+    env.S3_FORCE_PATH_STYLE?.trim().toLowerCase() === 'true';
+
+  if (storageProvider === 's3') {
+    if (!s3Bucket) {
+      errors.push(
+        'S3_BUCKET (or AWS_S3_BUCKET_NAME) is required when STORAGE_PROVIDER is "s3"'
+      );
+    } else if (
+      isProduction &&
+      (s3Bucket === 'careerforge-resumes' || s3Bucket.startsWith('your-'))
+    ) {
+      errors.push(
+        'S3_BUCKET must not use template placeholder in production'
+      );
+    }
+
+    if (!s3AccessKeyId) {
+      errors.push(
+        'S3_ACCESS_KEY_ID (or AWS_ACCESS_KEY_ID) is required when STORAGE_PROVIDER is "s3"'
+      );
+    } else if (
+      s3AccessKeyId === 'PLACEHOLDER_AWS_ACCESS_KEY_ID' ||
+      s3AccessKeyId.startsWith('your-')
+    ) {
+      errors.push(
+        'S3_ACCESS_KEY_ID must not use placeholder when STORAGE_PROVIDER is "s3"'
+      );
+    }
+
+    if (!s3SecretAccessKey) {
+      errors.push(
+        'S3_SECRET_ACCESS_KEY (or AWS_SECRET_ACCESS_KEY) is required when STORAGE_PROVIDER is "s3"'
+      );
+    } else if (
+      s3SecretAccessKey === 'PLACEHOLDER_AWS_SECRET_ACCESS_KEY' ||
+      s3SecretAccessKey.startsWith('your-')
+    ) {
+      errors.push(
+        'S3_SECRET_ACCESS_KEY must not use placeholder when STORAGE_PROVIDER is "s3"'
+      );
+    }
+  }
 
   // 9. EMAIL_PROVIDER, RESEND_API_KEY & EMAIL_FROM
   const resendApiKey = env.RESEND_API_KEY?.trim() || undefined;
@@ -215,5 +281,11 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     authCookieMaxAgeSec,
     authCookieSameSite,
     maxApplicationsPerStudent,
+    s3Endpoint,
+    s3Region,
+    s3Bucket,
+    s3AccessKeyId,
+    s3SecretAccessKey,
+    s3ForcePathStyle,
   };
 }

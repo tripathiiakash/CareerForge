@@ -13,6 +13,7 @@ import { ResumeService } from './resume.service';
 import { PdfParserService } from './services/pdf-parser.service';
 import { ResumeAnalysisService } from './services/resume-analysis.service';
 import { LocalStorageProvider } from './storage/local-storage.provider';
+import { S3StorageProvider } from './storage/s3-storage.provider';
 import { ResumeStorageService } from './storage/resume-storage.service';
 import { STORAGE_PROVIDER_TOKEN } from './storage/storage.interface';
 import { ResumeAnalysisWorker } from './workers/resume-analysis.worker';
@@ -25,6 +26,7 @@ import { ResumeExtractionWorker } from './workers/resume-extraction.worker';
     ResumeService,
     ResumeStorageService,
     LocalStorageProvider,
+    S3StorageProvider,
     PdfParserService,
     ResumeExtractionWorker,
     ResumeAnalysisService,
@@ -53,8 +55,11 @@ import { ResumeExtractionWorker } from './workers/resume-extraction.worker';
         if (provider === 'local') {
           return new LocalStorageProvider(configService);
         }
+        if (provider === 's3') {
+          return new S3StorageProvider(configService);
+        }
         throw new Error(
-          `Storage provider "${provider}" is not supported yet. Use "local" in development.`
+          `Storage provider "${provider}" is not supported. Use "local" or "s3".`
         );
       },
       inject: [ConfigService],
