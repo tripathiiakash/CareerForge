@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Code Quality & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Code formatting verification (informational)
+        run: npm run format:check
+        continue-on-error: true
+
+      - name: TypeScript typecheck
+        run: npm run typecheck
+
+  unit-tests:
+    name: Unit & DOM Regression Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+
+      - name: Run unit test suites (API, Web, Packages)
+        run: npm run test
+
+  integration-tests:
+    name: PostgreSQL Integration Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: careerforge_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d careerforge_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy Prisma schema to integration database
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/careerforge_test?schema=public
+        run: npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+
+      - name: Execute database integration tests
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/careerforge_test?schema=public
+        run: npm run test:integration --workspace=@careerforge/api
+
+  e2e-tests:
+    name: Browser E2E Tests (Playwright)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: careerforge_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d careerforge_e2e"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser engine
+        run: npx playwright install --with-deps chromium
+
+      - name: Deploy Prisma schema to E2E database
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/careerforge_e2e?schema=public
+        run: |
+          npx prisma generate --schema=apps/api/prisma/schema.prisma
+          npx prisma migrate deploy --schema=apps/api/prisma/schema.prisma
+
+      - name: Build API distribution bundle
+        run: npm run build --workspace=@careerforge/api
+
+      - name: Execute Playwright browser journeys
+        env:
+          CI: 'true'
+        run: npm run test:e2e
+
+  build:
+    name: Production Bundle Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema=apps/api/prisma/schema.prisma
+
+      - name: Build all workspaces (Turbo)
+        run: npm run build
