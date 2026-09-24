@@ -7,7 +7,7 @@
     "dev": "nest start --watch",
     "start": "node dist/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "prisma generate && tsc --noEmit",
     "test": "node test/setup/run-unit-tests.js",
     "test:integration": "node test/setup/run-integration-tests.js",
     "prisma:generate": "prisma generate",
