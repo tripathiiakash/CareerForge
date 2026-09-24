@@ -26,7 +26,7 @@ COPY packages/validation/package.json ./packages/validation/
 RUN npm ci
 
 # Copy configuration, shared packages, and API source code
-COPY turbo.json tsconfig.json ./
+COPY turbo.json ./
 COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 
@@ -67,7 +67,7 @@ WORKDIR /app
 
 # Set production environment variables
 ENV NODE_ENV=production
-ENV PORT=5000
+ENV PORT=10000
 
 # Install dumb-init for graceful PID 1 signal forwarding (SIGTERM / SIGINT) and OpenSSL for Prisma
 RUN apk add --no-cache dumb-init openssl
@@ -87,11 +87,11 @@ COPY --chown=node:node --from=builder /app/apps/api/prisma ./apps/api/prisma
 COPY --chown=node:node --from=builder /app/apps/api/package.json ./apps/api/package.json
 COPY --chown=node:node --from=builder /app/package.json ./package.json
 
-EXPOSE 5000
+EXPOSE 10000
 
 # Container liveness check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "require('http').get('http://127.0.0.1:5000/api/v1/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
+  CMD node -e "require('http').get('http://127.0.0.1:' + (process.env.PORT || 10000) + '/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
 # Use dumb-init to ensure signals are properly forwarded to Node
 ENTRYPOINT ["dumb-init", "--"]
