@@ -47,7 +47,7 @@ This document provides the definitive preflight evaluation of the CareerForge re
 | `JWT_EXPIRES_IN` | NO | `TokenService` | Render Environment | Defaults to `'7d'`. |
 | `AUTH_COOKIE_NAME` | NO | Cookie utils, AuthController, CSRF | Render Environment | Defaults to `'cf_auth'`. |
 | `AUTH_COOKIE_MAX_AGE_SEC` | NO | Cookie utils | Render Environment | Defaults to `604800` (7 days). |
-| `AUTH_COOKIE_SAMESITE` | **YES** | `cookie.util.ts` (`setAuthCookie`) | Render Environment | Defaults to `'lax'`. **Must be `'none'` if cross-domain (`*.pages.dev` + `*.onrender.com`)**. |
+| `AUTH_COOKIE_SAMESITE` | **YES** | `cookie.util.ts` (`setAuthCookie`) | Render Environment | Defaults to `'lax'`. Set to `'lax'` for same-origin Pages proxy and custom domains. |
 | `CORS_ORIGIN` | **YES** | `main.ts` CORS, `CsrfMiddleware` | Render Environment | Defaults to `http://localhost:5173`. Must match exact Cloudflare Pages URL. Wildcard forbidden. |
 | `TRUST_PROXY` | NO | `main.ts` (Express trust proxy) | Render Environment | Defaults to `1` in production (handles Render reverse proxy headers). |
 | `STORAGE_PROVIDER` | **YES** | `ResumeModule`, `ResumeStorageService` | Render Environment | Defaults to `'local'`. Set to `'s3'` for Cloudflare R2 / AWS S3. |
@@ -62,7 +62,7 @@ This document provides the definitive preflight evaluation of the CareerForge re
 | `GEMINI_API_KEY` | **YES** | `GeminiProvider`, `GeminiInterviewPrep` | Render Secrets | Required for real LLM resume analysis & interview prep. If omitted, uses Mock. |
 | `RATE_LIMIT_ENABLED` | NO | `RateLimitGuard` | Render Environment | Defaults to `true`. |
 | `LOG_FORMAT` | NO | `main.ts`, `JsonLoggerService` | Render Environment | Defaults to human text locally; structured JSON when set to `'json'` or `NODE_ENV=production`. |
-| `VITE_API_URL` | **YES** | React Frontend Axios Client (`api.ts`) | Cloudflare Pages Environment | Build-time env var. Must point to Render API: `https://<render-service>.onrender.com/api/v1`. |
+| `VITE_API_URL` | NO | React Frontend Axios Client (`api.ts`) | Cloudflare Pages Environment | Defaults to `'/api/v1'` in production. Uses Cloudflare Pages Functions server-side proxy to forward to Render. |
 
 ---
 
@@ -161,22 +161,24 @@ This document provides the definitive preflight evaluation of the CareerForge re
 
 There are two valid deployment topologies:
 
-### Topology A: Distinct Subdomains on Default Hosting (Cross-Domain)
-- Frontend: `https://careerforge.pages.dev`
-- API Backend: `https://careerforge-api.onrender.com`
+### Topology A: Same-Origin Cloudflare Pages Functions Proxy (Recommended Production Setup)
+- Frontend: `https://careerforge-8oq.pages.dev`
+- API Backend Gateway: `https://careerforge-8oq.pages.dev/api/v1/*` (Pages Functions Proxy)
+- Upstream Service: `https://careerforge-api-h2ce.onrender.com/api/v1/*`
 - **Critical Configuration**:
-  - `CORS_ORIGIN=https://careerforge.pages.dev`
-  - `AUTH_COOKIE_SAMESITE=none`
-  - `VITE_API_URL=https://careerforge-api.onrender.com/api/v1`
-- **Browser Behavior**: Modern browsers block cookies on cross-origin requests unless `SameSite=None; Secure`. If `AUTH_COOKIE_SAMESITE` is left as `lax`, login cookies will be blocked on subsequent API requests, resulting in HTTP 401 Unauthorized errors.
+  - `CORS_ORIGIN=https://careerforge-8oq.pages.dev`
+  - `AUTH_COOKIE_SAMESITE=lax`
+  - `VITE_API_URL=/api/v1` (enforced automatically by `resolveApiBaseUrl`)
+  - `API_UPSTREAM_URL=https://careerforge-api-h2ce.onrender.com` (Cloudflare Pages environment variable)
+- **Browser Behavior**: Because browser API calls target `https://careerforge-8oq.pages.dev/api/v1/*`, requests are 100% same-origin. Modern browsers treat the `cf_auth` HttpOnly cookie as a first-party cookie, eliminating third-party cookie blocking (Safari ITP, Chrome Privacy Sandbox, Firefox ETP). `SameSite=Lax` provides optimal CSRF protection without causing 401 Unauthorized failures.
 
-### Topology B: Shared Custom Domain (Recommended Production Setup)
+### Topology B: Shared Custom Domain (Custom Domain Setup)
 - Frontend: `https://app.careerforge.dev` (Cloudflare Pages custom domain)
 - API Backend: `https://api.careerforge.dev` (Render custom domain via Cloudflare CNAME)
 - **Configuration**:
   - `CORS_ORIGIN=https://app.careerforge.dev`
   - `AUTH_COOKIE_SAMESITE=lax`
-  - `VITE_API_URL=https://api.careerforge.dev/api/v1`
+  - `VITE_API_URL=/api/v1` (proxied) or `https://api.careerforge.dev/api/v1`
 - **Security Benefit**: Cookies are treated as same-site by the browser (`.careerforge.dev`), enabling strict `SameSite=Lax` CSRF defense.
 
 ---
@@ -270,7 +272,8 @@ Execute in order post-deployment:
    - Root directory: `apps/web`.
    - Build command: `npm run build`.
    - Build output directory: `dist`.
-   - Set environment variable: `VITE_API_URL=https://<your-render-api>.onrender.com/api/v1`.
+   - Optional environment variable: `API_UPSTREAM_URL=https://<your-render-api>.onrender.com` (defaults to `https://careerforge-api-h2ce.onrender.com`).
+   - Note: `VITE_API_URL` is no longer required as frontend defaults to same-origin `/api/v1`.
 7. **Post-Deploy Operator Execution**:
    - Open Render Shell and run `npm run admin:bootstrap --workspace=@careerforge/api`.
    - Execute smoke test sequence.

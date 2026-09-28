@@ -11,7 +11,9 @@ const srcDir = path.resolve(__dirname, '../src');
 // Mirror of isSafeRedirectPath from ProtectedRoute.tsx
 function isSafeRedirectPath(path) {
   if (!path || typeof path !== 'string') return false;
-  return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\');
+  return (
+    path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\')
+  );
 }
 
 // Mirror of getRoleDefaultPath from ProtectedRoute.tsx
@@ -107,8 +109,8 @@ describe('SEC-01: Frontend HttpOnly Cookie Auth Migration Suite', () => {
           } else if (/\.(ts|tsx)$/.test(entry.name)) {
             const content = fs.readFileSync(fullPath, 'utf8');
             assert.equal(
-              content.includes("setItem(TOKEN_STORAGE_KEY") ||
-              content.includes("setItem('careerforge_token'"),
+              content.includes('setItem(TOKEN_STORAGE_KEY') ||
+                content.includes("setItem('careerforge_token'"),
               false,
               `Found token storage setItem in ${fullPath}`
             );
@@ -124,7 +126,10 @@ describe('SEC-01: Frontend HttpOnly Cookie Auth Migration Suite', () => {
   // --------------------------------------------------------------------------
   describe('2. ApiClient withCredentials & Header Sanitization', () => {
     it('apiClient is configured with withCredentials: true', () => {
-      const apiFileContent = fs.readFileSync(path.resolve(srcDir, 'lib/api.ts'), 'utf8');
+      const apiFileContent = fs.readFileSync(
+        path.resolve(srcDir, 'lib/api.ts'),
+        'utf8'
+      );
       assert.match(
         apiFileContent,
         /withCredentials:\s*true/,
@@ -133,7 +138,10 @@ describe('SEC-01: Frontend HttpOnly Cookie Auth Migration Suite', () => {
     });
 
     it('apiClient request interceptor does NOT attach Authorization: Bearer header', () => {
-      const apiFileContent = fs.readFileSync(path.resolve(srcDir, 'lib/api.ts'), 'utf8');
+      const apiFileContent = fs.readFileSync(
+        path.resolve(srcDir, 'lib/api.ts'),
+        'utf8'
+      );
       assert.equal(
         apiFileContent.includes('Authorization = `Bearer'),
         false,
@@ -142,7 +150,10 @@ describe('SEC-01: Frontend HttpOnly Cookie Auth Migration Suite', () => {
     });
 
     it('apiClient handles 401 Unauthorized by dispatching careerforge:unauthorized', () => {
-      const apiFileContent = fs.readFileSync(path.resolve(srcDir, 'lib/api.ts'), 'utf8');
+      const apiFileContent = fs.readFileSync(
+        path.resolve(srcDir, 'lib/api.ts'),
+        'utf8'
+      );
       assert.match(
         apiFileContent,
         /careerforge:unauthorized/,
@@ -204,6 +215,36 @@ describe('SEC-01: Frontend HttpOnly Cookie Auth Migration Suite', () => {
       assert.equal(getRoleDefaultPath('RECRUITER'), '/recruiter/dashboard');
       assert.equal(getRoleDefaultPath('ADMIN'), '/admin/moderation');
       assert.equal(getRoleDefaultPath(null), '/login');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // 5. Same-Origin Cloudflare Pages Proxy & Base URL Invariants
+  // --------------------------------------------------------------------------
+  describe('5. Same-Origin Cloudflare Pages Proxy Invariants', () => {
+    it('api.ts: exports resolveApiBaseUrl that enforces /api/v1 in production', () => {
+      const apiFileContent = fs.readFileSync(
+        path.resolve(srcDir, 'lib/api.ts'),
+        'utf8'
+      );
+      assert.match(
+        apiFileContent,
+        /export\s+function\s+resolveApiBaseUrl/,
+        'api.ts must export resolveApiBaseUrl'
+      );
+      assert.match(
+        apiFileContent,
+        /baseURL:\s*resolveApiBaseUrl\(import\.meta\.env\.VITE_API_URL\)/,
+        'apiClient must initialize baseURL with resolveApiBaseUrl'
+      );
+    });
+
+    it('apps/web/functions/api/v1/[[path]].ts exists and proxies /api/v1 to upstream', () => {
+      const fnPath = path.resolve(__dirname, '../functions/api/v1/[[path]].ts');
+      assert.ok(fs.existsSync(fnPath), 'Pages function must exist');
+      const content = fs.readFileSync(fnPath, 'utf8');
+      assert.match(content, /export\s+const\s+onRequest/);
+      assert.match(content, /sanitizeSetCookieHeader/);
     });
   });
 });
