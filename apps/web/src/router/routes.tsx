@@ -27,6 +27,7 @@ import {
   AdminRecruiterApprovalsPage,
   AdminUsersPage,
   AdminAnalyticsPage,
+  AdminCompaniesPage,
 } from '@/pages/AdminPages';
 
 export const router = createBrowserRouter([
@@ -173,6 +174,10 @@ export const router = createBrowserRouter([
           {
             path: 'recruiters',
             element: <AdminRecruiterApprovalsPage />,
+          },
+          {
+            path: 'companies',
+            element: <AdminCompaniesPage />,
           },
           {
             path: 'users',

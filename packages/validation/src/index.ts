@@ -478,3 +478,96 @@ export const moderateRecruiterStatusSchema = z
 export type ModerateRecruiterStatusInput = z.infer<
   typeof moderateRecruiterStatusSchema
 >;
+
+// ---------------------------------------------------------------------------
+// Admin Company Management
+// ---------------------------------------------------------------------------
+
+export const listCompaniesQuerySchema = z
+  .object({
+    page: z.coerce
+      .number({ message: 'Page must be a valid number' })
+      .int('Page must be an integer')
+      .min(1, 'Page must be at least 1')
+      .default(1),
+    limit: z.coerce
+      .number({ message: 'Limit must be a valid number' })
+      .int('Limit must be an integer')
+      .min(1, 'Limit must be at least 1')
+      .max(50, 'Limit cannot exceed 50')
+      .default(20),
+    search: z
+      .string()
+      .trim()
+      .max(255, 'Search query cannot exceed 255 characters')
+      .optional(),
+  })
+  .strict();
+
+export type ListCompaniesQueryInput = z.infer<typeof listCompaniesQuerySchema>;
+
+export const updateCompanySchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(2, 'Company name must be between 2 and 255 characters')
+      .max(255, 'Company name cannot exceed 255 characters')
+      .optional(),
+    website: z
+      .string()
+      .trim()
+      .url('Must be a valid URL format')
+      .max(255, 'Website URL cannot exceed 255 characters')
+      .nullable()
+      .optional(),
+    logo_url: z
+      .string()
+      .trim()
+      .url('Must be a valid URL format')
+      .max(512, 'Logo URL cannot exceed 512 characters')
+      .nullable()
+      .optional(),
+  })
+  .strict()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: 'At least one field must be provided for update',
+  });
+
+export type UpdateCompanyInput = z.infer<typeof updateCompanySchema>;
+
+export const assignRecruiterCompanySchema = z
+  .object({
+    company_id: z.string().uuid('Must be a valid UUID format'),
+  })
+  .strict();
+
+export type AssignRecruiterCompanyInput = z.infer<
+  typeof assignRecruiterCompanySchema
+>;
+
+export const listAllRecruitersQuerySchema = z
+  .object({
+    page: z.coerce
+      .number({ message: 'Page must be a valid number' })
+      .int('Page must be an integer')
+      .min(1, 'Page must be at least 1')
+      .default(1),
+    limit: z.coerce
+      .number({ message: 'Limit must be a valid number' })
+      .int('Limit must be an integer')
+      .min(1, 'Limit must be at least 1')
+      .max(50, 'Limit cannot exceed 50')
+      .default(20),
+    is_approved: z.coerce.boolean().optional(),
+    search: z
+      .string()
+      .trim()
+      .max(255, 'Search query cannot exceed 255 characters')
+      .optional(),
+  })
+  .strict();
+
+export type ListAllRecruitersQueryInput = z.infer<
+  typeof listAllRecruitersQuerySchema
+>;

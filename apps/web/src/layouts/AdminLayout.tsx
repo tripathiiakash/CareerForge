@@ -6,6 +6,7 @@ import {
   UserCheck,
   Users,
   BarChart3,
+  Building2,
   LogOut,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +30,7 @@ export const AdminLayout: React.FC = () => {
       path: '/admin/recruiters',
       icon: UserCheck,
     },
+    { label: 'Companies', path: '/admin/companies', icon: Building2 },
     { label: 'Users', path: '/admin/users', icon: Users },
     { label: 'Analytics', path: '/admin/analytics', icon: BarChart3 },
   ];
