@@ -58,8 +58,10 @@ export const LoginPage: React.FC = () => {
     try {
       await login(data);
 
-      // Resolve redirect destination safely
-      const requestedDestination = location.state?.from;
+      // Resolve redirect destination safely from location state or ?redirect= query parameter
+      const searchParams = new URLSearchParams(location.search);
+      const redirectQuery = searchParams.get('redirect') || undefined;
+      const requestedDestination = location.state?.from || redirectQuery;
       if (isSafeRedirectPath(requestedDestination)) {
         navigate(requestedDestination, { replace: true });
       } else {

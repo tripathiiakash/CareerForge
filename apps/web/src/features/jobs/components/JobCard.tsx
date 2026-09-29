@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import {
   Building2,
   Calendar,
@@ -38,14 +38,23 @@ interface JobCardProps {
   basePath?: string;
 }
 
-export const JobCard: React.FC<JobCardProps> = ({
-  job,
-  basePath = '/student/jobs',
-}) => {
+export const JobCard: React.FC<JobCardProps> = ({ job, basePath }) => {
   const [imageError, setImageError] = useState(false);
   const formattedDate = formatPostedDate(job.created_at);
   const isInternship = job.employment_type === 'INTERNSHIP';
-  const detailUrl = `${basePath}/${job.id}`;
+
+  let currentPath = '';
+  try {
+    const location = useLocation();
+    currentPath = location?.pathname || '';
+  } catch {
+    currentPath = '';
+  }
+
+  const effectiveBasePath =
+    basePath ??
+    (currentPath.startsWith('/student') ? '/student/jobs' : '/jobs');
+  const detailUrl = `${effectiveBasePath}/${job.id}`;
 
   return (
     <Card

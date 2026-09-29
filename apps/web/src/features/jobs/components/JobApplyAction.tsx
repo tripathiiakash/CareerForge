@@ -151,8 +151,9 @@ export const JobApplyAction: React.FC<JobApplyActionProps> = ({
 
   // State A: Anonymous Visitor
   if (!isAuthenticated) {
-    const loginRedirectUrl = `/auth/login?redirect=${encodeURIComponent(
-      location.pathname
+    const redirectPath = `${location.pathname}${location.search}`;
+    const loginRedirectUrl = `/login?redirect=${encodeURIComponent(
+      redirectPath
     )}`;
 
     return (
@@ -173,7 +174,11 @@ export const JobApplyAction: React.FC<JobApplyActionProps> = ({
               resume.
             </p>
           </div>
-          <Link to={loginRedirectUrl} className="shrink-0">
+          <Link
+            to={loginRedirectUrl}
+            state={{ from: redirectPath }}
+            className="shrink-0"
+          >
             <Button size="default" className="gap-2">
               <LogIn className="h-4 w-4" />
               <span>Sign In to Apply</span>

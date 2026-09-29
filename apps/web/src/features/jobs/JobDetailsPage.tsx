@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import {
   ArrowLeft,
   Building2,
@@ -25,8 +25,18 @@ import { InterviewPrepCard } from '@/features/interviewPrep';
 export const JobDetailsPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [imageError, setImageError] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const isStudentPortal = location.pathname.startsWith('/student');
+  const handleBackToJobs = () => {
+    if (isStudentPortal) {
+      navigate('/student/jobs');
+    } else {
+      navigate('/jobs');
+    }
+  };
 
   const isValidId = isValidUuid(jobId);
   const {
@@ -57,7 +67,7 @@ export const JobDetailsPage: React.FC = () => {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate('/student/jobs')}
+          onClick={handleBackToJobs}
           className="gap-2 text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -78,11 +88,7 @@ export const JobDetailsPage: React.FC = () => {
                 select an active role from the job board.
               </p>
             </div>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => navigate('/student/jobs')}
-            >
+            <Button variant="default" size="sm" onClick={handleBackToJobs}>
               Return to Job Board
             </Button>
           </CardContent>
@@ -121,7 +127,7 @@ export const JobDetailsPage: React.FC = () => {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate('/student/jobs')}
+          onClick={handleBackToJobs}
           className="gap-2 text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -152,11 +158,7 @@ export const JobDetailsPage: React.FC = () => {
                 <RotateCcw className="h-4 w-4" />
                 <span>Retry</span>
               </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={() => navigate('/student/jobs')}
-              >
+              <Button variant="default" size="sm" onClick={handleBackToJobs}>
                 Explore Active Jobs
               </Button>
             </div>
@@ -188,7 +190,7 @@ export const JobDetailsPage: React.FC = () => {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => navigate('/student/jobs')}
+          onClick={handleBackToJobs}
           className="gap-2 text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />

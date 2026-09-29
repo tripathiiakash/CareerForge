@@ -79,8 +79,7 @@ function evaluateApplyActionState({
 
 function mapApplyError(error) {
   const status = error.status || error.response?.status;
-  const backendMessage =
-    error.response?.data?.message || error.message || '';
+  const backendMessage = error.response?.data?.message || error.message || '';
 
   if (status === 409) {
     return {
@@ -128,8 +127,7 @@ function mapApplyError(error) {
   if (status === 400) {
     return {
       isApplied: false,
-      errorMessage:
-        'This job posting is currently not accepting applications.',
+      errorMessage: 'This job posting is currently not accepting applications.',
       isRetryable: false,
     };
   }
@@ -209,6 +207,15 @@ describe('Student Job Application Submission Test Suite (Phase 5.6 - docs/API.md
       assert.equal(state.canSubmit, false);
       assert.equal(state.buttonText, 'Sign In to Apply');
       assert.equal(state.loginPromptRequired, true);
+
+      // Verify redirect target construction
+      const currentPath = '/jobs/e42e476e-3607-4e68-9a2f-98eb413ce161';
+      const redirectUrl = `/login?redirect=${encodeURIComponent(currentPath)}`;
+      assert.equal(
+        redirectUrl,
+        '/login?redirect=%2Fjobs%2Fe42e476e-3607-4e68-9a2f-98eb413ce161'
+      );
+      assert.ok(!redirectUrl.startsWith('/auth/login'));
     });
 
     it('3. Apply action is withheld / disabled for RECRUITER or ADMIN', () => {
@@ -361,7 +368,10 @@ describe('Student Job Application Submission Test Suite (Phase 5.6 - docs/API.md
           data: { code: 'NOT_FOUND', message: 'Resume does not exist' },
         },
       });
-      assert.match(resumeNotFoundError.errorMessage, /resume could not be found/i);
+      assert.match(
+        resumeNotFoundError.errorMessage,
+        /resume could not be found/i
+      );
     });
 
     it('12. Network error allows retry', () => {

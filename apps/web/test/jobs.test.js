@@ -1,6 +1,25 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { listJobsQuerySchema } from '@careerforge/validation';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const routesPath = path.resolve(__dirname, '../src/router/routes.tsx');
+const jobCardPath = path.resolve(
+  __dirname,
+  '../src/features/jobs/components/JobCard.tsx'
+);
+const jobDetailsPagePath = path.resolve(
+  __dirname,
+  '../src/features/jobs/JobDetailsPage.tsx'
+);
+const jobApplyActionPath = path.resolve(
+  __dirname,
+  '../src/features/jobs/components/JobApplyAction.tsx'
+);
 
 // Mirror of helper functions implemented in apps/web/src/features/jobs
 const UUID_REGEX =
@@ -117,7 +136,10 @@ describe('Job Board & Job Details Frontend Suite (Phase 5.4)', () => {
         employment_type: 'CONTRACT',
       });
       assert.equal(invalidType.success, false);
-      assert.match(invalidType.error.issues[0].message, /INTERNSHIP.*FULL_TIME/i);
+      assert.match(
+        invalidType.error.issues[0].message,
+        /INTERNSHIP.*FULL_TIME/i
+      );
     });
   });
 
@@ -133,7 +155,9 @@ describe('Job Board & Job Details Frontend Suite (Phase 5.4)', () => {
     });
 
     it('should trim search term and drop empty whitespace', () => {
-      const withSearch = buildJobsQueryParams({ search: '  frontend developer  ' });
+      const withSearch = buildJobsQueryParams({
+        search: '  frontend developer  ',
+      });
       assert.deepEqual(withSearch, { search: 'frontend developer' });
 
       const emptySearch = buildJobsQueryParams({ search: '   ' });
@@ -154,7 +178,9 @@ describe('Job Board & Job Details Frontend Suite (Phase 5.4)', () => {
       const fullTime = buildJobsQueryParams({ employment_type: 'FULL_TIME' });
       assert.deepEqual(fullTime, { employment_type: 'FULL_TIME' });
 
-      const internship = buildJobsQueryParams({ employment_type: 'INTERNSHIP' });
+      const internship = buildJobsQueryParams({
+        employment_type: 'INTERNSHIP',
+      });
       assert.deepEqual(internship, { employment_type: 'INTERNSHIP' });
 
       const invalid = buildJobsQueryParams({ employment_type: 'PART_TIME' });
@@ -166,7 +192,10 @@ describe('Job Board & Job Details Frontend Suite (Phase 5.4)', () => {
     it('should accept valid v4 UUID strings in lowercase and uppercase', () => {
       assert.equal(isValidUuid('e42e476e-3607-4e68-9a2f-98eb413ce161'), true);
       assert.equal(isValidUuid('E42E476E-3607-4E68-9A2F-98EB413CE161'), true);
-      assert.equal(isValidUuid('  e42e476e-3607-4e68-9a2f-98eb413ce161  '), true);
+      assert.equal(
+        isValidUuid('  e42e476e-3607-4e68-9a2f-98eb413ce161  '),
+        true
+      );
     });
 
     it('should reject invalid, missing, or malformed UUID strings', () => {
@@ -176,7 +205,10 @@ describe('Job Board & Job Details Frontend Suite (Phase 5.4)', () => {
       assert.equal(isValidUuid('not-a-uuid'), false);
       assert.equal(isValidUuid('12345'), false);
       assert.equal(isValidUuid('e42e476e-3607-4e68-9a2f-98eb413ce16'), false); // too short
-      assert.equal(isValidUuid('e42e476e-3607-4e68-9a2f-98eb413ce16199'), false); // too long
+      assert.equal(
+        isValidUuid('e42e476e-3607-4e68-9a2f-98eb413ce16199'),
+        false
+      ); // too long
     });
   });
 
@@ -187,7 +219,9 @@ describe('Job Board & Job Details Frontend Suite (Phase 5.4)', () => {
     });
 
     it('should format yesterday date as Yesterday', () => {
-      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const yesterday = new Date(
+        Date.now() - 24 * 60 * 60 * 1000
+      ).toISOString();
       assert.equal(formatPostedDate(yesterday), 'Yesterday');
     });
 
@@ -293,6 +327,114 @@ describe('Job Board & Job Details Frontend Suite (Phase 5.4)', () => {
       assert.equal(isNextDisabled(1, 5), false);
       assert.equal(isNextDisabled(5, 5), true);
       assert.equal(isNextDisabled(6, 5), true);
+    });
+  });
+
+  describe('Public Job Details Routing & Navigation Funnel Suite', () => {
+    it('1. should declare public /jobs/:jobId route with JobDetailsPage in routes.tsx', () => {
+      const routesContent = fs.readFileSync(routesPath, 'utf8');
+      assert.ok(
+        routesContent.includes("path: 'jobs/:jobId'"),
+        'routes.tsx must declare jobs/:jobId route'
+      );
+      assert.ok(
+        routesContent.includes('element: <JobDetailsPage />'),
+        'routes.tsx must bind jobs/:jobId to JobDetailsPage'
+      );
+    });
+
+    it('2. should preserve authenticated /student/jobs/:jobId route in routes.tsx', () => {
+      const routesContent = fs.readFileSync(routesPath, 'utf8');
+      const studentPortalIdx = routesContent.indexOf("path: '/student'");
+      assert.ok(
+        studentPortalIdx !== -1,
+        'Must define student portal route group'
+      );
+      const studentSub = routesContent.slice(studentPortalIdx);
+      assert.ok(
+        studentSub.includes("path: 'jobs/:jobId'"),
+        'Must retain student jobs/:jobId route'
+      );
+    });
+
+    it('3. should make JobCard navigation context-aware, defaulting to /jobs for public pages', () => {
+      const resolveJobCardUrl = (jobId, currentPath = '', basePath) => {
+        const effectiveBasePath =
+          basePath ??
+          (currentPath.startsWith('/student') ? '/student/jobs' : '/jobs');
+        return `${effectiveBasePath}/${jobId}`;
+      };
+
+      const jobId = '7b92f72a-3b56-42d4-a162-8152341499aa';
+
+      // On public jobs page or home page
+      assert.equal(resolveJobCardUrl(jobId, '/jobs'), `/jobs/${jobId}`);
+      assert.equal(resolveJobCardUrl(jobId, '/'), `/jobs/${jobId}`);
+      assert.equal(resolveJobCardUrl(jobId, ''), `/jobs/${jobId}`);
+
+      // On student portal jobs page
+      assert.equal(
+        resolveJobCardUrl(jobId, '/student/jobs'),
+        `/student/jobs/${jobId}`
+      );
+      assert.equal(
+        resolveJobCardUrl(jobId, '/student/dashboard'),
+        `/student/jobs/${jobId}`
+      );
+
+      // Custom explicit basePath override
+      assert.equal(
+        resolveJobCardUrl(jobId, '/jobs', '/custom/jobs'),
+        `/custom/jobs/${jobId}`
+      );
+    });
+
+    it('4. should ensure JobCard source code uses context-aware base path resolution', () => {
+      const jobCardContent = fs.readFileSync(jobCardPath, 'utf8');
+      assert.ok(
+        jobCardContent.includes('useLocation'),
+        'JobCard must import useLocation'
+      );
+      assert.ok(
+        jobCardContent.includes("currentPath.startsWith('/student')"),
+        'JobCard must check for student portal context'
+      );
+      assert.ok(
+        jobCardContent.includes("'/jobs'"),
+        'JobCard must fallback to public /jobs base path'
+      );
+    });
+
+    it('5. should ensure JobApplyAction links anonymous visitors to /login with redirect query', () => {
+      const applyActionContent = fs.readFileSync(jobApplyActionPath, 'utf8');
+      assert.ok(
+        !applyActionContent.includes('/auth/login'),
+        'JobApplyAction must NOT contain non-existent /auth/login route'
+      );
+      assert.ok(
+        applyActionContent.includes('/login?redirect='),
+        'JobApplyAction must link to /login?redirect='
+      );
+      assert.ok(
+        applyActionContent.includes('state={{ from: redirectPath }}'),
+        'JobApplyAction must pass state.from for router navigation resilience'
+      );
+    });
+
+    it('6. should make JobDetailsPage back button context-aware', () => {
+      const detailsContent = fs.readFileSync(jobDetailsPagePath, 'utf8');
+      assert.ok(
+        detailsContent.includes("location.pathname.startsWith('/student')"),
+        'JobDetailsPage must inspect student portal context'
+      );
+      assert.ok(
+        detailsContent.includes("navigate('/jobs')"),
+        'JobDetailsPage must allow navigating back to public /jobs'
+      );
+      assert.ok(
+        detailsContent.includes("navigate('/student/jobs')"),
+        'JobDetailsPage must preserve navigate to /student/jobs for student portal'
+      );
     });
   });
 });

@@ -44,6 +44,10 @@ export const router = createBrowserRouter([
         element: <JobBoardPage />,
       },
       {
+        path: 'jobs/:jobId',
+        element: <JobDetailsPage />,
+      },
+      {
         path: 'features',
         element: <HomePage />,
       },
