@@ -43,6 +43,23 @@ export class S3StorageProvider implements IStorageProvider {
           accessKeyId: this.configService.s3AccessKeyId || '',
           secretAccessKey: this.configService.s3SecretAccessKey || '',
         },
+        /**
+         * B2 / S3-compatible provider compatibility (AWS SDK v3.729+):
+         *
+         * AWS SDK v3 introduced automatic checksum injection (WHEN_SUPPORTED default)
+         * which appends trailing CRC32 checksum data to PutObject requests using
+         * HTTP chunked transfer encoding with trailers. S3-compatible providers such
+         * as Backblaze B2, Cloudflare R2 (older), and MinIO do not implement the
+         * AWS x-amz-checksum-* trailer protocol and reject these requests with
+         * errors such as "request body was too small" (B2) or 400/InvalidRequest.
+         *
+         * Setting both to WHEN_REQUIRED instructs the SDK to only inject checksums
+         * when the specific API operation mandates it (e.g. multipart upload
+         * completion), matching the pre-v3.729 behavior universally compatible with
+         * S3-compatible storage providers.
+         */
+        requestChecksumCalculation: 'WHEN_REQUIRED',
+        responseChecksumValidation: 'WHEN_REQUIRED',
       };
 
       if (this.endpoint) {
@@ -67,6 +84,15 @@ export class S3StorageProvider implements IStorageProvider {
           Bucket: this.bucket,
           Key: fileKey,
           Body: input.buffer,
+          /**
+           * Explicit ContentLength is required for S3-compatible providers
+           * (Backblaze B2, Cloudflare R2) when uploading a Buffer. Without an
+           * explicit value, the AWS SDK may rely on chunked/trailer encoding to
+           * defer the length, causing B2 to reject the request with "request
+           * body was too small". Buffer.byteLength accurately reflects the
+           * actual allocation size without guessing or hardcoding a value.
+           */
+          ContentLength: input.buffer.byteLength,
           ContentType: input.mimeType || 'application/pdf',
           Metadata: {
             studentId: input.studentId,
