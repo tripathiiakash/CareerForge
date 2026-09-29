@@ -433,3 +433,48 @@ export const updateUserBanSchema = z
   .strict();
 
 export type UpdateUserBanInput = z.infer<typeof updateUserBanSchema>;
+
+export const listPendingRecruitersQuerySchema = z
+  .object({
+    page: z.coerce
+      .number({ message: 'Page must be a valid number' })
+      .int('Page must be an integer')
+      .min(1, 'Page must be at least 1')
+      .default(1),
+    limit: z.coerce
+      .number({ message: 'Limit must be a valid number' })
+      .int('Limit must be an integer')
+      .min(1, 'Limit must be at least 1')
+      .max(50, 'Limit cannot exceed 50')
+      .default(10),
+  })
+  .strict();
+
+export type ListPendingRecruitersQueryInput = z.infer<
+  typeof listPendingRecruitersQuerySchema
+>;
+
+export const moderateRecruiterStatusSchema = z
+  .object({
+    status: z
+      .enum(['APPROVED', 'REJECTED'], {
+        message: "Status must be exactly 'APPROVED' or 'REJECTED'",
+      })
+      .optional(),
+    is_approved: z
+      .boolean({
+        message: 'is_approved must be a boolean (true or false)',
+      })
+      .optional(),
+  })
+  .refine(
+    (data) => data.status !== undefined || data.is_approved !== undefined,
+    {
+      message:
+        "Either 'status' ('APPROVED' | 'REJECTED') or 'is_approved' boolean must be provided",
+    }
+  );
+
+export type ModerateRecruiterStatusInput = z.infer<
+  typeof moderateRecruiterStatusSchema
+>;

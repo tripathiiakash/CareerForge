@@ -24,6 +24,7 @@ import {
 } from '@/pages/RecruiterPages';
 import {
   AdminModerationPage,
+  AdminRecruiterApprovalsPage,
   AdminUsersPage,
   AdminAnalyticsPage,
 } from '@/pages/AdminPages';
@@ -168,6 +169,10 @@ export const router = createBrowserRouter([
           {
             path: 'moderation',
             element: <AdminModerationPage />,
+          },
+          {
+            path: 'recruiters',
+            element: <AdminRecruiterApprovalsPage />,
           },
           {
             path: 'users',

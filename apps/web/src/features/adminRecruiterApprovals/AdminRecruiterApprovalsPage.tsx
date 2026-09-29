@@ -1,64 +1,71 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  CheckSquare,
-  ShieldCheck,
-  ChevronLeft,
-  ChevronRight,
   AlertCircle,
   CheckCircle2,
+  CheckSquare,
+  ChevronLeft,
+  ChevronRight,
+  ShieldCheck,
   UserCheck,
   X,
-  Loader2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/components/ui/use-toast';
 import { extractApiError } from '@/lib/api';
-import { usePendingJobs, useModerateJobStatus } from './hooks';
 import {
-  PendingJobCard,
-  ModerationActionDialog,
-  PendingJobListSkeleton,
-  PendingJobEmptyState,
-  PendingJobErrorState,
+  usePendingRecruiters,
+  useApproveRecruiter,
+  useRejectRecruiter,
+} from './hooks';
+import {
+  PendingRecruiterCard,
+  RecruiterApprovalDialog,
+  PendingRecruiterListSkeleton,
+  PendingRecruiterEmptyState,
+  PendingRecruiterErrorState,
 } from './components';
-import { PendingJob, AdminModerationJobStatus } from './types';
+import { PendingRecruiter } from './types';
 
-export const AdminModerationPage: React.FC = () => {
+export const AdminRecruiterApprovalsPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Parse page parameter from URL query string
   const pageParam = parseInt(searchParams.get('page') || '1', 10);
   const currentPage = Number.isNaN(pageParam) || pageParam < 1 ? 1 : pageParam;
 
-  // Fetch pending jobs using React Query hook
+  // Fetch pending recruiters using React Query hook
   const {
-    data: pendingJobsData,
+    data: pendingRecruitersData,
     isLoading,
     isFetching,
     isError,
     error,
     refetch,
-  } = usePendingJobs({
+  } = usePendingRecruiters({
     page: currentPage,
     limit: 10,
   });
 
-  const moderateMutation = useModerateJobStatus();
+  const approveMutation = useApproveRecruiter();
+  const rejectMutation = useRejectRecruiter();
 
   // In-flight mutation and dialog tracking
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [updatingAction, setUpdatingAction] =
-    useState<AdminModerationJobStatus | null>(null);
-  const [dialogJob, setDialogJob] = useState<PendingJob | null>(null);
-  const [dialogAction, setDialogAction] =
-    useState<AdminModerationJobStatus | null>(null);
+  const [updatingAction, setUpdatingAction] = useState<
+    'APPROVE' | 'REJECT' | null
+  >(null);
+  const [dialogRecruiter, setDialogRecruiter] =
+    useState<PendingRecruiter | null>(null);
+  const [dialogAction, setDialogAction] = useState<'APPROVE' | 'REJECT' | null>(
+    null
+  );
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const jobs = pendingJobsData?.data || [];
-  const meta = pendingJobsData?.meta || {
+  const recruiters = pendingRecruitersData?.data || [];
+  const meta = pendingRecruitersData?.meta || {
     total: 0,
     page: currentPage,
     limit: 10,
@@ -85,51 +92,64 @@ export const AdminModerationPage: React.FC = () => {
   }, [isLoading, currentPage, meta.totalPages]);
 
   // Card action handlers opening confirmation modal
-  const handleApproveClick = (job: PendingJob) => {
-    setDialogJob(job);
-    setDialogAction('ACTIVE');
+  const handleApproveClick = (recruiter: PendingRecruiter) => {
+    setDialogRecruiter(recruiter);
+    setDialogAction('APPROVE');
   };
 
-  const handleRejectClick = (job: PendingJob) => {
-    setDialogJob(job);
-    setDialogAction('REJECTED');
+  const handleRejectClick = (recruiter: PendingRecruiter) => {
+    setDialogRecruiter(recruiter);
+    setDialogAction('REJECT');
   };
 
   // Modal confirmation execution
   const handleConfirmModeration = async () => {
-    if (!dialogJob || !dialogAction) return;
+    if (!dialogRecruiter || !dialogAction) return;
 
+    const recruiterId = dialogRecruiter.id;
+    const recruiterName =
+      `${dialogRecruiter.first_name} ${dialogRecruiter.last_name}`.trim();
+    const action = dialogAction;
+
+    setUpdatingId(recruiterId);
+    setUpdatingAction(action);
     setErrorMessage(null);
-    setUpdatingId(dialogJob.id);
-    setUpdatingAction(dialogAction);
+    setSuccessBanner(null);
+
+    // Close dialog immediately to reflect state
+    setDialogRecruiter(null);
+    setDialogAction(null);
 
     try {
-      await moderateMutation.mutateAsync({
-        jobId: dialogJob.id,
-        status: dialogAction,
-      });
-
-      const actionLabel =
-        dialogAction === 'ACTIVE' ? 'approved and published' : 'rejected';
-      setSuccessBanner(`"${dialogJob.title}" was successfully ${actionLabel}.`);
-      if (dialogAction === 'ACTIVE') {
-        toast.success(
-          'Job approved',
-          `"${dialogJob.title}" was approved and published.`
-        );
+      if (action === 'APPROVE') {
+        const result = await approveMutation.mutateAsync(recruiterId);
+        const msg = `${recruiterName} has been approved successfully.`;
+        setSuccessBanner(msg);
+        toast({
+          title: 'Recruiter Approved',
+          description: result.message || msg,
+          variant: 'success',
+        });
       } else {
-        toast.info('Job rejected', `"${dialogJob.title}" was rejected.`);
+        const result = await rejectMutation.mutateAsync(recruiterId);
+        const msg = `Recruiter verification for ${recruiterName} was rejected.`;
+        setSuccessBanner(msg);
+        toast({
+          title: 'Recruiter Rejected',
+          description: result.message || msg,
+          variant: 'default',
+        });
       }
-      setDialogJob(null);
-      setDialogAction(null);
-      setTimeout(() => setSuccessBanner(null), 4000);
     } catch (err: unknown) {
-      const parsed = extractApiError(err);
-      const msg =
-        parsed.message ||
-        'Failed to complete moderation action. Please try again.';
-      setErrorMessage(msg);
-      toast.error('Moderation failed', msg);
+      const apiErr = extractApiError(err);
+      const failMsg =
+        apiErr.message || `Failed to process recruiter verification.`;
+      setErrorMessage(failMsg);
+      toast({
+        title: 'Operation Failed',
+        description: failMsg,
+        variant: 'destructive',
+      });
     } finally {
       setUpdatingId(null);
       setUpdatingAction(null);
@@ -137,68 +157,58 @@ export const AdminModerationPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6">
       {/* Moderation Hub Navigation Pill Tabs */}
       <div className="flex items-center gap-2 border-b border-border/40 pb-4">
-        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-semibold bg-secondary text-amber-400 shadow-sm">
+        <Link
+          to="/admin/moderation"
+          className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors"
+        >
           <CheckSquare className="h-4 w-4" />
           <span>Job Postings</span>
+        </Link>
+        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-semibold bg-secondary text-amber-400 shadow-sm">
+          <UserCheck className="h-4 w-4" />
+          <span>Recruiter Approvals</span>
           {meta.total > 0 && (
             <Badge variant="warning" className="ml-1 px-1.5 py-0 text-[10px]">
               {meta.total}
             </Badge>
           )}
         </div>
-        <Link
-          to="/admin/recruiters"
-          className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors"
-        >
-          <UserCheck className="h-4 w-4" />
-          <span>Recruiter Approvals</span>
-        </Link>
       </div>
 
-      {/* Top Header */}
+      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
-              <CheckSquare className="h-6 w-6 sm:h-7 sm:w-7 text-amber-500" />
-              <span>Job Moderation Queue</span>
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">
+              Recruiter Approvals
             </h1>
-            <Badge variant="warning" className="text-xs font-medium">
-              Admin Clearance
+            <Badge variant="warning" className="gap-1 text-xs">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              <span>Admin Moderation</span>
             </Badge>
           </div>
-          <p className="text-sm text-muted-foreground">
-            Review submitted job postings and approve or reject with
-            administrative authority.
+          <p className="text-sm text-muted-foreground mt-1">
+            Review and verify company recruiter accounts before granting job
+            posting permissions.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-auto">
-          {isFetching && !isLoading && (
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />
-              <span>Refreshing...</span>
-            </span>
-          )}
-          <Badge
-            variant="info"
-            className="text-xs font-semibold py-1 px-3"
-            data-testid="pending-jobs-count-badge"
-          >
-            {meta.total} Pending Posting{meta.total === 1 ? '' : 's'}
-          </Badge>
-        </div>
+        {meta.total > 0 && (
+          <div className="text-xs text-muted-foreground bg-secondary/50 px-3 py-1.5 rounded-lg border border-border/50 self-start sm:self-auto">
+            <span className="font-semibold text-foreground">{meta.total}</span>{' '}
+            recruiter{meta.total === 1 ? '' : 's'} awaiting approval
+          </div>
+        )}
       </div>
 
-      {/* Feedback Banners */}
+      {/* Success Notification Banner */}
       {successBanner && (
         <div
-          role="alert"
           className="flex items-center justify-between p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-sm animate-fade-in"
-          data-testid="moderation-success-banner"
+          data-testid="recruiter-approval-success-banner"
         >
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 shrink-0" />
@@ -208,18 +218,18 @@ export const AdminModerationPage: React.FC = () => {
             type="button"
             onClick={() => setSuccessBanner(null)}
             className="text-emerald-400/70 hover:text-emerald-400 p-1"
-            aria-label="Dismiss success banner"
+            aria-label="Dismiss banner"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
+      {/* Error Notification Banner */}
       {errorMessage && (
         <div
-          role="alert"
           className="flex items-center justify-between p-3.5 rounded-xl bg-destructive/10 border border-destructive/30 text-destructive text-sm animate-fade-in"
-          data-testid="moderation-error-banner"
+          data-testid="recruiter-approval-error-banner"
         >
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
@@ -238,28 +248,30 @@ export const AdminModerationPage: React.FC = () => {
 
       {/* Main Content Area */}
       {isLoading ? (
-        <PendingJobListSkeleton count={3} />
+        <PendingRecruiterListSkeleton count={3} />
       ) : isError ? (
-        <PendingJobErrorState
+        <PendingRecruiterErrorState
           message={
             extractApiError(error).message ||
-            'Unable to retrieve pending jobs for moderation.'
+            'Unable to retrieve pending recruiters for verification.'
           }
           onRetry={() => refetch()}
           isRetrying={isFetching}
         />
-      ) : jobs.length === 0 ? (
-        <PendingJobEmptyState />
+      ) : recruiters.length === 0 ? (
+        <PendingRecruiterEmptyState />
       ) : (
         <div className="space-y-4">
-          {jobs.map((job) => (
-            <PendingJobCard
-              key={job.id}
-              job={job}
+          {recruiters.map((recruiter) => (
+            <PendingRecruiterCard
+              key={recruiter.id}
+              recruiter={recruiter}
               onApprove={handleApproveClick}
               onReject={handleRejectClick}
-              isUpdating={updatingId === job.id}
-              updatingAction={updatingId === job.id ? updatingAction : null}
+              isUpdating={updatingId === recruiter.id}
+              updatingAction={
+                updatingId === recruiter.id ? updatingAction : null
+              }
             />
           ))}
 
@@ -267,12 +279,12 @@ export const AdminModerationPage: React.FC = () => {
           {meta.totalPages > 1 && (
             <div
               className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-border/40"
-              data-testid="moderation-pagination"
+              data-testid="recruiter-approvals-pagination"
             >
               <div className="text-xs text-muted-foreground">
                 Showing Page <span className="font-semibold">{meta.page}</span>{' '}
                 of <span className="font-semibold">{meta.totalPages}</span> (
-                {meta.total} total pending jobs)
+                {meta.total} total pending recruiters)
               </div>
 
               <div className="flex items-center gap-2">
@@ -306,14 +318,14 @@ export const AdminModerationPage: React.FC = () => {
       )}
 
       {/* Confirmation Dialog */}
-      <ModerationActionDialog
-        job={dialogJob}
+      <RecruiterApprovalDialog
+        recruiter={dialogRecruiter}
         action={dialogAction}
-        isOpen={Boolean(dialogJob && dialogAction)}
-        isSubmitting={Boolean(updatingId === dialogJob?.id)}
+        isOpen={Boolean(dialogRecruiter && dialogAction)}
+        isSubmitting={Boolean(updatingId === dialogRecruiter?.id)}
         onConfirm={handleConfirmModeration}
         onCancel={() => {
-          setDialogJob(null);
+          setDialogRecruiter(null);
           setDialogAction(null);
         }}
       />

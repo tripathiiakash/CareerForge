@@ -3,6 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   ShieldCheck,
   CheckSquare,
+  UserCheck,
   Users,
   BarChart3,
   LogOut,
@@ -23,6 +24,11 @@ export const AdminLayout: React.FC = () => {
 
   const navItems = [
     { label: 'Job Moderation', path: '/admin/moderation', icon: CheckSquare },
+    {
+      label: 'Recruiter Approvals',
+      path: '/admin/recruiters',
+      icon: UserCheck,
+    },
     { label: 'Users', path: '/admin/users', icon: Users },
     { label: 'Analytics', path: '/admin/analytics', icon: BarChart3 },
   ];
