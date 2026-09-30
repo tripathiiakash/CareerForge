@@ -18,13 +18,55 @@ export const B2_HTTP_CLIENT = Symbol('B2_HTTP_CLIENT');
 export type B2HttpClient = typeof fetch;
 
 /**
- * B2 authorization response from b2_authorize_account.
+ * Bucket entry inside apiInfo.storageApi.allowed in B2 Native API v4 response.
  */
-export interface B2AuthResponse {
-  authorizationToken: string;
+export interface B2StorageApiAllowedBucket {
+  id: string;
+  name: string;
+}
+
+/**
+ * Permissions and scope inside apiInfo.storageApi.allowed in B2 Native API v4 response.
+ */
+export interface B2StorageApiAllowed {
+  buckets?: B2StorageApiAllowedBucket[];
+  capabilities: string[];
+  namePrefix?: string | null;
+  bucketId?: string | null;
+  bucketName?: string | null;
+}
+
+/**
+ * Storage API endpoints and limits in B2 Native API v4 response.
+ */
+export interface B2StorageApiInfo {
+  absoluteMinimumPartSize?: number;
   apiUrl: string;
   downloadUrl: string;
+  recommendedPartSize?: number;
+  s3ApiUrl?: string;
+  allowed?: B2StorageApiAllowed;
+}
+
+/**
+ * apiInfo object in B2 Native API v4 response.
+ */
+export interface B2ApiInfo {
+  storageApi?: B2StorageApiInfo;
+  [key: string]: unknown;
+}
+
+/**
+ * B2 authorization response from b2_authorize_account (v4 native structure).
+ */
+export interface B2AuthResponse {
   accountId: string;
+  authorizationToken: string;
+  apiInfo?: B2ApiInfo;
+  applicationKeyExpirationTimestamp?: number | null;
+  // Clean fallback for legacy v3 top-level fields if present
+  apiUrl?: string;
+  downloadUrl?: string;
 }
 
 /**
@@ -32,6 +74,7 @@ export interface B2AuthResponse {
  */
 export interface B2AuthState {
   authorizationToken: string;
+  accountId: string;
   apiUrl: string;
   downloadUrl: string;
   /** ms timestamp when the token was obtained; used for proactive refresh. */
@@ -353,22 +396,36 @@ export class B2NativeStorageProvider implements IStorageProvider {
       );
     }
 
-    if (!data.authorizationToken || !data.apiUrl || !data.downloadUrl) {
+    const authorizationToken = data.authorizationToken;
+    const accountId = data.accountId;
+    const storageApi = data.apiInfo?.storageApi;
+    const apiUrl = storageApi?.apiUrl || data.apiUrl;
+    const downloadUrl = storageApi?.downloadUrl || data.downloadUrl;
+
+    if (!authorizationToken || !accountId || !apiUrl || !downloadUrl) {
+      const missingFields: string[] = [];
+      if (!authorizationToken) missingFields.push('authorizationToken');
+      if (!accountId) missingFields.push('accountId');
+      if (!apiUrl) missingFields.push('apiInfo.storageApi.apiUrl');
+      if (!downloadUrl) missingFields.push('apiInfo.storageApi.downloadUrl');
+
       throw new StorageError(
-        'B2 authorization response missing required fields',
+        `B2 authorization response missing required fields: ${missingFields.join(', ')}`,
         false,
         'STORAGE_AUTH_FAILED'
       );
     }
 
-    this.authState = {
-      authorizationToken: data.authorizationToken,
-      apiUrl: data.apiUrl,
-      downloadUrl: data.downloadUrl,
+    const authState: B2AuthState = {
+      authorizationToken,
+      accountId,
+      apiUrl,
+      downloadUrl,
       fetchedAt: now,
     };
+    this.authState = authState;
 
-    return this.authState;
+    return authState;
   }
 
   /**

@@ -50,10 +50,28 @@ describe('Backblaze B2 Native Storage Provider Test Suite', () => {
   };
 
   const sampleAuthResponse = {
-    authorizationToken: 'auth-token-xyz-123456789',
-    apiUrl: 'https://api003.backblazeb2.com',
-    downloadUrl: 'https://f003.backblazeb2.com',
     accountId: '003testkeyid123456789012',
+    authorizationToken: 'auth-token-xyz-123456789',
+    applicationKeyExpirationTimestamp: null,
+    apiInfo: {
+      storageApi: {
+        absoluteMinimumPartSize: 5000000,
+        apiUrl: 'https://api003.backblazeb2.com',
+        downloadUrl: 'https://f003.backblazeb2.com',
+        recommendedPartSize: 100000000,
+        s3ApiUrl: 'https://s3.us-west-003.backblazeb2.com',
+        allowed: {
+          buckets: [
+            {
+              id: '4a6b8c0d2e4f6a8b0c2d4e6f',
+              name: 'careerforge-b2-resumes',
+            },
+          ],
+          capabilities: ['readFiles', 'writeFiles', 'deleteFiles'],
+          namePrefix: null,
+        },
+      },
+    },
   };
 
   const sampleUploadUrlResponse = {
@@ -151,8 +169,15 @@ describe('Backblaze B2 Native Storage Provider Test Suite', () => {
         authState.authorizationToken,
         sampleAuthResponse.authorizationToken
       );
-      assert.equal(authState.apiUrl, sampleAuthResponse.apiUrl);
-      assert.equal(authState.downloadUrl, sampleAuthResponse.downloadUrl);
+      assert.equal(authState.accountId, sampleAuthResponse.accountId);
+      assert.equal(
+        authState.apiUrl,
+        sampleAuthResponse.apiInfo.storageApi.apiUrl
+      );
+      assert.equal(
+        authState.downloadUrl,
+        sampleAuthResponse.apiInfo.storageApi.downloadUrl
+      );
     });
 
     it('should cache authorization response in memory and reuse within TTL', async () => {
@@ -306,6 +331,143 @@ describe('Backblaze B2 Native Storage Provider Test Suite', () => {
           assert.ok(err.message.includes('missing required fields'));
           return true;
         }
+      );
+    });
+
+    it('should correctly parse realistic B2 Native API v4 response structure', async () => {
+      const realisticV4Response = {
+        accountId: 'ACCOUNT_ID_V4',
+        apiInfo: {
+          storageApi: {
+            absoluteMinimumPartSize: 5000000,
+            apiUrl: 'https://api001.backblazeb2.com',
+            allowed: {
+              buckets: [
+                {
+                  id: 'bucketId1',
+                  name: 'bucketIdName1',
+                },
+              ],
+              capabilities: ['readFiles', 'writeFiles', 'deleteFiles'],
+              namePrefix: null,
+            },
+            downloadUrl: 'https://f001.backblazeb2.com',
+            recommendedPartSize: 100000000,
+            s3ApiUrl: 'https://s3.us-west-001.backblazeb2.com',
+          },
+        },
+        applicationKeyExpirationTimestamp: null,
+        authorizationToken: 'AUTHORIZATION_TOKEN_V4',
+      };
+
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => realisticV4Response,
+      });
+
+      const provider = new B2NativeStorageProvider(
+        createMockConfigService(),
+        mockFetch
+      );
+      const authState = await provider.authorize();
+
+      assert.equal(authState.authorizationToken, 'AUTHORIZATION_TOKEN_V4');
+      assert.equal(authState.accountId, 'ACCOUNT_ID_V4');
+      assert.equal(authState.apiUrl, 'https://api001.backblazeb2.com');
+      assert.equal(authState.downloadUrl, 'https://f001.backblazeb2.com');
+    });
+
+    it('should indicate which specific required fields are missing in error message', async () => {
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          accountId: '123',
+        }),
+      });
+
+      const provider = new B2NativeStorageProvider(
+        createMockConfigService(),
+        mockFetch
+      );
+
+      await assert.rejects(
+        () => provider.authorize(),
+        (err) => {
+          assert.ok(err instanceof StorageError);
+          assert.equal(err.code, 'STORAGE_AUTH_FAILED');
+          assert.ok(
+            err.message.includes(
+              'missing required fields: authorizationToken, apiInfo.storageApi.apiUrl, apiInfo.storageApi.downloadUrl'
+            ),
+            `Unexpected error message: ${err.message}`
+          );
+          return true;
+        }
+      );
+    });
+
+    it('should indicate missing accountId when accountId is omitted in v4 response', async () => {
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          authorizationToken: 'tok-123',
+          apiInfo: {
+            storageApi: {
+              apiUrl: 'https://api001.backblazeb2.com',
+              downloadUrl: 'https://f001.backblazeb2.com',
+            },
+          },
+        }),
+      });
+
+      const provider = new B2NativeStorageProvider(
+        createMockConfigService(),
+        mockFetch
+      );
+
+      await assert.rejects(
+        () => provider.authorize(),
+        (err) => {
+          assert.ok(err instanceof StorageError);
+          assert.equal(err.code, 'STORAGE_AUTH_FAILED');
+          assert.ok(
+            err.message.includes('missing required fields: accountId'),
+            `Unexpected error message: ${err.message}`
+          );
+          return true;
+        }
+      );
+    });
+
+    it('should cleanly fallback to legacy top-level apiUrl and downloadUrl if apiInfo is not present', async () => {
+      const legacyV3Response = {
+        accountId: '003testkeyid123456789012',
+        authorizationToken: 'auth-token-legacy-v3',
+        apiUrl: 'https://api003.legacy.backblazeb2.com',
+        downloadUrl: 'https://f003.legacy.backblazeb2.com',
+      };
+
+      const mockFetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => legacyV3Response,
+      });
+
+      const provider = new B2NativeStorageProvider(
+        createMockConfigService(),
+        mockFetch
+      );
+      const authState = await provider.authorize();
+
+      assert.equal(authState.authorizationToken, 'auth-token-legacy-v3');
+      assert.equal(authState.accountId, '003testkeyid123456789012');
+      assert.equal(authState.apiUrl, 'https://api003.legacy.backblazeb2.com');
+      assert.equal(
+        authState.downloadUrl,
+        'https://f003.legacy.backblazeb2.com'
       );
     });
   });
