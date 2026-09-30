@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const {
   B2NativeStorageProvider,
+  B2_HTTP_CLIENT,
 } = require('../dist/modules/resume/storage/b2-native-storage.provider');
 const {
   StorageError,
@@ -1124,17 +1125,50 @@ describe('Backblaze B2 Native Storage Provider Test Suite', () => {
     });
   });
 
-  describe('10. ResumeModule DI Provider Selection', () => {
+  describe('10. ResumeModule DI Provider Selection & HTTP Client Token', () => {
     const { ResumeModule } = require('../dist/modules/resume/resume.module');
     const providers = Reflect.getMetadata('providers', ResumeModule) || [];
     const storageProviderRegistration = providers.find(
       (p) => p && typeof p === 'object' && p.provide === STORAGE_PROVIDER_TOKEN
     );
+    const httpClientRegistration = providers.find(
+      (p) => p && typeof p === 'object' && p.provide === B2_HTTP_CLIENT
+    );
+
+    it('should export B2_HTTP_CLIENT Symbol token', () => {
+      assert.equal(typeof B2_HTTP_CLIENT, 'symbol');
+    });
+
+    it('should register B2_HTTP_CLIENT provider with globalThis.fetch in ResumeModule', () => {
+      assert.ok(
+        httpClientRegistration,
+        'B2_HTTP_CLIENT provider must be registered in ResumeModule'
+      );
+      assert.equal(httpClientRegistration.useValue, globalThis.fetch);
+    });
+
+    it('should have registered STORAGE_PROVIDER_TOKEN factory in ResumeModule', () => {
+      assert.ok(
+        storageProviderRegistration,
+        'STORAGE_PROVIDER_TOKEN provider must be registered'
+      );
+      assert.equal(typeof storageProviderRegistration.useFactory, 'function');
+    });
 
     it('should instantiate B2NativeStorageProvider when storageProvider is "b2"', () => {
       const mockConfig = createMockConfigService({ storageProvider: 'b2' });
       const instance = storageProviderRegistration.useFactory(mockConfig);
       assert.ok(instance instanceof B2NativeStorageProvider);
+    });
+
+    it('should reuse injected b2Provider when provided to useFactory', () => {
+      const mockConfig = createMockConfigService({ storageProvider: 'b2' });
+      const existingB2Instance = new B2NativeStorageProvider(mockConfig);
+      const instance = storageProviderRegistration.useFactory(
+        mockConfig,
+        existingB2Instance
+      );
+      assert.equal(instance, existingB2Instance);
     });
 
     it('should instantiate S3StorageProvider when storageProvider is "s3"', () => {

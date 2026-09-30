@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { ConfigService } from '../../../core/config/config.service';
 import {
@@ -9,6 +9,13 @@ import {
   StorageUploadInput,
   StorageUploadResult,
 } from './storage.interface';
+
+/**
+ * Injection token for Backblaze B2 HTTP fetch client.
+ * Allows injecting custom/mock fetch in tests while cleanly resolving in Nest DI.
+ */
+export const B2_HTTP_CLIENT = Symbol('B2_HTTP_CLIENT');
+export type B2HttpClient = typeof fetch;
 
 /**
  * B2 authorization response from b2_authorize_account.
@@ -111,6 +118,8 @@ export class B2NativeStorageProvider implements IStorageProvider {
 
   constructor(
     private readonly configService: ConfigService,
+    @Optional()
+    @Inject(B2_HTTP_CLIENT)
     private readonly customFetch?: typeof fetch
   ) {
     this.keyId = this.configService.b2KeyId ?? '';
@@ -119,10 +128,12 @@ export class B2NativeStorageProvider implements IStorageProvider {
     this.bucketName = this.configService.b2BucketName ?? '';
 
     if (
-      !this.keyId ||
-      !this.applicationKey ||
-      !this.bucketId ||
-      !this.bucketName
+      (!this.configService.storageProvider ||
+        this.configService.storageProvider === 'b2') &&
+      (!this.keyId ||
+        !this.applicationKey ||
+        !this.bucketId ||
+        !this.bucketName)
     ) {
       throw new Error(
         'B2NativeStorageProvider requires B2_KEY_ID, B2_APPLICATION_KEY, ' +
