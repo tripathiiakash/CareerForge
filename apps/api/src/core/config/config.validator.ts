@@ -97,9 +97,12 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
   const rawStorageProvider = env.STORAGE_PROVIDER?.trim().toLowerCase();
   const storageProvider = rawStorageProvider || 'local';
 
-  if (rawStorageProvider && !['local', 's3'].includes(rawStorageProvider)) {
+  if (
+    rawStorageProvider &&
+    !['local', 's3', 'b2'].includes(rawStorageProvider)
+  ) {
     errors.push(
-      `STORAGE_PROVIDER must be one of: 'local', 's3' (received "${rawStorageProvider}")`
+      `STORAGE_PROVIDER must be one of: 'local', 's3', 'b2' (received "${rawStorageProvider}")`
     );
   }
 
@@ -130,9 +133,7 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
       isProduction &&
       (s3Bucket === 'careerforge-resumes' || s3Bucket.startsWith('your-'))
     ) {
-      errors.push(
-        'S3_BUCKET must not use template placeholder in production'
-      );
+      errors.push('S3_BUCKET must not use template placeholder in production');
     }
 
     if (!s3AccessKeyId) {
@@ -158,6 +159,62 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     ) {
       errors.push(
         'S3_SECRET_ACCESS_KEY must not use placeholder when STORAGE_PROVIDER is "s3"'
+      );
+    }
+  }
+
+  // Backblaze B2 Native API Configuration
+  const b2KeyId = env.B2_KEY_ID?.trim() || undefined;
+  const b2ApplicationKey = env.B2_APPLICATION_KEY?.trim() || undefined;
+  const b2BucketId = env.B2_BUCKET_ID?.trim() || undefined;
+  const b2BucketName = env.B2_BUCKET_NAME?.trim() || undefined;
+
+  if (storageProvider === 'b2') {
+    if (!b2KeyId) {
+      errors.push('B2_KEY_ID is required when STORAGE_PROVIDER is "b2"');
+    } else if (
+      isProduction &&
+      (b2KeyId === 'your-b2-key-id' || b2KeyId.startsWith('your-'))
+    ) {
+      errors.push(
+        'B2_KEY_ID must not use placeholder when STORAGE_PROVIDER is "b2"'
+      );
+    }
+
+    if (!b2ApplicationKey) {
+      errors.push(
+        'B2_APPLICATION_KEY is required when STORAGE_PROVIDER is "b2"'
+      );
+    } else if (
+      isProduction &&
+      (b2ApplicationKey === 'your-b2-application-key' ||
+        b2ApplicationKey.startsWith('your-'))
+    ) {
+      errors.push(
+        'B2_APPLICATION_KEY must not use placeholder when STORAGE_PROVIDER is "b2"'
+      );
+    }
+
+    if (!b2BucketId) {
+      errors.push('B2_BUCKET_ID is required when STORAGE_PROVIDER is "b2"');
+    } else if (
+      isProduction &&
+      (b2BucketId === 'your-b2-bucket-id' || b2BucketId.startsWith('your-'))
+    ) {
+      errors.push(
+        'B2_BUCKET_ID must not use placeholder when STORAGE_PROVIDER is "b2"'
+      );
+    }
+
+    if (!b2BucketName) {
+      errors.push('B2_BUCKET_NAME is required when STORAGE_PROVIDER is "b2"');
+    } else if (
+      isProduction &&
+      (b2BucketName === 'your-b2-bucket-name' ||
+        b2BucketName.startsWith('your-'))
+    ) {
+      errors.push(
+        'B2_BUCKET_NAME must not use placeholder when STORAGE_PROVIDER is "b2"'
       );
     }
   }
@@ -240,7 +297,11 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
   const rawSameSite = env.AUTH_COOKIE_SAMESITE?.trim().toLowerCase();
   let authCookieSameSite: 'lax' | 'strict' | 'none' = 'lax';
   if (rawSameSite) {
-    if (rawSameSite === 'lax' || rawSameSite === 'strict' || rawSameSite === 'none') {
+    if (
+      rawSameSite === 'lax' ||
+      rawSameSite === 'strict' ||
+      rawSameSite === 'none'
+    ) {
       authCookieSameSite = rawSameSite;
     } else {
       errors.push(`AUTH_COOKIE_SAMESITE must be 'lax', 'strict', or 'none'`);
@@ -287,5 +348,9 @@ export function validateEnvironment(env: NodeJS.ProcessEnv): AppConfig {
     s3AccessKeyId,
     s3SecretAccessKey,
     s3ForcePathStyle,
+    b2KeyId,
+    b2ApplicationKey,
+    b2BucketId,
+    b2BucketName,
   };
 }

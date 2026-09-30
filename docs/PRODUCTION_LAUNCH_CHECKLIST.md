@@ -67,7 +67,7 @@ Populate environment variables in cloud platform secret vaults (using `.env.prod
 - [ ] `CORS_ORIGIN`: Set exact frontend production URL (e.g. `https://careerforge-8oq.pages.dev`). Wildcards (`*`) strictly forbidden.
 - [ ] `AUTH_COOKIE_NAME=cf_auth`
 - [ ] `AUTH_COOKIE_SAMESITE=lax` (same-origin Cloudflare Pages Function proxy architecture).
-- [ ] `STORAGE_PROVIDER=s3` + AWS S3 / Cloudflare R2 credentials.
+- [ ] `STORAGE_PROVIDER=b2` + Backblaze B2 Native API credentials (`B2_KEY_ID`, `B2_APPLICATION_KEY`, `B2_BUCKET_ID`, `B2_BUCKET_NAME`), or `STORAGE_PROVIDER=s3` + AWS S3 / Cloudflare R2 credentials.
 - [ ] `EMAIL_PROVIDER=resend` + `RESEND_API_KEY` + `EMAIL_FROM`.
 - [ ] `GEMINI_API_KEY`: Production Gemini credential.
 - [ ] `API_UPSTREAM_URL`: (Cloudflare Pages environment variable) Points to Render backend (`https://careerforge-api-h2ce.onrender.com`).

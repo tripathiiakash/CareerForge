@@ -50,7 +50,11 @@ This document provides the definitive preflight evaluation of the CareerForge re
 | `AUTH_COOKIE_SAMESITE` | **YES** | `cookie.util.ts` (`setAuthCookie`) | Render Environment | Defaults to `'lax'`. Set to `'lax'` for same-origin Pages proxy and custom domains. |
 | `CORS_ORIGIN` | **YES** | `main.ts` CORS, `CsrfMiddleware` | Render Environment | Defaults to `http://localhost:5173`. Must match exact Cloudflare Pages URL. Wildcard forbidden. |
 | `TRUST_PROXY` | NO | `main.ts` (Express trust proxy) | Render Environment | Defaults to `1` in production (handles Render reverse proxy headers). |
-| `STORAGE_PROVIDER` | **YES** | `ResumeModule`, `ResumeStorageService` | Render Environment | Defaults to `'local'`. Set to `'s3'` for Cloudflare R2 / AWS S3. |
+| `STORAGE_PROVIDER` | **YES** | `ResumeModule`, `ResumeStorageService` | Render Environment | Defaults to `'local'`. Set to `'b2'` for Backblaze B2 (Native) or `'s3'` for Cloudflare R2 / AWS S3. |
+| `B2_KEY_ID` | Conditional | `B2NativeStorageProvider` | Render Secrets | Required when `STORAGE_PROVIDER=b2`. Backblaze B2 Application Key ID. |
+| `B2_APPLICATION_KEY` | Conditional | `B2NativeStorageProvider` | Render Secrets | Required when `STORAGE_PROVIDER=b2`. Backblaze B2 Application Key Secret. |
+| `B2_BUCKET_ID` | Conditional | `B2NativeStorageProvider` | Render Environment | Required when `STORAGE_PROVIDER=b2`. Backblaze B2 Bucket ID. |
+| `B2_BUCKET_NAME` | Conditional | `B2NativeStorageProvider` | Render Environment | Required when `STORAGE_PROVIDER=b2`. Backblaze B2 Bucket Name. |
 | `S3_ENDPOINT` / `AWS_ENDPOINT` | Conditional | S3 / Cloudflare R2 Client | Render Environment | `https://<account-id>.r2.cloudflarestorage.com` (needed for Cloudflare R2). |
 | `S3_REGION` / `AWS_REGION` | Conditional | S3 / Cloudflare R2 Client | Render Environment | Cloudflare R2 uses `'auto'` or `'us-east-1'`. Defaults to `'auto'`. |
 | `S3_ACCESS_KEY_ID` / `AWS_ACCESS_KEY_ID` | Conditional | S3 / Cloudflare R2 Client | Render Secrets | Cloudflare R2 API Token Access Key ID. |

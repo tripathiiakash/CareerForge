@@ -1,7 +1,11 @@
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
-const { S3StorageProvider } = require('../dist/modules/resume/storage/s3-storage.provider');
-const { LocalStorageProvider } = require('../dist/modules/resume/storage/local-storage.provider');
+const {
+  S3StorageProvider,
+} = require('../dist/modules/resume/storage/s3-storage.provider');
+const {
+  LocalStorageProvider,
+} = require('../dist/modules/resume/storage/local-storage.provider');
 const {
   StorageError,
   StorageFileNotFoundError,
@@ -10,10 +14,14 @@ const {
 } = require('../dist/modules/resume/storage/storage.interface');
 const { validateEnvironment } = require('../dist/core/config/config.validator');
 const { ResumeService } = require('../dist/modules/resume/resume.service');
-const { ResumeStorageService } = require('../dist/modules/resume/storage/resume-storage.service');
+const {
+  ResumeStorageService,
+} = require('../dist/modules/resume/storage/resume-storage.service');
 
 describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
-  const samplePdfBuffer = Buffer.from('%PDF-1.4 Mock PDF binary content for testing');
+  const samplePdfBuffer = Buffer.from(
+    '%PDF-1.4 Mock PDF binary content for testing'
+  );
   const validStudentId = 'student-uuid-1111-2222';
 
   const createMockConfigService = (overrides = {}) => ({
@@ -137,7 +145,10 @@ describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
       });
 
       assert.equal(result.fileUrl.includes('test-r2-access-key-id'), false);
-      assert.equal(result.fileUrl.includes('test-r2-secret-access-key-xyz123'), false);
+      assert.equal(
+        result.fileUrl.includes('test-r2-secret-access-key-xyz123'),
+        false
+      );
       assert.equal(result.fileUrl.includes('X-Amz-'), false);
     });
 
@@ -166,7 +177,10 @@ describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
           assert.ok(err instanceof StorageError);
           assert.equal(err.isRetryable, true);
           assert.equal(err.code, 'STORAGE_UPLOAD_FAILED');
-          assert.equal(err.message.includes('test-r2-secret-access-key-xyz123'), false);
+          assert.equal(
+            err.message.includes('test-r2-secret-access-key-xyz123'),
+            false
+          );
           assert.ok(err.message.includes('[REDACTED]'));
           return true;
         }
@@ -189,7 +203,9 @@ describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
       const configService = createMockConfigService();
       const provider = new S3StorageProvider(configService, mockClient);
 
-      const testBuffer = Buffer.from('%PDF-1.4 Test PDF content with known byte length');
+      const testBuffer = Buffer.from(
+        '%PDF-1.4 Test PDF content with known byte length'
+      );
       await provider.upload({
         buffer: testBuffer,
         mimeType: 'application/pdf',
@@ -239,8 +255,14 @@ describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
         studentId: validStudentId,
       });
 
-      assert.ok(typeof capturedLength === 'number', 'ContentLength must be a number');
-      assert.ok(capturedLength > 0, `ContentLength (${capturedLength}) must be > 0 for a non-empty buffer`);
+      assert.ok(
+        typeof capturedLength === 'number',
+        'ContentLength must be a number'
+      );
+      assert.ok(
+        capturedLength > 0,
+        `ContentLength (${capturedLength}) must be > 0 for a non-empty buffer`
+      );
       assert.equal(capturedLength, pdfBuffer.byteLength);
     });
 
@@ -270,7 +292,10 @@ describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
             studentId: validStudentId,
           }),
         (err) => {
-          assert.ok(err instanceof StorageError, 'Should be wrapped in StorageError');
+          assert.ok(
+            err instanceof StorageError,
+            'Should be wrapped in StorageError'
+          );
           assert.equal(err.isRetryable, true);
           assert.equal(err.code, 'STORAGE_UPLOAD_FAILED');
           assert.ok(
@@ -518,7 +543,11 @@ describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
       const url = await provider.getPresignedUrl(testFileKey, 600);
 
       assert.ok(typeof url === 'string');
-      assert.ok(url.startsWith('https://cf-presign-bucket.s3.us-east-1.amazonaws.com/11111111-2222-3333-4444-555555555555.pdf'));
+      assert.ok(
+        url.startsWith(
+          'https://cf-presign-bucket.s3.us-east-1.amazonaws.com/11111111-2222-3333-4444-555555555555.pdf'
+        )
+      );
       assert.ok(url.includes('X-Amz-Signature='));
       assert.ok(url.includes('X-Amz-Expires=600'));
     });
@@ -584,7 +613,8 @@ describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
             ...baseValidEnv,
             STORAGE_PROVIDER: 'redis',
           }),
-        (err) => err.message.includes("STORAGE_PROVIDER must be one of: 'local', 's3'")
+        (err) =>
+          err.message.includes("STORAGE_PROVIDER must be one of: 'local', 's3'")
       );
     });
 
@@ -692,7 +722,9 @@ describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
         },
       };
 
-      const mockApplicationService = { hasRecruiterAccessToResume: async () => true };
+      const mockApplicationService = {
+        hasRecruiterAccessToResume: async () => true,
+      };
 
       const resumeService = new ResumeService(
         mockPrisma,
@@ -729,7 +761,10 @@ describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
     );
 
     it('should have registered STORAGE_PROVIDER_TOKEN factory in ResumeModule', () => {
-      assert.ok(storageProviderRegistration, 'STORAGE_PROVIDER_TOKEN provider must be registered');
+      assert.ok(
+        storageProviderRegistration,
+        'STORAGE_PROVIDER_TOKEN provider must be registered'
+      );
       assert.equal(typeof storageProviderRegistration.useFactory, 'function');
     });
 
@@ -749,9 +784,9 @@ describe('S3 / Cloudflare R2 Storage Provider Test Suite', () => {
       const mockConfig = { storageProvider: 'gcs' };
       assert.throws(
         () => storageProviderRegistration.useFactory(mockConfig),
-        (err) => err.message.includes('Storage provider "gcs" is not supported. Use "local" or "s3".')
+        (err) =>
+          err.message.includes('Storage provider "gcs" is not supported.')
       );
     });
   });
 });
-

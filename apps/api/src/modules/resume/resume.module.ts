@@ -14,19 +14,27 @@ import { PdfParserService } from './services/pdf-parser.service';
 import { ResumeAnalysisService } from './services/resume-analysis.service';
 import { LocalStorageProvider } from './storage/local-storage.provider';
 import { S3StorageProvider } from './storage/s3-storage.provider';
+import { B2NativeStorageProvider } from './storage/b2-native-storage.provider';
 import { ResumeStorageService } from './storage/resume-storage.service';
 import { STORAGE_PROVIDER_TOKEN } from './storage/storage.interface';
 import { ResumeAnalysisWorker } from './workers/resume-analysis.worker';
 import { ResumeExtractionWorker } from './workers/resume-extraction.worker';
 
 @Module({
-  imports: [ConfigModule, QueueModule, AuthModule, StudentModule, ApplicationModule],
+  imports: [
+    ConfigModule,
+    QueueModule,
+    AuthModule,
+    StudentModule,
+    ApplicationModule,
+  ],
   controllers: [ResumeController],
   providers: [
     ResumeService,
     ResumeStorageService,
     LocalStorageProvider,
     S3StorageProvider,
+    B2NativeStorageProvider,
     PdfParserService,
     ResumeExtractionWorker,
     ResumeAnalysisService,
@@ -58,8 +66,11 @@ import { ResumeExtractionWorker } from './workers/resume-extraction.worker';
         if (provider === 's3') {
           return new S3StorageProvider(configService);
         }
+        if (provider === 'b2') {
+          return new B2NativeStorageProvider(configService);
+        }
         throw new Error(
-          `Storage provider "${provider}" is not supported. Use "local" or "s3".`
+          `Storage provider "${provider}" is not supported. Use "local", "s3", or "b2".`
         );
       },
       inject: [ConfigService],

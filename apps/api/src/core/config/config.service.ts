@@ -86,6 +86,22 @@ export class ConfigService {
     return this.config.s3ForcePathStyle ?? false;
   }
 
+  get b2KeyId(): string | undefined {
+    return this.config.b2KeyId;
+  }
+
+  get b2ApplicationKey(): string | undefined {
+    return this.config.b2ApplicationKey;
+  }
+
+  get b2BucketId(): string | undefined {
+    return this.config.b2BucketId;
+  }
+
+  get b2BucketName(): string | undefined {
+    return this.config.b2BucketName;
+  }
+
   get emailProvider(): string {
     return this.config.emailProvider ?? 'mock';
   }

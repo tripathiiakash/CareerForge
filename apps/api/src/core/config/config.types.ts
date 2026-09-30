@@ -30,4 +30,8 @@ export interface AppConfig {
   readonly s3AccessKeyId?: string;
   readonly s3SecretAccessKey?: string;
   readonly s3ForcePathStyle?: boolean;
+  readonly b2KeyId?: string;
+  readonly b2ApplicationKey?: string;
+  readonly b2BucketId?: string;
+  readonly b2BucketName?: string;
 }
