@@ -176,4 +176,4 @@ Live, publicly accessible domains (e.g., careerforge.app and api.careerforge.app
 
 Successful onboarding of 10-20 real student users and 1-2 friendly recruiters for beta testing.
 
-A prioritized backlog of post-launch bug fixes and feature requests.
+A prioritized backlog of post-launch bug fixes and feature requests. 
