@@ -111,4 +111,4 @@ Deployment & Launch
 │   ├── [ ] Provision Upstash for production serverless Redis
 │   ├── [ ] Deploy Node.js Backend & Worker to Render or Railway
 │   ├── [ ] Deploy React Frontend to Vercel
-│   └── [ ] Run end-to-end tests in production to verify integrations 
+│   └── [ ] Run end-to-end tests in production to verify integrations
