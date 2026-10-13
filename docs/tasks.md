@@ -13,7 +13,7 @@ Database & ORM
 │   ├── [ ] Define Student, Resume, and AIAnalysis models
 │   ├── [ ] Define Job and Application models
 │   ├── [ ] Run initial migration against local PostgreSQL database
-│   └── [ ] Write a database seed script to generate mock users and jobs
+│   └── [ ] Write a database seed script to generate mock users and jobs 
 
 Authentication Module
 ├── Core Auth API
