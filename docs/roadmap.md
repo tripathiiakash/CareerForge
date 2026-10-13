@@ -1,6 +1,6 @@
 Here is the 6-month product and engineering roadmap for CareerForge, specifically tailored for a single student developer utilizing free-tier tools and building a modular monolith. 
 
-Month 1: Foundation & Identity
+Month 1: Foundation & Identity 
 Goals
 Establish the core infrastructure, continuous integration, and secure user authentication.
 
