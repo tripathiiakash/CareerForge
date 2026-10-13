@@ -2,7 +2,7 @@ Here is the 6-month product and engineering roadmap for CareerForge, specificall
 
 Month 1: Foundation & Identity 
 Goals
-Establish the core infrastructure, continuous integration, and secure user authentication.
+Establish the core infrastructure, continuous integration, and secure user authentication. 
 
 Features
 
