@@ -34,7 +34,7 @@ Protected frontend routes based on user role.
 
 Initial database schema migrated and seeded with mock data.
 
-Month 2: Core Job Board & Storage
+Month 2: Core Job Board & Storage 
 Goals
 Enable the primary marketplace loop: Recruiters posting jobs and Students viewing/applying to them.
 
