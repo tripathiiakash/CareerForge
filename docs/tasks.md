@@ -23,7 +23,7 @@ Authentication Module
 │   └── [ ] Build POST /api/v1/auth/login (validates password, returns JWT)
 ├── Security Middleware
 │   ├── [ ] Create JWT verification middleware (extracts token from header/cookie)
-│   └── [ ] Create Role-Based Access Control (RBAC) middleware to guard routes
+│   └── [ ] Create Role-Based Access Control (RBAC) middleware to guard routes 
 
 Profiles Module
 ├── Student Profiles
