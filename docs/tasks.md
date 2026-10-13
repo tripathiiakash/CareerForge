@@ -4,7 +4,7 @@ Project Setup & Infrastructure
 │   ├── [ ] Set up docker-compose.yml for local PostgreSQL and Redis
 │   ├── [ ] Initialize Node.js backend (Express or NestJS) with TypeScript
 │   ├── [ ] Configure ESLint and Prettier across the workspace
-│   └── [ ] Create global .env.example with required local variables
+│   └── [ ] Create global .env.example with required local variables 
 
 Database & ORM
 ├── Schema Design (Prisma / TypeORM)
