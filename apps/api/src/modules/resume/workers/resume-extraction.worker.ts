@@ -106,9 +106,20 @@ export class ResumeExtractionWorker implements OnModuleInit {
         targetFileKey.toLowerCase().endsWith('.html') ||
         targetFileKey.toLowerCase().endsWith('.htm');
 
-      const extractedText = isHtml
-        ? await this.htmlParserService.extractText(fileBuffer)
-        : await this.pdfParserService.extractText(fileBuffer);
+      let extractedText: string;
+      let linkCount = 0;
+      if (isHtml) {
+        if (typeof this.htmlParserService.extractResume === 'function') {
+          const parseResult =
+            await this.htmlParserService.extractResume(fileBuffer);
+          extractedText = parseResult.text;
+          linkCount = parseResult.links.length;
+        } else {
+          extractedText = await this.htmlParserService.extractText(fileBuffer);
+        }
+      } else {
+        extractedText = await this.pdfParserService.extractText(fileBuffer);
+      }
 
       // 6. Persist parsed text into Resume model
       await this.prisma.resume.update({
@@ -119,7 +130,7 @@ export class ResumeExtractionWorker implements OnModuleInit {
       });
 
       this.logger.log(
-        `Successfully extracted and stored parsed text for resume ${resumeId} (${extractedText.length} characters)`
+        `Successfully extracted and stored parsed text for resume ${resumeId} (${extractedText.length} characters${isHtml ? `, ${linkCount} links preserved` : ''})`
       );
     } catch (error: unknown) {
       const errorMessage =
