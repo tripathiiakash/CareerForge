@@ -249,14 +249,41 @@ describe('Student Resume Management Suite (Phase 5.8 - docs/API.md §6.1, §6.2)
       assert.strictEqual(resHtm.valid, true);
     });
 
-    it('should accept valid HTML files with uppercase extension (.HTML)', () => {
-      const validUpper = {
+    it('should accept valid HTML files with uppercase extension (.HTML and .HTM)', () => {
+      const validUpperHtml = {
         name: 'MY_PORTFOLIO.HTML',
         size: 100 * 1024,
         type: 'text/html',
       };
-      const res = validateResumeFile(validUpper);
-      assert.strictEqual(res.valid, true);
+      const resHtml = validateResumeFile(validUpperHtml);
+      assert.strictEqual(resHtml.valid, true);
+
+      const validUpperHtm = {
+        name: 'MY_PORTFOLIO.HTM',
+        size: 100 * 1024,
+        type: 'text/html',
+      };
+      const resHtm = validateResumeFile(validUpperHtm);
+      assert.strictEqual(resHtm.valid, true);
+    });
+
+    it('should strictly enforce exact 5MB file boundary limit', () => {
+      const exactLimitFile = {
+        name: 'exact_5mb.html',
+        size: 5 * 1024 * 1024, // exactly 5MB
+        type: 'text/html',
+      };
+      const resLimit = validateResumeFile(exactLimitFile);
+      assert.strictEqual(resLimit.valid, true);
+
+      const overLimitFile = {
+        name: 'over_5mb.html',
+        size: 5 * 1024 * 1024 + 1, // 5MB + 1 byte
+        type: 'text/html',
+      };
+      const resOver = validateResumeFile(overLimitFile);
+      assert.strictEqual(resOver.valid, false);
+      assert.match(resOver.error, /exceeds the 5MB limit/);
     });
   });
 
