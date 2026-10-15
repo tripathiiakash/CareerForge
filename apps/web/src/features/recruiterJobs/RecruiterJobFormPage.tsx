@@ -144,7 +144,7 @@ export const RecruiterJobFormPage: React.FC<RecruiterJobFormPageProps> = ({
   const hasNoCompany =
     mode === 'create' &&
     recruiterProfile &&
-    (!recruiterProfile.company || !recruiterProfile.company.name);
+    !recruiterProfile.is_company_assigned;
 
   return (
     <div className="space-y-6 pb-12 max-w-3xl mx-auto animate-fade-in">
@@ -161,18 +161,34 @@ export const RecruiterJobFormPage: React.FC<RecruiterJobFormPageProps> = ({
 
       {/* No Company Warning */}
       {hasNoCompany && (
-        <div className="p-4 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-400 space-y-2">
+        <div
+          data-testid="no-company-banner"
+          className="p-5 rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-400 space-y-3"
+        >
           <div className="flex items-center gap-2">
-            <Building2 className="h-4 w-4" />
+            <Building2 className="h-5 w-5 shrink-0" />
             <span className="text-sm font-semibold">
-              Company Association Required
+              Company Assignment Required Before Posting
             </span>
           </div>
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            Your recruiter account must have a linked company before publishing
-            jobs. Please ensure your profile is associated with a registered
-            organization.
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Your recruiter account has not yet been assigned to a company. Job
+            postings require a company association.
           </p>
+          <ul className="text-xs text-muted-foreground space-y-1 list-disc list-inside leading-relaxed">
+            <li>
+              An administrator must create your organization in CareerForge and
+              assign your account to it.
+            </li>
+            <li>
+              Once assigned, return here to post job requisitions — no further
+              action is needed on your end.
+            </li>
+            <li>
+              If you believe this is an error, or your company already exists,
+              please contact the platform administrator.
+            </li>
+          </ul>
         </div>
       )}
 

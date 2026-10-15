@@ -1,15 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { CompanyService } from '../company/company.service';
 import { RecruiterProfileData } from './dto/recruiter-profile-response.dto';
 import { UpdateRecruiterProfileDto } from './dto/update-recruiter-profile.dto';
 
 @Injectable()
 export class RecruiterService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly companyService: CompanyService
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   /**
    * Retrieves recruiter profile data by associated user ID.
@@ -43,6 +39,7 @@ export class RecruiterService {
       last_name: recruiter.last_name,
       is_approved: recruiter.is_approved,
       company: recruiter.company,
+      is_company_assigned: !!recruiter.company?.name?.trim(),
     };
   }
 
@@ -65,24 +62,13 @@ export class RecruiterService {
       });
     }
 
-    // Verify company existence if company_id is provided
-    if (dto.company_id !== undefined) {
-      const company = await this.companyService.getCompanyById(dto.company_id);
-
-      if (!company) {
-        throw new NotFoundException({
-          code: 'NOT_FOUND',
-          message: 'Specified company_id does not exist in the companies table',
-        });
-      }
-    }
-
     const updated = await this.prisma.recruiter.update({
       where: { user_id: userId },
       data: {
+        // company_id is intentionally excluded: only admins may assign a company
+        // via PATCH /api/v1/admin/companies/recruiters/:id/assign
         ...(dto.first_name !== undefined && { first_name: dto.first_name }),
         ...(dto.last_name !== undefined && { last_name: dto.last_name }),
-        ...(dto.company_id !== undefined && { company_id: dto.company_id }),
       },
       include: {
         company: {
@@ -102,6 +88,7 @@ export class RecruiterService {
       last_name: updated.last_name,
       is_approved: updated.is_approved,
       company: updated.company,
+      is_company_assigned: !!updated.company?.name?.trim(),
     };
   }
 }

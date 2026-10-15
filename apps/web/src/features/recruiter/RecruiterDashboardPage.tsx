@@ -26,6 +26,7 @@ import {
   Loader2,
   Mail,
   PlusCircle,
+  Info,
 } from 'lucide-react';
 
 export const RecruiterDashboardPage: React.FC = () => {
@@ -121,9 +122,26 @@ export const RecruiterDashboardPage: React.FC = () => {
                 Organization
               </span>
               <p className="text-sm font-semibold text-foreground truncate">
-                {profile?.company?.name || 'Unassigned Company'}
+                {profile?.is_company_assigned
+                  ? profile.company.name
+                  : 'No company assigned'}
               </p>
             </div>
+          </div>
+
+          <div className="pt-1 flex items-center justify-between border-t border-border/40 text-xs">
+            <span className="text-muted-foreground">Company:</span>
+            {profile?.is_company_assigned ? (
+              <Badge variant="success" className="gap-1 items-center">
+                <ShieldCheck className="h-3 w-3" />
+                <span>Assigned</span>
+              </Badge>
+            ) : (
+              <Badge variant="warning" className="gap-1 items-center">
+                <Clock className="h-3 w-3" />
+                <span>Not Assigned</span>
+              </Badge>
+            )}
           </div>
 
           <div className="pt-1 flex items-center justify-between border-t border-border/40 text-xs">
@@ -142,6 +160,32 @@ export const RecruiterDashboardPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Company Not Assigned Callout */}
+      {profile && !profile.is_company_assigned && (
+        <div
+          data-testid="no-company-callout"
+          className="p-5 rounded-xl border border-amber-500/40 bg-amber-500/10 space-y-3"
+        >
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-amber-400">
+                Your account is not yet linked to a company
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                An administrator needs to create your organization in
+                CareerForge and assign your recruiter account to it. Until then,
+                you can browse the platform but cannot post job requisitions.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                If your company already exists, please contact the platform
+                administrator to request assignment.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Quick Action / Feature Highlights */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">

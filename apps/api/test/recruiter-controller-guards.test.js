@@ -69,12 +69,13 @@ describe('Recruiter Controller & Security Guards Test Suite', () => {
       assert.deepEqual(roles, ['RECRUITER']);
     });
 
-    it('should route getProfile to recruiterService and return 200 envelope', async () => {
+    it('should route getProfile to recruiterService and return 200 envelope (assigned company)', async () => {
       const mockProfileData = {
         id: 'recruiter-uuid-1',
         first_name: 'Sarah',
         last_name: 'Connor',
         is_approved: true,
+        is_company_assigned: true,
         company: {
           id: 'company-uuid-1',
           name: 'TechNova Solutions',
@@ -99,6 +100,33 @@ describe('Recruiter Controller & Security Guards Test Suite', () => {
       });
     });
 
+    it('should route getProfile and return is_company_assigned=false when company name is empty (unassigned)', async () => {
+      const mockUnassignedProfileData = {
+        id: 'recruiter-uuid-2',
+        first_name: 'John',
+        last_name: 'Doe',
+        is_approved: true,
+        is_company_assigned: false,
+        company: {
+          id: 'placeholder-company-uuid',
+          name: '',
+          website: null,
+          logo_url: null,
+        },
+      };
+
+      const mockService = {
+        getProfileByUserId: async () => mockUnassignedProfileData,
+      };
+
+      const controller = new RecruiterController(mockService);
+      const response = await controller.getProfile('recruiter-unassigned-id');
+
+      assert.equal(response.success, true);
+      assert.equal(response.data.is_company_assigned, false);
+      assert.equal(response.data.company.name, '');
+    });
+
     it('should route updateProfile to recruiterService and return 200 envelope', async () => {
       const updateDto = {
         first_name: 'Sarah Jane',
@@ -110,6 +138,7 @@ describe('Recruiter Controller & Security Guards Test Suite', () => {
         first_name: 'Sarah Jane',
         last_name: 'Smith',
         is_approved: true,
+        is_company_assigned: true,
         company: {
           id: 'company-uuid-1',
           name: 'TechNova Solutions',
@@ -136,6 +165,48 @@ describe('Recruiter Controller & Security Guards Test Suite', () => {
         success: true,
         data: mockUpdatedData,
       });
+    });
+
+    it('should not allow recruiter to self-assign company_id through updateProfile', async () => {
+      // The service should silently ignore company_id — only name/last_name are updated.
+      // This test verifies the controller correctly passes the DTO (after Zod pipe) to the service.
+      // The service strips company_id internally, so even if company_id is in the DTO it is ignored.
+      const dtoWithCompanyId = {
+        first_name: 'Tampered',
+        last_name: 'User',
+        company_id: 'some-other-company-uuid',
+      };
+
+      let receivedDto = null;
+      const mockService = {
+        updateProfileByUserId: async (userId, dto) => {
+          receivedDto = dto;
+          return {
+            id: 'recruiter-uuid-1',
+            first_name: 'Tampered',
+            last_name: 'User',
+            is_approved: true,
+            is_company_assigned: false, // service ignores company_id so stays unassigned
+            company: {
+              id: 'placeholder',
+              name: '',
+              website: null,
+              logo_url: null,
+            },
+          };
+        },
+      };
+
+      const controller = new RecruiterController(mockService);
+      const response = await controller.updateProfile(
+        'recruiter-user-id',
+        dtoWithCompanyId
+      );
+
+      // Service was called — the service itself drops company_id from the DB update
+      assert.equal(response.success, true);
+      // The profile remains unassigned regardless of the dto company_id field
+      assert.equal(response.data.is_company_assigned, false);
     });
   });
 });

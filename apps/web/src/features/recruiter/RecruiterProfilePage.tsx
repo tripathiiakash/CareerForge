@@ -351,58 +351,109 @@ export const RecruiterProfilePage: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center gap-3 pb-2 border-b border-border/50">
-                {profile?.company?.logo_url ? (
-                  <img
-                    src={profile.company.logo_url}
-                    alt={profile.company.name}
-                    className="h-12 w-12 rounded-xl object-contain border border-border/60 bg-secondary/30 p-1"
-                  />
-                ) : (
-                  <div className="h-12 w-12 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-bold text-sm">
-                    {companyInitials}
+              {profile?.is_company_assigned ? (
+                /* Assigned state */
+                <>
+                  <div className="flex items-center gap-3 pb-2 border-b border-border/50">
+                    {profile.company?.logo_url ? (
+                      <img
+                        src={profile.company.logo_url}
+                        alt={profile.company.name}
+                        className="h-12 w-12 rounded-xl object-contain border border-border/60 bg-secondary/30 p-1"
+                      />
+                    ) : (
+                      <div className="h-12 w-12 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center font-bold text-sm">
+                        {companyInitials}
+                      </div>
+                    )}
+                    <div className="space-y-0.5">
+                      <h3 className="font-semibold text-foreground text-base">
+                        {profile.company.name}
+                      </h3>
+                      <Badge
+                        variant="success"
+                        className="gap-1 items-center text-xs"
+                      >
+                        <ShieldCheck className="h-3 w-3" />
+                        <span>Assigned</span>
+                      </Badge>
+                    </div>
                   </div>
-                )}
-                <div className="space-y-0.5">
-                  <h3 className="font-semibold text-foreground text-base">
-                    {profile?.company?.name || 'Unassigned Company'}
-                  </h3>
-                  <span className="text-xs text-muted-foreground">
-                    Verified Organization Entity
-                  </span>
-                </div>
-              </div>
 
-              <div className="space-y-1">
-                <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Company Website
-                </span>
-                {profile?.company?.website ? (
-                  <a
-                    href={profile.company.website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-sm text-foreground hover:text-emerald-400 transition-colors truncate pt-1 font-medium"
+                  <div className="space-y-1">
+                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                      Company Website
+                    </span>
+                    {profile.company?.website ? (
+                      <a
+                        href={profile.company.website}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 text-sm text-foreground hover:text-emerald-400 transition-colors truncate pt-1 font-medium"
+                      >
+                        <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate">
+                          {profile.company.website}
+                        </span>
+                        <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      </a>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic pt-1">
+                        No website listed
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                /* Not assigned state */
+                <>
+                  <div className="flex items-center gap-3 pb-2 border-b border-border/50">
+                    <div className="h-12 w-12 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center">
+                      <Building2 className="h-6 w-6" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <h3 className="font-semibold text-foreground text-base">
+                        No company assigned
+                      </h3>
+                      <Badge
+                        variant="warning"
+                        className="gap-1 items-center text-xs"
+                      >
+                        <Clock className="h-3 w-3" />
+                        <span>Not Assigned</span>
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div
+                    data-testid="no-company-profile-info"
+                    className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20 space-y-2"
                   >
-                    <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{profile.company.website}</span>
-                    <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  </a>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic pt-1">
-                    No website listed
-                  </p>
-                )}
-              </div>
+                    <p className="text-xs font-semibold text-amber-400">
+                      Action required by administrator
+                    </p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Your recruiter account has not yet been linked to a
+                      company. An administrator must create your organization in
+                      CareerForge and assign your account to it.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Once assigned you will be able to post job requisitions.
+                      Contact the platform administrator if you believe this is
+                      an error.
+                    </p>
+                  </div>
+                </>
+              )}
 
               <div className="p-3 rounded-lg bg-secondary/30 border border-border/40 text-xs text-muted-foreground space-y-1">
                 <span className="font-medium text-foreground block">
                   Company Organization Policy
                 </span>
                 <p>
-                  Company affiliation is bound to organizational records.
-                  Changes to legal entity details are administered through
-                  verified organization support.
+                  Company affiliation is managed by platform administrators.
+                  Recruiters cannot self-assign to organizations — contact
+                  support to request assignment or correction.
                 </p>
               </div>
             </CardContent>
@@ -475,11 +526,17 @@ export const RecruiterProfilePage: React.FC = () => {
 
                 <div className="space-y-1.5 p-3.5 rounded-lg bg-secondary/20 border border-border/40">
                   <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
-                    Company Name (Read-only)
+                    Company (Read-only — admin assigned)
                   </span>
-                  <p className="text-sm font-medium text-foreground">
-                    {profile?.company?.name || 'N/A'}
-                  </p>
+                  {profile?.is_company_assigned ? (
+                    <p className="text-sm font-medium text-foreground">
+                      {profile.company.name}
+                    </p>
+                  ) : (
+                    <p className="text-sm font-medium text-amber-400">
+                      Not assigned — contact an administrator
+                    </p>
+                  )}
                 </div>
               </div>
             </CardContent>

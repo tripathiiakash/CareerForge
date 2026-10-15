@@ -1,11 +1,17 @@
 const { describe, it, beforeEach } = require('node:test');
 const assert = require('node:assert/strict');
 const { CompanyService } = require('../dist/modules/company/company.service');
-const { ApplicationService } = require('../dist/modules/application/application.service');
+const {
+  ApplicationService,
+} = require('../dist/modules/application/application.service');
 const { JobService } = require('../dist/modules/job/job.service');
-const { RecruiterService } = require('../dist/modules/recruiter/recruiter.service');
+const {
+  RecruiterService,
+} = require('../dist/modules/recruiter/recruiter.service');
 const { ResumeService } = require('../dist/modules/resume/resume.service');
-const { InterviewPrepService } = require('../dist/modules/job/interview-prep.service');
+const {
+  InterviewPrepService,
+} = require('../dist/modules/job/interview-prep.service');
 
 describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
   const companyId = '11111111-1111-4111-8111-111111111111';
@@ -81,7 +87,10 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
       };
 
       const appService = new ApplicationService(mockPrisma);
-      const app = await appService.getApplicationByJobAndStudent(jobId, studentId);
+      const app = await appService.getApplicationByJobAndStudent(
+        jobId,
+        studentId
+      );
 
       assert.deepEqual(app, {
         id: applicationId,
@@ -93,7 +102,10 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
       const mockPrisma = {
         application: {
           findFirst: async ({ where }) => {
-            if (where.job_id === jobId && where.student?.user_id === studentUserId) {
+            if (
+              where.job_id === jobId &&
+              where.student?.user_id === studentUserId
+            ) {
               return { id: applicationId };
             }
             return null;
@@ -103,10 +115,16 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
 
       const appService = new ApplicationService(mockPrisma);
 
-      const hasApplied = await appService.hasStudentAppliedToJob(jobId, studentUserId);
+      const hasApplied = await appService.hasStudentAppliedToJob(
+        jobId,
+        studentUserId
+      );
       assert.equal(hasApplied, true);
 
-      const notApplied = await appService.hasStudentAppliedToJob(jobId, 'other-user');
+      const notApplied = await appService.hasStudentAppliedToJob(
+        jobId,
+        'other-user'
+      );
       assert.equal(notApplied, false);
     });
 
@@ -251,7 +269,8 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
       const jobService = new JobService(mockPrisma, mockRecruiterService, {});
       const created = await jobService.createJob(recruiterUserId, {
         title: 'Platform Engineer',
-        description: 'Design and build cloud infrastructure using modern tooling.',
+        description:
+          'Design and build cloud infrastructure using modern tooling.',
         required_skills: ['Kubernetes', 'Go'],
         employment_type: 'FULL_TIME',
       });
@@ -312,17 +331,9 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
     });
   });
 
-  describe('RecruiterService boundary delegation', () => {
-    it('updateProfileByUserId delegates company existence check to CompanyService', async () => {
-      let companyServiceCalled = false;
-      const mockCompanyService = {
-        getCompanyById: async (id) => {
-          assert.equal(id, companyId);
-          companyServiceCalled = true;
-          return { id, name: 'Acme Inc', website: null, logo_url: null };
-        },
-      };
-
+  describe('RecruiterService security boundary', () => {
+    it('updateProfileByUserId strictly excludes company_id from prisma.update to prevent self-assignment', async () => {
+      let updateData = null;
       const mockPrisma = {
         recruiter: {
           findUnique: async ({ where }) => {
@@ -331,33 +342,35 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
             }
             return null;
           },
-          update: async ({ data }) => ({
-            id: recruiterId,
-            first_name: 'Jane',
-            last_name: 'Doe',
-            is_approved: true,
-            company: {
-              id: data.company_id,
-              name: 'Acme Inc',
-              website: null,
-              logo_url: null,
-            },
-          }),
+          update: async ({ data }) => {
+            updateData = data;
+            return {
+              id: recruiterId,
+              first_name: data.first_name || 'Jane',
+              last_name: data.last_name || 'Doe',
+              is_approved: true,
+              company: {
+                id: companyId,
+                name: 'Acme Inc',
+                website: null,
+                logo_url: null,
+              },
+            };
+          },
         },
       };
 
-      const recruiterService = new RecruiterService(
-        mockPrisma,
-        mockCompanyService
-      );
+      const recruiterService = new RecruiterService(mockPrisma);
 
       const updated = await recruiterService.updateProfileByUserId(
         recruiterUserId,
-        { company_id: companyId }
+        { first_name: 'Jane', company_id: companyId }
       );
 
-      assert.equal(companyServiceCalled, true);
+      assert.equal(updateData.company_id, undefined);
+      assert.equal(updateData.first_name, 'Jane');
       assert.equal(updated.first_name, 'Jane');
+      assert.equal(updated.is_company_assigned, true);
     });
   });
 
@@ -439,7 +452,10 @@ describe('Phase 7 Modular Service Boundaries Hardening Suite', () => {
       };
 
       const mockStudentService = {
-        getProfileByUserId: async () => ({ id: studentId, skills: ['TypeScript'] }),
+        getProfileByUserId: async () => ({
+          id: studentId,
+          skills: ['TypeScript'],
+        }),
       };
 
       const mockAiProvider = {

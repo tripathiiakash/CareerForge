@@ -7,7 +7,6 @@ const {
 describe('RecruiterService Test Suite', () => {
   let service;
   let mockPrisma;
-  let mockCompanyService;
 
   const validUserId = '11111111-1111-4111-8111-111111111111';
   const recruiterId = '22222222-2222-4222-8222-222222222222';
@@ -39,14 +38,7 @@ describe('RecruiterService Test Suite', () => {
       },
     };
 
-    mockCompanyService = {
-      getCompanyById: async (id) => {
-        if (id === companyId) return sampleCompany;
-        return null;
-      },
-    };
-
-    service = new RecruiterService(mockPrisma, mockCompanyService);
+    service = new RecruiterService(mockPrisma);
   });
 
   describe('getProfileByUserId', () => {
@@ -71,9 +63,27 @@ describe('RecruiterService Test Suite', () => {
       assert.equal(result.first_name, 'Sarah');
       assert.equal(result.last_name, 'Connor');
       assert.equal(result.is_approved, true);
+      assert.equal(result.is_company_assigned, true);
       assert.deepEqual(result.company, sampleCompany);
       // Ensure user_id or internal security details are not exposed
       assert.equal(result.user_id, undefined);
+    });
+
+    it('should return is_company_assigned=false when company is registration placeholder (empty name)', async () => {
+      mockPrisma.recruiter.findUnique = async () => ({
+        ...sampleRecruiter,
+        company: {
+          id: 'placeholder-company-id',
+          name: '',
+          website: null,
+          logo_url: null,
+        },
+      });
+
+      const result = await service.getProfileByUserId(validUserId);
+
+      assert.equal(result.is_company_assigned, false);
+      assert.equal(result.company.name, '');
     });
   });
 
@@ -82,7 +92,8 @@ describe('RecruiterService Test Suite', () => {
       mockPrisma.recruiter.findUnique = async () => null;
 
       await assert.rejects(
-        () => service.updateProfileByUserId(validUserId, { first_name: 'Jane' }),
+        () =>
+          service.updateProfileByUserId(validUserId, { first_name: 'Jane' }),
         (err) =>
           err.status === 404 &&
           err.response.code === 'NOT_FOUND' &&
@@ -90,21 +101,33 @@ describe('RecruiterService Test Suite', () => {
       );
     });
 
-    it('should throw 404 NotFoundException if specified company_id does not exist in companies table', async () => {
+    it('should ignore company_id in dto and not allow recruiter to self-assign company_id', async () => {
       mockPrisma.recruiter.findUnique = async () => sampleRecruiter;
-      mockCompanyService.getCompanyById = async () => null; // Nonexistent company
 
-      await assert.rejects(
-        () =>
-          service.updateProfileByUserId(validUserId, {
-            company_id: newCompanyId,
-          }),
-        (err) =>
-          err.status === 404 &&
-          err.response.code === 'NOT_FOUND' &&
-          err.response.message ===
-            'Specified company_id does not exist in the companies table'
-      );
+      let updateArgs = null;
+      mockPrisma.recruiter.update = async (args) => {
+        updateArgs = args;
+        return {
+          ...sampleRecruiter,
+          first_name: 'Alex',
+          last_name: 'Vance',
+        };
+      };
+
+      const result = await service.updateProfileByUserId(validUserId, {
+        first_name: 'Alex',
+        last_name: 'Vance',
+        company_id: newCompanyId,
+      });
+
+      assert.equal(updateArgs.where.user_id, validUserId);
+      assert.equal(updateArgs.data.first_name, 'Alex');
+      assert.equal(updateArgs.data.last_name, 'Vance');
+      assert.equal(updateArgs.data.company_id, undefined);
+      assert.equal(result.first_name, 'Alex');
+      assert.equal(result.last_name, 'Vance');
+      assert.deepEqual(result.company, sampleCompany);
+      assert.equal(result.is_company_assigned, true);
     });
 
     it('should partially update first_name and last_name when company_id is omitted', async () => {
@@ -131,40 +154,35 @@ describe('RecruiterService Test Suite', () => {
       assert.equal(updateArgs.data.company_id, undefined);
       assert.equal(result.first_name, 'Alex');
       assert.equal(result.last_name, 'Vance');
+      assert.equal(result.is_company_assigned, true);
       assert.deepEqual(result.company, sampleCompany);
     });
 
-    it('should update company_id when target company exists', async () => {
-      const newCompany = {
-        id: newCompanyId,
-        name: 'Initech Global',
-        website: 'https://initech.example.com',
+    it('should return is_company_assigned=false when updating recruiter with placeholder company', async () => {
+      const placeholderCompany = {
+        id: 'placeholder-id',
+        name: '',
+        website: null,
         logo_url: null,
       };
 
-      mockPrisma.recruiter.findUnique = async () => sampleRecruiter;
-      mockCompanyService.getCompanyById = async (id) => {
-        if (id === newCompanyId) return newCompany;
-        return null;
-      };
-
-      let updateArgs = null;
-      mockPrisma.recruiter.update = async (args) => {
-        updateArgs = args;
-        return {
-          ...sampleRecruiter,
-          company_id: newCompanyId,
-          company: newCompany,
-        };
-      };
-
-      const result = await service.updateProfileByUserId(validUserId, {
-        company_id: newCompanyId,
+      mockPrisma.recruiter.findUnique = async () => ({
+        ...sampleRecruiter,
+        company: placeholderCompany,
       });
 
-      assert.equal(updateArgs.data.company_id, newCompanyId);
-      assert.equal(result.company.id, newCompanyId);
-      assert.equal(result.company.name, 'Initech Global');
+      mockPrisma.recruiter.update = async () => ({
+        ...sampleRecruiter,
+        first_name: 'Alex',
+        company: placeholderCompany,
+      });
+
+      const result = await service.updateProfileByUserId(validUserId, {
+        first_name: 'Alex',
+      });
+
+      assert.equal(result.first_name, 'Alex');
+      assert.equal(result.is_company_assigned, false);
     });
   });
 });

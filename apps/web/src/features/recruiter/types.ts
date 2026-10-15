@@ -11,6 +11,8 @@ export interface RecruiterProfile {
   last_name: string;
   is_approved: boolean;
   company: CompanyDetail;
+  /** True when an admin has assigned a company; false on registration placeholder. */
+  is_company_assigned: boolean;
 }
 
 export interface RecruiterProfileResponse {
