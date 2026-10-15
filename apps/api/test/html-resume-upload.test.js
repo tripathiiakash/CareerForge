@@ -223,6 +223,32 @@ describe('Secure HTML Resume Upload & Processing Test Suite', () => {
         }
       );
     });
+
+    it('should handle HTML entities and nested semantic markup cleanly', async () => {
+      const html = `
+        <!DOCTYPE html>
+        <html>
+        <body>
+          <main>
+            <section>
+              <h1>Alex &amp; Associates &lt;Consulting&gt;</h1>
+              <p>Specializing in &quot;Cloud Architecture&quot; &amp; Systems.</p>
+              <article>
+                <p>Website: <a href="https://example.com/team?ref=1&amp;user=2">Team Portal</a></p>
+              </article>
+            </section>
+          </main>
+        </body>
+        </html>
+      `;
+      const buffer = Buffer.from(html, 'utf8');
+      const result = await parser.extractResume(buffer);
+      assert.ok(result.text);
+      assert.match(result.text, /Alex & Associates/);
+      assert.match(result.text, /Cloud Architecture/);
+      assert.equal(result.links.length, 1);
+      assert.match(result.links[0].url, /https:\/\/example\.com\/team\?ref=1/);
+    });
   });
 
   describe('2. ResumeService File Validation Unit Tests', () => {
@@ -254,6 +280,25 @@ describe('Secure HTML Resume Upload & Processing Test Suite', () => {
         service.validateUploadedResume({
           buffer: validHtmlBuffer,
           originalname: 'my_resume.htm',
+          mimetype: 'text/html',
+          size: validHtmlBuffer.length,
+        });
+      });
+    });
+
+    it('should accept valid HTML file with uppercase .HTML and .HTM extensions', () => {
+      assert.doesNotThrow(() => {
+        service.validateUploadedResume({
+          buffer: validHtmlBuffer,
+          originalname: 'MY_RESUME.HTML',
+          mimetype: 'text/html',
+          size: validHtmlBuffer.length,
+        });
+      });
+      assert.doesNotThrow(() => {
+        service.validateUploadedResume({
+          buffer: validHtmlBuffer,
+          originalname: 'MY_RESUME.HTM',
           mimetype: 'text/html',
           size: validHtmlBuffer.length,
         });
