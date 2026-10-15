@@ -191,10 +191,20 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onSuccess }) => {
                 </span>{' '}
                 or drag and drop your resume here
               </p>
-              <p className="text-xs text-muted-foreground">
-                Format: <strong className="text-foreground">PDF or HTML</strong>{' '}
-                (max 5MB)
-              </p>
+              <div className="flex items-center justify-center gap-1.5 pt-1">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground border border-border/50">
+                  PDF
+                </span>
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground border border-border/50">
+                  HTML
+                </span>
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-secondary text-secondary-foreground border border-border/50">
+                  HTM
+                </span>
+                <span className="text-xs text-muted-foreground ml-1">
+                  (max 5MB • links preserved)
+                </span>
+              </div>
             </div>
           </div>
         ) : (
