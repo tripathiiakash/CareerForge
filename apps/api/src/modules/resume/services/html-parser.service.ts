@@ -60,7 +60,7 @@ const HTML_SANITIZE_OPTIONS: IOptions = {
     'dd',
   ],
   allowedAttributes: {
-    a: ['href'],
+    a: ['href', 'title'],
   },
   allowedSchemes: ['http', 'https', 'mailto'],
   allowedSchemesByTag: {
@@ -141,7 +141,9 @@ export class HtmlParserService {
 
       for (const a of anchorTags) {
         const rawHref = DomUtils.getAttributeValue(a, 'href');
-        const anchorText = DomUtils.getText(a).trim();
+        const rawTitle = DomUtils.getAttributeValue(a, 'title')?.trim();
+        const innerText = DomUtils.getText(a).trim();
+        const anchorText = innerText || rawTitle || '';
 
         if (rawHref && this.isSafeUrl(rawHref)) {
           const cleanUrl = rawHref.trim();
