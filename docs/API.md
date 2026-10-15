@@ -933,6 +933,14 @@ Handles file uploads and resume records.
 
 **Request Body:** FormData containing a `file` field.
 
+**Example Upload (cURL):**
+
+```bash
+curl -X POST http://localhost:5000/api/v1/resumes/upload \
+  -H "Authorization: Bearer <STUDENT_JWT>" \
+  -F "file=@resume.html;type=text/html"
+```
+
 **Response Body:** (201 Created)
 
 ```json
@@ -954,6 +962,7 @@ Handles file uploads and resume records.
 | 400 | `VALIDATION_ERROR` | No file uploaded, unsupported file extension, content/signature mismatch, or invalid binary characters |
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 413 | `VALIDATION_ERROR` | File exceeds 5MB size limit |
+| 422 | `EMPTY_HTML_CONTENT` / `INVALID_HTML_FORMAT` | (Worker) Asynchronous extraction failure if HTML lacks readable text or is corrupted |
 
 **Database Entities:** `resumes`
 
