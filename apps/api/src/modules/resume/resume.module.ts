@@ -11,6 +11,7 @@ import { MockAiProvider } from './ai/mock-ai.provider';
 import { ResumeController } from './resume.controller';
 import { ResumeService } from './resume.service';
 import { PdfParserService } from './services/pdf-parser.service';
+import { HtmlParserService } from './services/html-parser.service';
 import { ResumeAnalysisService } from './services/resume-analysis.service';
 import { LocalStorageProvider } from './storage/local-storage.provider';
 import { S3StorageProvider } from './storage/s3-storage.provider';
@@ -43,6 +44,7 @@ import { ResumeExtractionWorker } from './workers/resume-extraction.worker';
     },
     B2NativeStorageProvider,
     PdfParserService,
+    HtmlParserService,
     ResumeExtractionWorker,
     ResumeAnalysisService,
     ResumeAnalysisWorker,
@@ -89,6 +91,11 @@ import { ResumeExtractionWorker } from './workers/resume-extraction.worker';
       ],
     },
   ],
-  exports: [ResumeService, ResumeStorageService, ResumeAnalysisService],
+  exports: [
+    ResumeService,
+    ResumeStorageService,
+    ResumeAnalysisService,
+    HtmlParserService,
+  ],
 })
 export class ResumeModule {}

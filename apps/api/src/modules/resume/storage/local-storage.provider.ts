@@ -26,8 +26,10 @@ export class LocalStorageProvider implements IStorageProvider {
   async upload(input: StorageUploadInput): Promise<StorageUploadResult> {
     await fs.mkdir(this.storageDir, { recursive: true });
 
-    // Generate unique random UUID-based file key
-    const fileKey = `${crypto.randomUUID()}.pdf`;
+    // Generate unique random UUID-based file key preserving extension
+    const ext = path.extname(input.originalName || '').toLowerCase();
+    const safeExt = ext === '.html' || ext === '.htm' ? ext : '.pdf';
+    const fileKey = `${crypto.randomUUID()}${safeExt}`;
     const targetPath = this.resolveAndVerifyPath(fileKey);
 
     await fs.writeFile(targetPath, input.buffer);
@@ -76,8 +78,8 @@ export class LocalStorageProvider implements IStorageProvider {
   }
 
   private resolveAndVerifyPath(fileKey: string): string {
-    // Sanitization: fileKey must only be alphanumeric characters, hyphens, and .pdf extension
-    if (!/^[a-zA-Z0-9-]+\.pdf$/.test(fileKey)) {
+    // Sanitization: fileKey must only be alphanumeric characters, hyphens, and allowed extension (.pdf, .html, .htm)
+    if (!/^[a-zA-Z0-9-]+\.(pdf|html|htm)$/i.test(fileKey)) {
       throw new StorageInvalidKeyError(
         fileKey,
         'Invalid storage file key format'

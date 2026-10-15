@@ -15,6 +15,7 @@ import {
 import { QueueService } from '../../../core/queue/queue.service';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { PdfParserService } from '../services/pdf-parser.service';
+import { HtmlParserService } from '../services/html-parser.service';
 import { ResumeStorageService } from '../storage/resume-storage.service';
 import {
   StorageError,
@@ -30,7 +31,8 @@ export class ResumeExtractionWorker implements OnModuleInit {
     private readonly queueService: QueueService,
     private readonly prisma: PrismaService,
     private readonly storageService: ResumeStorageService,
-    private readonly pdfParserService: PdfParserService
+    private readonly pdfParserService: PdfParserService,
+    private readonly htmlParserService: HtmlParserService
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -99,8 +101,14 @@ export class ResumeExtractionWorker implements OnModuleInit {
 
       const fileBuffer = await this.storageService.getFileBuffer(targetFileKey);
 
-      // 5. Extract text via PdfParserService (handles page limits, null byte sanitization, empty text check)
-      const extractedText = await this.pdfParserService.extractText(fileBuffer);
+      // 5. Extract text via PdfParserService or HtmlParserService based on file type
+      const isHtml =
+        targetFileKey.toLowerCase().endsWith('.html') ||
+        targetFileKey.toLowerCase().endsWith('.htm');
+
+      const extractedText = isHtml
+        ? await this.htmlParserService.extractText(fileBuffer)
+        : await this.pdfParserService.extractText(fileBuffer);
 
       // 6. Persist parsed text into Resume model
       await this.prisma.resume.update({
@@ -216,10 +224,12 @@ export class ResumeExtractionWorker implements OnModuleInit {
       error instanceof StorageFileNotFoundError ||
       (error instanceof NotFoundException &&
         typeof error.getResponse() === 'object' &&
-        (error.getResponse() as { code?: string })?.code === 'FILE_NOT_FOUND') ||
+        (error.getResponse() as { code?: string })?.code ===
+          'FILE_NOT_FOUND') ||
       (error instanceof BadRequestException &&
         typeof error.getResponse() === 'object' &&
-        (error.getResponse() as { code?: string })?.code === 'FILE_NOT_FOUND') ||
+        (error.getResponse() as { code?: string })?.code ===
+          'FILE_NOT_FOUND') ||
       (typeof error === 'object' &&
         error !== null &&
         (error as { code?: string })?.code === 'FILE_NOT_FOUND')
@@ -231,7 +241,8 @@ export class ResumeExtractionWorker implements OnModuleInit {
       error instanceof StorageInvalidKeyError ||
       (error instanceof BadRequestException &&
         typeof error.getResponse() === 'object' &&
-        (error.getResponse() as { code?: string })?.code === 'VALIDATION_ERROR') ||
+        (error.getResponse() as { code?: string })?.code ===
+          'VALIDATION_ERROR') ||
       (typeof error === 'object' &&
         error !== null &&
         (error as { code?: string })?.code === 'INVALID_FILE_KEY')
@@ -240,10 +251,22 @@ export class ResumeExtractionWorker implements OnModuleInit {
     }
 
     if (error instanceof UnprocessableEntityException) {
+      const resp = error.getResponse();
+      if (
+        typeof resp === 'object' &&
+        resp !== null &&
+        'code' in resp &&
+        typeof (resp as { code?: unknown }).code === 'string'
+      ) {
+        const code = (resp as { code: string }).code;
+        if (code === 'EMPTY_HTML_CONTENT' || code === 'INVALID_HTML_FORMAT') {
+          return 'Failed to parse resume text. Please ensure the HTML resume is readable and not empty.';
+        }
+      }
       return 'Failed to parse resume text. Please ensure the PDF is not password-protected or an image scan.';
     }
 
-    return 'Failed to process resume file. Please ensure the document is a valid PDF.';
+    return 'Failed to process resume file. Please ensure the document is a valid PDF or HTML resume.';
   }
 
   /**

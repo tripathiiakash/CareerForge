@@ -101,14 +101,31 @@ export const ApplicantCard: React.FC<ApplicantCardProps> = ({
     if (!resume?.id || isOpeningResume) return;
     setIsOpeningResume(true);
     try {
+      const ext = resume.file_url?.toLowerCase().endsWith('.htm')
+        ? '.htm'
+        : resume.file_url?.toLowerCase().endsWith('.html')
+          ? '.html'
+          : '.pdf';
       await openResumePdf(
         resume.id,
-        `${fullName.replace(/\s+/g, '_')}_Resume.pdf`
+        `${fullName.replace(/\s+/g, '_')}_Resume${ext}`
       );
     } catch {
-      // Fallback: If blob fetch fails, attempt direct link if present
+      // Fallback: If blob fetch fails, trigger download for HTML or open for PDF
       if (resume.file_url) {
-        window.open(resume.file_url, '_blank', 'noopener,noreferrer');
+        const isHtml =
+          resume.file_url.toLowerCase().endsWith('.html') ||
+          resume.file_url.toLowerCase().endsWith('.htm');
+        if (isHtml) {
+          const link = document.createElement('a');
+          link.href = resume.file_url;
+          link.download = `${fullName.replace(/\s+/g, '_')}_Resume.html`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        } else {
+          window.open(resume.file_url, '_blank', 'noopener,noreferrer');
+        }
       }
     } finally {
       setIsOpeningResume(false);
@@ -199,7 +216,9 @@ export const ApplicantCard: React.FC<ApplicantCardProps> = ({
               ) : (
                 <FileText className="h-4 w-4" />
               )}
-              <span>{isOpeningResume ? 'Opening Resume...' : 'View PDF Resume'}</span>
+              <span>
+                {isOpeningResume ? 'Opening Resume...' : 'View PDF Resume'}
+              </span>
               <ExternalLink className="h-3 w-3" />
             </button>
           ) : (

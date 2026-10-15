@@ -40,13 +40,16 @@ export class ResumeService {
   ) {}
 
   /**
-   * Validates uploaded file against API.md §6.1 requirements:
-   * - presence
-   * - .pdf extension
-   * - %PDF- magic bytes signature
+   * Validates uploaded file against supported formats (PDF and HTML/HTM) and limits:
+   * - presence & non-empty buffer
    * - 5MB maximum file size
+   * - .pdf, .html, or .htm extension
+   * - MIME type consistency (if provided)
+   * - Content validation:
+   *     - For PDF: %PDF- magic bytes signature
+   *     - For HTML: no null bytes, not a PDF disguised as HTML, valid HTML structure
    */
-  validateUploadedPdf(file?: UploadedFile): asserts file is UploadedFile {
+  validateUploadedResume(file?: UploadedFile): asserts file is UploadedFile {
     if (!file || !file.buffer || file.size === 0) {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
@@ -65,22 +68,101 @@ export class ResumeService {
     }
 
     const ext = path.extname(file.originalname || '').toLowerCase();
-    if (ext !== '.pdf') {
+    if (ext !== '.pdf' && ext !== '.html' && ext !== '.htm') {
       throw new BadRequestException({
         code: 'VALIDATION_ERROR',
-        message: 'File must be a valid PDF (invalid extension)',
+        message:
+          'File must be a valid PDF, HTML, or HTM document (invalid extension)',
       });
     }
 
-    if (
-      file.buffer.length < 5 ||
-      !file.buffer.subarray(0, 5).equals(PDF_MAGIC_BYTES)
-    ) {
-      throw new BadRequestException({
-        code: 'VALIDATION_ERROR',
-        message: 'File must be a valid PDF (magic byte signature mismatch)',
-      });
+    // MIME type validation if provided by client
+    if (file.mimetype) {
+      const mime = file.mimetype.toLowerCase().trim();
+      if (ext === '.pdf') {
+        const allowedPdfMimes = [
+          'application/pdf',
+          'application/x-pdf',
+          'application/octet-stream',
+        ];
+        if (!allowedPdfMimes.includes(mime)) {
+          throw new BadRequestException({
+            code: 'VALIDATION_ERROR',
+            message: 'MIME type mismatch for PDF file',
+          });
+        }
+      } else {
+        const allowedHtmlMimes = [
+          'text/html',
+          'application/xhtml+xml',
+          'application/octet-stream',
+        ];
+        if (!allowedHtmlMimes.includes(mime)) {
+          throw new BadRequestException({
+            code: 'VALIDATION_ERROR',
+            message: 'MIME type mismatch for HTML file',
+          });
+        }
+      }
     }
+
+    // Content integrity validation
+    if (ext === '.pdf') {
+      if (
+        file.buffer.length < 5 ||
+        !file.buffer.subarray(0, 5).equals(PDF_MAGIC_BYTES)
+      ) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'File must be a valid PDF (magic byte signature mismatch)',
+        });
+      }
+    } else {
+      // Reject disguised PDF files
+      if (
+        file.buffer.length >= 5 &&
+        file.buffer.subarray(0, 5).equals(PDF_MAGIC_BYTES)
+      ) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message:
+            'File content does not match HTML format (detected PDF content)',
+        });
+      }
+
+      // Reject binary content with null bytes
+      if (file.buffer.includes(0)) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'HTML file contains invalid binary content',
+        });
+      }
+
+      // Inspect HTML content for valid structure
+      let contentStr = file.buffer.toString('utf8');
+      if (contentStr.charCodeAt(0) === 0xfeff) {
+        contentStr = contentStr.slice(1);
+      }
+
+      const hasHtmlMarkup =
+        /<!doctype\s+html|<html[\s>]|<head[\s>]|<body[\s>]|<(p|div|section|article|header|footer|main|h[1-6]|table|ul|ol|title|span|a)[\s>]/i.test(
+          contentStr
+        );
+
+      if (!hasHtmlMarkup) {
+        throw new BadRequestException({
+          code: 'VALIDATION_ERROR',
+          message: 'File does not contain valid HTML content',
+        });
+      }
+    }
+  }
+
+  /**
+   * Backward-compatible alias for existing callers/tests.
+   */
+  validateUploadedPdf(file?: UploadedFile): asserts file is UploadedFile {
+    this.validateUploadedResume(file);
   }
 
   /**
@@ -92,7 +174,7 @@ export class ResumeService {
     file?: UploadedFile
   ): Promise<UploadResumeData> {
     // 1. Validate file constraints
-    this.validateUploadedPdf(file);
+    this.validateUploadedResume(file);
 
     // 2. Resolve authenticated student profile to enforce ownership
     const student = await this.studentService.getProfileByUserId(userId);
@@ -210,7 +292,7 @@ export class ResumeService {
     userId: string,
     userRole: UserRole,
     identifier: string
-  ): Promise<{ buffer: Buffer; fileName: string }> {
+  ): Promise<{ buffer: Buffer; fileName: string; isHtml: boolean }> {
     const isUuid = isValidUuid(identifier);
 
     const resume = await this.prisma.resume.findFirst({
@@ -295,10 +377,18 @@ export class ResumeService {
       }
       throw err;
     }
-    const isUuidKey =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/i.test(
-        fileKey
-      );
+    const ext = fileKey.toLowerCase().endsWith('.htm')
+      ? '.htm'
+      : fileKey.toLowerCase().endsWith('.html')
+        ? '.html'
+        : '.pdf';
+    const isHtml = ext === '.html' || ext === '.htm';
+
+    const isUuidKey = new RegExp(
+      `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\${ext}$`,
+      'i'
+    ).test(fileKey);
+
     const safeFirst = this.sanitizeFilenameComponent(
       resume.student.first_name,
       'Student'
@@ -307,15 +397,15 @@ export class ResumeService {
       resume.student.last_name,
       'Candidate'
     );
-    const humanFileName = `${safeFirst}_${safeLast}_Resume.pdf`;
-    const safeKey = this.sanitizeFilenameComponent(fileKey, 'Resume.pdf');
+    const humanFileName = `${safeFirst}_${safeLast}_Resume${ext}`;
+    const safeKey = this.sanitizeFilenameComponent(fileKey, `Resume${ext}`);
     const fileName = isUuidKey
       ? humanFileName
-      : safeKey.endsWith('.pdf')
-      ? safeKey
-      : `${safeKey}.pdf`;
+      : safeKey.toLowerCase().endsWith(ext)
+        ? safeKey
+        : `${safeKey}${ext}`;
 
-    return { buffer, fileName };
+    return { buffer, fileName, isHtml };
   }
 
   /**

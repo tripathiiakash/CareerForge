@@ -921,8 +921,15 @@ Handles file uploads and resume records.
 
 - `Content-Type` must be `multipart/form-data`.
 - File field name: `file`.
-- File must be a PDF. The server must validate both the file extension (`.pdf`) and the file's binary magic bytes (must start with `%PDF-` signature) to prevent disguised uploads.
+- Supported formats: PDF (`.pdf`), HTML (`.html`, `.htm`).
 - Maximum file size: 5MB (5,242,880 bytes).
+- Server-side validation:
+  - For PDF: validates `.pdf` extension and `%PDF-` magic byte signature.
+  - For HTML: validates `.html` or `.htm` extension, checks content for valid HTML markup structure and absence of null/binary bytes, and rejects disguised files.
+  - Validates consistency of client-provided MIME types (`application/pdf` for PDF, `text/html` or `application/xhtml+xml` for HTML).
+- Processing:
+  - Text and clickable profile links (GitHub, LinkedIn, portfolios, email) are extracted server-side without executing or rendering HTML in a browser.
+  - Dangerous URL schemes (such as `javascript:`, `data:`, `vbscript:`, `file:`) and `<script>`/`<style>` elements are discarded.
 
 **Request Body:** FormData containing a `file` field.
 
@@ -933,7 +940,7 @@ Handles file uploads and resume records.
   "success": true,
   "data": {
     "id": "7823f95e-141a-4d43-8ceb-bf6a666245e3",
-    "file_url": "https://cloud-storage.com/path/to/resume.pdf",
+    "file_url": "https://cloud-storage.com/path/to/resume.html",
     "is_primary": true,
     "message": "Resume uploaded successfully. Text extraction queued."
   }
@@ -944,7 +951,7 @@ Handles file uploads and resume records.
 
 | Status | Code | Condition |
 |--------|------|-----------|
-| 400 | `VALIDATION_ERROR` | No file uploaded, file is not a valid PDF (extension or magic byte mismatch) |
+| 400 | `VALIDATION_ERROR` | No file uploaded, unsupported file extension, content/signature mismatch, or invalid binary characters |
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 413 | `VALIDATION_ERROR` | File exceeds 5MB size limit |
 
@@ -992,6 +999,35 @@ Handles file uploads and resume records.
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 
 **Database Entities:** `resumes`, `ai_analyses` (left join to check existence)
+
+---
+
+### 6.3 Download / View Resume File by FileKey
+
+**Method:** `GET`
+
+**Endpoint:** `/api/v1/resumes/file/:fileKey`
+
+**Authorization Requirements:** Bearer Token or Session Cookie, Roles: `STUDENT`, `RECRUITER`, `ADMIN`
+
+**Purpose:** Retrieves a resume file buffer and serves it with safe headers according to format:
+- PDF files are served with `Content-Disposition: inline` and `Content-Type: application/pdf`.
+- HTML resumes are served strictly as attachments with `Content-Disposition: attachment`, `Content-Type: text/html; charset=utf-8`, `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox`, and `X-Frame-Options: DENY` to prevent in-browser execution or DOM rendering.
+
+---
+
+### 6.4 Download / View Resume File by Resume ID
+
+**Method:** `GET`
+
+**Endpoint:** `/api/v1/resumes/:resumeId/file`
+
+**Authorization Requirements:** Bearer Token or Session Cookie, Roles: `STUDENT`, `RECRUITER`, `ADMIN`
+
+**Purpose:** Retrieves a resume file buffer by UUID with strict ownership and authorization checks:
+- Students may only access resumes belonging to their own account (IDOR protection).
+- Recruiters may only access candidate resumes for applicants who have applied to job postings created by that recruiter.
+- Serves HTML as a safe download attachment and PDF as inline viewing.
 
 ---
 

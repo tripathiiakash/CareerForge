@@ -143,7 +143,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onSuccess }) => {
           <span>Upload New Resume</span>
         </CardTitle>
         <CardDescription>
-          Upload a PDF resume to attach to job applications. Your newest
+          Upload a PDF or HTML resume to attach to job applications. Your newest
           uploaded resume automatically becomes your active primary resume.
         </CardDescription>
       </CardHeader>
@@ -153,7 +153,7 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onSuccess }) => {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,application/pdf"
+          accept=".pdf,.html,.htm,application/pdf,text/html"
           className="hidden"
           disabled={uploadMutation.isPending}
           onChange={(e) => {
@@ -189,10 +189,10 @@ export const ResumeUpload: React.FC<ResumeUploadProps> = ({ onSuccess }) => {
                 <span className="text-primary hover:underline">
                   Click to browse
                 </span>{' '}
-                or drag and drop your PDF here
+                or drag and drop your resume here
               </p>
               <p className="text-xs text-muted-foreground">
-                Format: <strong className="text-foreground">PDF only</strong>{' '}
+                Format: <strong className="text-foreground">PDF or HTML</strong>{' '}
                 (max 5MB)
               </p>
             </div>

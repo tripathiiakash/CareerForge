@@ -8,6 +8,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import * as crypto from 'crypto';
+import * as path from 'path';
 import { ConfigService } from '../../../core/config/config.service';
 import {
   IStorageProvider,
@@ -75,7 +76,9 @@ export class S3StorageProvider implements IStorageProvider {
   }
 
   async upload(input: StorageUploadInput): Promise<StorageUploadResult> {
-    const fileKey = `${crypto.randomUUID()}.pdf`;
+    const ext = path.extname(input.originalName || '').toLowerCase();
+    const safeExt = ext === '.html' || ext === '.htm' ? ext : '.pdf';
+    const fileKey = `${crypto.randomUUID()}${safeExt}`;
     this.verifyKey(fileKey);
 
     try {
@@ -93,7 +96,9 @@ export class S3StorageProvider implements IStorageProvider {
            * actual allocation size without guessing or hardcoding a value.
            */
           ContentLength: input.buffer.byteLength,
-          ContentType: input.mimeType || 'application/pdf',
+          ContentType:
+            input.mimeType ||
+            (safeExt === '.pdf' ? 'application/pdf' : 'text/html'),
           Metadata: {
             studentId: input.studentId,
           },
@@ -201,7 +206,7 @@ export class S3StorageProvider implements IStorageProvider {
   }
 
   private verifyKey(fileKey: string): void {
-    if (!/^[a-zA-Z0-9-]+\.pdf$/.test(fileKey)) {
+    if (!/^[a-zA-Z0-9-]+\.(pdf|html|htm)$/i.test(fileKey)) {
       throw new StorageInvalidKeyError(
         fileKey,
         'Invalid storage file key format'

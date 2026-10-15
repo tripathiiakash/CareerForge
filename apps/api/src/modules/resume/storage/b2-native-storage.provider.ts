@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import * as crypto from 'crypto';
+import * as path from 'path';
 import { ConfigService } from '../../../core/config/config.service';
 import {
   IStorageProvider,
@@ -194,7 +195,9 @@ export class B2NativeStorageProvider implements IStorageProvider {
   // ---------------------------------------------------------------------------
 
   async upload(input: StorageUploadInput): Promise<StorageUploadResult> {
-    const fileKey = `${crypto.randomUUID()}.pdf`;
+    const ext = path.extname(input.originalName || '').toLowerCase();
+    const safeExt = ext === '.html' || ext === '.htm' ? ext : '.pdf';
+    const fileKey = `${crypto.randomUUID()}${safeExt}`;
     this.verifyKey(fileKey);
 
     // Compute SHA-1 of the exact Buffer to be uploaded (required by B2)
@@ -534,7 +537,11 @@ export class B2NativeStorageProvider implements IStorageProvider {
     const headers: Record<string, string> = {
       Authorization: uploadUrlData.authorizationToken,
       'X-Bz-File-Name': encodeURIComponent(fileKey),
-      'Content-Type': input.mimeType || 'application/pdf',
+      'Content-Type':
+        input.mimeType ||
+        (fileKey.toLowerCase().endsWith('.pdf')
+          ? 'application/pdf'
+          : 'text/html'),
       'Content-Length': String(input.buffer.byteLength),
       'X-Bz-Content-Sha1': sha1,
     };
@@ -727,7 +734,7 @@ export class B2NativeStorageProvider implements IStorageProvider {
   // ---------------------------------------------------------------------------
 
   private verifyKey(fileKey: string): void {
-    if (!/^[a-zA-Z0-9-]+\.pdf$/.test(fileKey)) {
+    if (!/^[a-zA-Z0-9-]+\.(pdf|html|htm)$/i.test(fileKey)) {
       throw new StorageInvalidKeyError(
         fileKey,
         'Invalid storage file key format'

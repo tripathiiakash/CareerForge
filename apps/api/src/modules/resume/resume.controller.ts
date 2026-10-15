@@ -141,14 +141,28 @@ export class ResumeController {
     @Param('fileKey') fileKey: string,
     @Res() res: Response
   ): Promise<void> {
-    const { buffer, fileName } = await this.resumeService.getResumeFile(
+    const { buffer, fileName, isHtml } = await this.resumeService.getResumeFile(
       userId,
       userRole,
       fileKey
     );
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    if (isHtml) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${fileName}"`
+      );
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+      );
+      res.setHeader('X-Frame-Options', 'DENY');
+    } else {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    }
+
     res.setHeader(
       'Cache-Control',
       'private, no-cache, no-store, must-revalidate'
@@ -174,14 +188,28 @@ export class ResumeController {
     @Param('resumeId') resumeId: string,
     @Res() res: Response
   ): Promise<void> {
-    const { buffer, fileName } = await this.resumeService.getResumeFile(
+    const { buffer, fileName, isHtml } = await this.resumeService.getResumeFile(
       userId,
       userRole,
       resumeId
     );
 
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    if (isHtml) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${fileName}"`
+      );
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+      );
+      res.setHeader('X-Frame-Options', 'DENY');
+    } else {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+    }
+
     res.setHeader(
       'Cache-Control',
       'private, no-cache, no-store, must-revalidate'

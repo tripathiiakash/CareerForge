@@ -29,20 +29,36 @@ function validateResumeFile(file) {
 
   const fileName = file.name || '';
   const extension = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
-  if (extension !== '.pdf') {
+  const allowedExtensions = ['.pdf', '.html', '.htm'];
+  if (!allowedExtensions.includes(extension)) {
     return {
       valid: false,
       error:
-        'File must be a valid PDF (.pdf extension). Other formats are not supported.',
+        'File must be a valid PDF or HTML document (.pdf, .html, .htm). Other formats are not supported.',
     };
   }
 
-  if (file.type && file.type !== 'application/pdf') {
-    return {
-      valid: false,
-      error:
-        'File type does not match PDF. Please ensure the file is an authentic PDF.',
-    };
+  // If browser identified MIME type, check for format compatibility
+  if (file.type) {
+    const mime = file.type.toLowerCase().trim();
+    if (extension === '.pdf' && mime !== 'application/pdf') {
+      return {
+        valid: false,
+        error:
+          'File type does not match PDF. Please ensure the file is an authentic PDF.',
+      };
+    }
+    if (
+      (extension === '.html' || extension === '.htm') &&
+      mime !== 'text/html' &&
+      mime !== 'application/xhtml+xml'
+    ) {
+      return {
+        valid: false,
+        error:
+          'File type does not match HTML. Please ensure the file is an authentic HTML document.',
+      };
+    }
   }
 
   return { valid: true };
@@ -153,7 +169,7 @@ describe('Student Resume Management Suite (Phase 5.8 - docs/API.md §6.1, §6.2)
       assert.match(res.error, /exceeds the 5MB limit/);
     });
 
-    it('should reject non-PDF file extensions', () => {
+    it('should reject unsupported file extensions (e.g. .docx, .png, .txt)', () => {
       const wordDoc = {
         name: 'resume.docx',
         size: 100 * 1024,
@@ -161,7 +177,7 @@ describe('Student Resume Management Suite (Phase 5.8 - docs/API.md §6.1, §6.2)
       };
       const resWord = validateResumeFile(wordDoc);
       assert.strictEqual(resWord.valid, false);
-      assert.match(resWord.error, /File must be a valid PDF/);
+      assert.match(resWord.error, /File must be a valid PDF or HTML/);
 
       const image = {
         name: 'resume.png',
@@ -183,6 +199,17 @@ describe('Student Resume Management Suite (Phase 5.8 - docs/API.md §6.1, §6.2)
       assert.match(res.error, /File type does not match PDF/);
     });
 
+    it('should reject MIME type mismatch for .html extension', () => {
+      const spoofed = {
+        name: 'fake.html',
+        size: 50 * 1024,
+        type: 'application/pdf',
+      };
+      const res = validateResumeFile(spoofed);
+      assert.strictEqual(res.valid, false);
+      assert.match(res.error, /File type does not match HTML/);
+    });
+
     it('should accept valid PDF files within 5MB limit', () => {
       const validPdf = {
         name: 'student_resume_2026.pdf',
@@ -201,6 +228,34 @@ describe('Student Resume Management Suite (Phase 5.8 - docs/API.md §6.1, §6.2)
         type: 'application/pdf',
       };
       const res = validateResumeFile(validPdfUpper);
+      assert.strictEqual(res.valid, true);
+    });
+
+    it('should accept valid HTML files (.html and .htm)', () => {
+      const validHtml = {
+        name: 'resume.html',
+        size: 250 * 1024,
+        type: 'text/html',
+      };
+      const resHtml = validateResumeFile(validHtml);
+      assert.strictEqual(resHtml.valid, true);
+
+      const validHtm = {
+        name: 'portfolio_resume.htm',
+        size: 300 * 1024,
+        type: 'text/html',
+      };
+      const resHtm = validateResumeFile(validHtm);
+      assert.strictEqual(resHtm.valid, true);
+    });
+
+    it('should accept valid HTML files with uppercase extension (.HTML)', () => {
+      const validUpper = {
+        name: 'MY_PORTFOLIO.HTML',
+        size: 100 * 1024,
+        type: 'text/html',
+      };
+      const res = validateResumeFile(validUpper);
       assert.strictEqual(res.valid, true);
     });
   });

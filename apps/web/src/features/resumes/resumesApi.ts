@@ -33,7 +33,8 @@ export function validateResumeFile(
   if (file.size === 0) {
     return {
       valid: false,
-      error: 'The selected file is empty. Please choose a valid PDF file.',
+      error:
+        'The selected file is empty. Please choose a valid PDF or HTML file.',
     };
   }
 
@@ -47,21 +48,36 @@ export function validateResumeFile(
 
   const fileName = file.name || '';
   const extension = fileName.substring(fileName.lastIndexOf('.')).toLowerCase();
-  if (extension !== '.pdf') {
+  const allowedExtensions = ['.pdf', '.html', '.htm'];
+  if (!allowedExtensions.includes(extension)) {
     return {
       valid: false,
       error:
-        'File must be a valid PDF (.pdf extension). Other formats are not supported.',
+        'File must be a valid PDF or HTML document (.pdf, .html, .htm). Other formats are not supported.',
     };
   }
 
-  // If browser identified MIME type, check for PDF compatibility
-  if (file.type && file.type !== 'application/pdf') {
-    return {
-      valid: false,
-      error:
-        'File type does not match PDF. Please ensure the file is an authentic PDF.',
-    };
+  // If browser identified MIME type, check for format compatibility
+  if (file.type) {
+    const mime = file.type.toLowerCase().trim();
+    if (extension === '.pdf' && mime !== 'application/pdf') {
+      return {
+        valid: false,
+        error:
+          'File type does not match PDF. Please ensure the file is an authentic PDF.',
+      };
+    }
+    if (
+      (extension === '.html' || extension === '.htm') &&
+      mime !== 'text/html' &&
+      mime !== 'application/xhtml+xml'
+    ) {
+      return {
+        valid: false,
+        error:
+          'File type does not match HTML. Please ensure the file is an authentic HTML document.',
+      };
+    }
   }
 
   return { valid: true };
@@ -194,33 +210,62 @@ export async function getResumeAnalysis(
 }
 
 /**
- * Fetches the resume PDF file as a blob using the authenticated API client.
+ * Fetches the resume file as a blob along with its response content type.
  */
-export async function getResumeFileBlob(resumeId: string): Promise<Blob> {
+export async function getResumeFileBlob(
+  resumeId: string
+): Promise<{ blob: Blob; contentType: string }> {
   const response = await apiClient.get(`/resumes/${resumeId}/file`, {
     responseType: 'blob',
   });
-  return new Blob([response.data], { type: 'application/pdf' });
+  const rawContentType = response.headers && response.headers['content-type'];
+  const contentType =
+    typeof rawContentType === 'string'
+      ? rawContentType
+      : 'application/octet-stream';
+  return {
+    blob: new Blob([response.data], { type: contentType }),
+    contentType,
+  };
 }
 
 /**
- * Safely opens the resume PDF in a new browser tab or falls back to downloading it.
+ * Safely views or downloads the resume document:
+ * - HTML resumes are NEVER rendered in the browser DOM, iframe, or tab; they are strictly downloaded as safe attachments.
+ * - PDF resumes open in a browser tab or download as fallback.
  */
 export async function openResumePdf(
   resumeId: string,
   fileName?: string
 ): Promise<void> {
-  const blob = await getResumeFileBlob(resumeId);
+  const { blob, contentType } = await getResumeFileBlob(resumeId);
   const blobUrl = window.URL.createObjectURL(blob);
-  const newTab = window.open(blobUrl, '_blank');
+  const isHtml =
+    fileName?.toLowerCase().endsWith('.html') ||
+    fileName?.toLowerCase().endsWith('.htm') ||
+    contentType.includes('text/html');
 
+  // Enforce security rule: never render/execute HTML in browser window. Trigger direct attachment download.
+  if (isHtml) {
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = fileName || 'Resume.html';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
+    return;
+  }
+
+  // PDF documents: open in new viewer tab or fallback to direct download
+  const newTab = window.open(blobUrl, '_blank');
   if (!newTab) {
-    // If popup was blocked, fallback to triggering a direct download via link
     const link = document.createElement('a');
     link.href = blobUrl;
     link.download = fileName || 'Resume.pdf';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setTimeout(() => window.URL.revokeObjectURL(blobUrl), 1000);
   }
 }
