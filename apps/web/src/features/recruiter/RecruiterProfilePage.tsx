@@ -1,12 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import {
   updateRecruiterProfileSchema,
   UpdateRecruiterProfileInput,
+  submitRecruiterOrganizationSchema,
+  SubmitRecruiterOrganizationInput,
 } from '@careerforge/validation';
 import { useAuth } from '@/auth/AuthContext';
-import { useRecruiterProfile, useUpdateRecruiterProfile } from './hooks';
+import {
+  useRecruiterProfile,
+  useUpdateRecruiterProfile,
+  useRecruiterOrganization,
+  useSubmitRecruiterOrganization,
+  useUploadRecruiterEvidence,
+} from './hooks';
 import { extractApiError } from '@/lib/api';
+import { getRecruiterEvidenceDownloadUrl } from './recruiterApi';
 import {
   Card,
   CardHeader,
@@ -32,13 +41,40 @@ import {
   ShieldCheck,
   Clock,
   ExternalLink,
+  FileText,
+  UploadCloud,
+  Download,
+  AlertTriangle,
+  Briefcase,
+  Linkedin,
 } from 'lucide-react';
-import { RecruiterProfileFormValues } from './types';
+import {
+  RecruiterProfileFormValues,
+  RecruiterOrganizationFormValues,
+  VerificationStatus,
+} from './types';
+
+function formatFileSize(bytes?: number | null): string {
+  if (!bytes || bytes <= 0) return '0 B';
+  const k = 1024;
+  if (bytes < k) return `${bytes} B`;
+  const kb = bytes / k;
+  if (kb < k) return `${kb.toFixed(1)} KB`;
+  return `${(kb / k).toFixed(2)} MB`;
+}
 
 export const RecruiterProfilePage: React.FC = () => {
   const { user } = useAuth();
   const { data: profile, isLoading, isError, refetch } = useRecruiterProfile();
+  const {
+    data: verification,
+    isLoading: isVerificationLoading,
+    refetch: refetchVerification,
+  } = useRecruiterOrganization();
+
   const updateMutation = useUpdateRecruiterProfile();
+  const submitOrgMutation = useSubmitRecruiterOrganization();
+  const uploadEvidenceMutation = useUploadRecruiterEvidence();
 
   const [isEditing, setIsEditing] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
@@ -46,6 +82,17 @@ export const RecruiterProfilePage: React.FC = () => {
     code: string;
     message: string;
   } | null>(null);
+
+  const [isEditingOrg, setIsEditingOrg] = useState(false);
+  const [orgSaveSuccess, setOrgSaveSuccess] = useState(false);
+  const [orgServerError, setOrgServerError] = useState<{
+    code: string;
+    message: string;
+  } | null>(null);
+
+  const [evidenceUploadSuccess, setEvidenceUploadSuccess] = useState(false);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const {
     register,
@@ -59,7 +106,22 @@ export const RecruiterProfilePage: React.FC = () => {
     },
   });
 
-  // Re-sync form when profile loads or resets
+  const {
+    register: registerOrg,
+    handleSubmit: handleSubmitOrg,
+    reset: resetOrg,
+    formState: { errors: orgErrors, isSubmitting: isSubmittingOrg },
+  } = useForm<RecruiterOrganizationFormValues>({
+    defaultValues: {
+      organization_name: '',
+      website_url: '',
+      linkedin_url: '',
+      designation: '',
+      description: '',
+    },
+  });
+
+  // Re-sync profile form when profile loads or resets
   useEffect(() => {
     if (profile) {
       reset({
@@ -68,6 +130,22 @@ export const RecruiterProfilePage: React.FC = () => {
       });
     }
   }, [profile, reset]);
+
+  // Re-sync organization form when verification data loads
+  useEffect(() => {
+    if (verification) {
+      resetOrg({
+        organization_name: verification.organization_name || '',
+        website_url: verification.website_url || '',
+        linkedin_url: verification.linkedin_url || '',
+        designation: verification.designation || '',
+        description: verification.description || '',
+      });
+      if (verification.status === 'NEEDS_CLARIFICATION') {
+        setIsEditingOrg(true);
+      }
+    }
+  }, [verification, resetOrg]);
 
   const onSubmit = async (values: RecruiterProfileFormValues) => {
     setServerError(null);
@@ -79,7 +157,6 @@ export const RecruiterProfilePage: React.FC = () => {
         last_name: values.last_name.trim(),
       };
 
-      // Validate payload against shared Zod schema before sending
       const parseResult = updateRecruiterProfileSchema.safeParse(payload);
       if (!parseResult.success) {
         const firstIssue = parseResult.error.issues[0];
@@ -119,7 +196,100 @@ export const RecruiterProfilePage: React.FC = () => {
     setIsEditing(false);
   };
 
-  if (isLoading) {
+  const onOrgSubmit = async (values: RecruiterOrganizationFormValues) => {
+    setOrgServerError(null);
+    setOrgSaveSuccess(false);
+
+    try {
+      const payload: SubmitRecruiterOrganizationInput = {
+        organization_name: values.organization_name.trim(),
+        website_url: values.website_url?.trim() || null,
+        linkedin_url: values.linkedin_url?.trim() || null,
+        designation: values.designation?.trim() || null,
+        description: values.description?.trim() || null,
+      };
+
+      const parseResult = submitRecruiterOrganizationSchema.safeParse(payload);
+      if (!parseResult.success) {
+        const firstIssue = parseResult.error.issues[0];
+        setOrgServerError({
+          code: 'VALIDATION_ERROR',
+          message: firstIssue
+            ? `${firstIssue.path.join('.')}: ${firstIssue.message}`
+            : 'Validation failed',
+        });
+        return;
+      }
+
+      await submitOrgMutation.mutateAsync(parseResult.data);
+      setOrgSaveSuccess(true);
+      setIsEditingOrg(false);
+
+      setTimeout(() => {
+        setOrgSaveSuccess(false);
+      }, 4000);
+    } catch (err: unknown) {
+      const parsed = extractApiError(err);
+      setOrgServerError({
+        code: parsed.code,
+        message: parsed.message,
+      });
+    }
+  };
+
+  const handleCancelOrgEdit = () => {
+    if (verification) {
+      resetOrg({
+        organization_name: verification.organization_name || '',
+        website_url: verification.website_url || '',
+        linkedin_url: verification.linkedin_url || '',
+        designation: verification.designation || '',
+        description: verification.description || '',
+      });
+    }
+    setOrgServerError(null);
+    setIsEditingOrg(false);
+  };
+
+  const handleEvidenceFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setEvidenceError(null);
+    setEvidenceUploadSuccess(false);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowedTypes = ['application/pdf', 'image/png', 'image/jpeg'];
+    if (!allowedTypes.includes(file.type)) {
+      setEvidenceError(
+        'Invalid file type. Only PDF, PNG, and JPEG files are accepted.'
+      );
+      return;
+    }
+
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      setEvidenceError(
+        'File is too large. Evidence documents must not exceed 5MB.'
+      );
+      return;
+    }
+
+    try {
+      await uploadEvidenceMutation.mutateAsync(file);
+      setEvidenceUploadSuccess(true);
+      setTimeout(() => setEvidenceUploadSuccess(false), 4000);
+    } catch (err: unknown) {
+      const parsed = extractApiError(err);
+      setEvidenceError(parsed.message);
+    } finally {
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  if (isLoading || isVerificationLoading) {
     return (
       <div
         data-testid="loading-state"
@@ -149,7 +319,14 @@ export const RecruiterProfilePage: React.FC = () => {
           An error occurred while fetching your recruiter profile from the
           server.
         </p>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            refetch();
+            refetchVerification();
+          }}
+        >
           Try Again
         </Button>
       </div>
@@ -174,6 +351,9 @@ export const RecruiterProfilePage: React.FC = () => {
       .map((w) => w[0])
       .join('')
       .toUpperCase() || 'CO';
+
+  const activeStatus: VerificationStatus =
+    verification?.status || (profile?.is_approved ? 'APPROVED' : 'PENDING');
 
   return (
     <div className="space-y-8 pb-12 max-w-5xl mx-auto animate-fade-in">
@@ -220,6 +400,93 @@ export const RecruiterProfilePage: React.FC = () => {
         </div>
       )}
 
+      {orgSaveSuccess && (
+        <div
+          data-testid="org-save-success-banner"
+          className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 flex items-center justify-between shadow-sm animate-fade-in"
+        >
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="h-5 w-5 shrink-0" />
+            <span className="text-sm font-medium">
+              Organization details submitted successfully for administrator
+              verification!
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOrgSaveSuccess(false)}
+            className="text-emerald-400/80 hover:text-emerald-400"
+            aria-label="Dismiss notification"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {orgServerError && (
+        <div
+          data-testid="org-server-error-banner"
+          className="p-4 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive flex items-center justify-between shadow-sm animate-fade-in"
+        >
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <span className="text-sm font-medium">
+              {orgServerError.message}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOrgServerError(null)}
+            className="text-destructive/80 hover:text-destructive"
+            aria-label="Dismiss error"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {evidenceUploadSuccess && (
+        <div
+          data-testid="evidence-success-banner"
+          className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 flex items-center justify-between shadow-sm animate-fade-in"
+        >
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="h-5 w-5 shrink-0" />
+            <span className="text-sm font-medium">
+              Verification evidence uploaded successfully!
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEvidenceUploadSuccess(false)}
+            className="text-emerald-400/80 hover:text-emerald-400"
+            aria-label="Dismiss notification"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      {evidenceError && (
+        <div
+          data-testid="evidence-error-banner"
+          className="p-4 rounded-xl border border-destructive/40 bg-destructive/10 text-destructive flex items-center justify-between shadow-sm animate-fade-in"
+        >
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <span className="text-sm font-medium">{evidenceError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setEvidenceError(null)}
+            className="text-destructive/80 hover:text-destructive"
+            aria-label="Dismiss error"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
       {/* Recruiter Header Card */}
       <div className="p-6 sm:p-8 rounded-2xl glass-card border border-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
@@ -234,10 +501,26 @@ export const RecruiterProfilePage: React.FC = () => {
               <Badge variant="success" className="text-xs">
                 Recruiter
               </Badge>
-              {profile?.is_approved ? (
+              {activeStatus === 'APPROVED' ? (
                 <Badge variant="success" className="gap-1 items-center text-xs">
                   <ShieldCheck className="h-3 w-3" />
                   <span>Verified</span>
+                </Badge>
+              ) : activeStatus === 'NEEDS_CLARIFICATION' ? (
+                <Badge
+                  variant="warning"
+                  className="gap-1 items-center text-xs border-amber-500/50 bg-amber-500/20 text-amber-300"
+                >
+                  <AlertTriangle className="h-3 w-3" />
+                  <span>Clarification Needed</span>
+                </Badge>
+              ) : activeStatus === 'REJECTED' ? (
+                <Badge
+                  variant="destructive"
+                  className="gap-1 items-center text-xs"
+                >
+                  <AlertCircle className="h-3 w-3" />
+                  <span>Application Rejected</span>
                 </Badge>
               ) : (
                 <Badge variant="warning" className="gap-1 items-center text-xs">
@@ -273,7 +556,7 @@ export const RecruiterProfilePage: React.FC = () => {
         )}
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Content Area: Personal & Company */}
       {!isEditing ? (
         /* View Mode */
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -323,6 +606,18 @@ export const RecruiterProfilePage: React.FC = () => {
                     <div className="flex items-center gap-2 text-sm text-emerald-400 font-medium">
                       <CheckCircle2 className="h-4 w-4" />
                       <span>Approved Recruiter — Full Posting Access</span>
+                    </div>
+                  ) : activeStatus === 'NEEDS_CLARIFICATION' ? (
+                    <div className="flex items-center gap-2 text-sm text-amber-300 font-medium">
+                      <AlertTriangle className="h-4 w-4" />
+                      <span>
+                        Clarification Requested — Action required below
+                      </span>
+                    </div>
+                  ) : activeStatus === 'REJECTED' ? (
+                    <div className="flex items-center gap-2 text-sm text-destructive font-medium">
+                      <AlertCircle className="h-4 w-4" />
+                      <span>Application Rejected by Administrator</span>
                     </div>
                   ) : (
                     <div className="flex items-center gap-2 text-sm text-amber-400 font-medium">
@@ -433,14 +728,10 @@ export const RecruiterProfilePage: React.FC = () => {
                       Action required by administrator
                     </p>
                     <p className="text-xs text-muted-foreground leading-relaxed">
-                      Your recruiter account has not yet been linked to a
-                      company. An administrator must create your organization in
-                      CareerForge and assign your account to it.
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Once assigned you will be able to post job requisitions.
-                      Contact the platform administrator if you believe this is
-                      an error.
+                      Your recruiter account has not yet been linked to an
+                      authoritative company. Please complete your organization
+                      verification details and evidence below so an
+                      administrator can review and link your company.
                     </p>
                   </div>
                 </>
@@ -452,15 +743,16 @@ export const RecruiterProfilePage: React.FC = () => {
                 </span>
                 <p>
                   Company affiliation is managed by platform administrators.
-                  Recruiters cannot self-assign to organizations — contact
-                  support to request assignment or correction.
+                  Recruiters cannot self-assign to organizations — submit your
+                  organization details below for administrator review and
+                  assignment.
                 </p>
               </div>
             </CardContent>
           </Card>
         </div>
       ) : (
-        /* Edit Mode Form */
+        /* Edit Mode Form: Personal */
         <Card glass className="border-border/80 shadow-xl">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-xl">
@@ -534,7 +826,7 @@ export const RecruiterProfilePage: React.FC = () => {
                     </p>
                   ) : (
                     <p className="text-sm font-medium text-amber-400">
-                      Not assigned — contact an administrator
+                      Not assigned — submit verification details below
                     </p>
                   )}
                 </div>
@@ -562,6 +854,438 @@ export const RecruiterProfilePage: React.FC = () => {
           </form>
         </Card>
       )}
+
+      {/* Organization Verification & Evidence Section */}
+      <Card
+        glass
+        data-testid="org-verification-card"
+        className="border-border/70"
+      >
+        <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border/50 pb-5">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-xl flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-emerald-400" />
+                <span>Organization Verification & Evidence</span>
+              </CardTitle>
+              <div data-testid="verification-status-badge">
+                {activeStatus === 'APPROVED' ? (
+                  <Badge variant="success" className="text-xs gap-1">
+                    <ShieldCheck className="h-3 w-3" />
+                    <span>Verified</span>
+                  </Badge>
+                ) : activeStatus === 'NEEDS_CLARIFICATION' ? (
+                  <Badge
+                    variant="warning"
+                    className="text-xs gap-1 border-amber-500/50 bg-amber-500/20 text-amber-300"
+                  >
+                    <AlertTriangle className="h-3 w-3" />
+                    <span>Clarification Requested</span>
+                  </Badge>
+                ) : activeStatus === 'REJECTED' ? (
+                  <Badge variant="destructive" className="text-xs gap-1">
+                    <AlertCircle className="h-3 w-3" />
+                    <span>Rejected</span>
+                  </Badge>
+                ) : (
+                  <Badge variant="warning" className="text-xs gap-1">
+                    <Clock className="h-3 w-3" />
+                    <span>Under Review</span>
+                  </Badge>
+                )}
+              </div>
+            </div>
+            <CardDescription>
+              Submit your company details and verification proof to receive
+              authoritative company assignment and job posting privileges.
+            </CardDescription>
+          </div>
+
+          {!isEditingOrg ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsEditingOrg(true)}
+              className="gap-2 shrink-0 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+            >
+              <Edit3 className="h-4 w-4" />
+              <span>
+                {verification?.is_submitted
+                  ? 'Update Organization Details'
+                  : 'Submit Organization Details'}
+              </span>
+            </Button>
+          ) : (
+            verification?.is_submitted && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCancelOrgEdit}
+                className="gap-2 shrink-0"
+              >
+                <X className="h-4 w-4" />
+                <span>Cancel</span>
+              </Button>
+            )
+          )}
+        </CardHeader>
+
+        <CardContent className="space-y-6 pt-6">
+          {/* Clarification Alert Banner */}
+          {activeStatus === 'NEEDS_CLARIFICATION' &&
+            verification?.clarification_message && (
+              <div
+                data-testid="clarification-alert"
+                className="p-5 rounded-xl border border-amber-500/40 bg-amber-500/15 text-amber-200 space-y-2 animate-fade-in"
+              >
+                <div className="flex items-center gap-2 text-amber-300 font-semibold">
+                  <AlertTriangle className="h-5 w-5 shrink-0" />
+                  <span>Administrator Clarification Requested</span>
+                </div>
+                <p className="text-sm bg-black/20 p-3 rounded-lg border border-amber-500/20 text-amber-100 font-mono text-xs sm:text-sm">
+                  {verification.clarification_message}
+                </p>
+                <p className="text-xs text-amber-300/80">
+                  Please update your organization details or upload additional
+                  verification proof below to resolve this clarification
+                  request.
+                </p>
+              </div>
+            )}
+
+          {/* Rejection Alert Banner */}
+          {activeStatus === 'REJECTED' && verification?.rejection_reason && (
+            <div
+              data-testid="rejection-alert"
+              className="p-5 rounded-xl border border-destructive/40 bg-destructive/15 text-destructive space-y-2 animate-fade-in"
+            >
+              <div className="flex items-center gap-2 font-semibold">
+                <AlertCircle className="h-5 w-5 shrink-0" />
+                <span>Verification Application Not Approved</span>
+              </div>
+              <p className="text-sm bg-black/20 p-3 rounded-lg border border-destructive/20 font-mono text-xs sm:text-sm">
+                {verification.rejection_reason}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                You may correct your organization details and upload valid proof
+                below to request another review.
+              </p>
+            </div>
+          )}
+
+          {/* Approved Banner */}
+          {activeStatus === 'APPROVED' && (
+            <div className="p-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 text-emerald-400 flex items-center gap-3">
+              <ShieldCheck className="h-6 w-6 shrink-0" />
+              <div className="text-sm">
+                <p className="font-semibold">
+                  Organization Credentials Verified
+                </p>
+                <p className="text-xs text-emerald-400/80">
+                  Your organization details have been approved by platform
+                  administrators.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Organization Edit Form */}
+          {isEditingOrg ? (
+            <form onSubmit={handleSubmitOrg(onOrgSubmit)} noValidate>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="Organization Name *"
+                    placeholder="e.g. Acme Corporation"
+                    error={orgErrors.organization_name?.message}
+                    {...registerOrg('organization_name', {
+                      required: 'Organization name is required',
+                      minLength: {
+                        value: 2,
+                        message:
+                          'Organization name must be between 2 and 255 characters',
+                      },
+                      maxLength: {
+                        value: 255,
+                        message:
+                          'Organization name cannot exceed 255 characters',
+                      },
+                    })}
+                  />
+
+                  <Input
+                    label="Your Designation / Role"
+                    placeholder="e.g. Senior Talent Acquisition Specialist"
+                    error={orgErrors.designation?.message}
+                    {...registerOrg('designation', {
+                      maxLength: {
+                        value: 100,
+                        message: 'Designation cannot exceed 100 characters',
+                      },
+                    })}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <Input
+                    label="Company Website URL"
+                    placeholder="https://example.com"
+                    error={orgErrors.website_url?.message}
+                    {...registerOrg('website_url', {
+                      maxLength: {
+                        value: 255,
+                        message: 'Website URL cannot exceed 255 characters',
+                      },
+                    })}
+                  />
+
+                  <Input
+                    label="Company LinkedIn Profile URL"
+                    placeholder="https://linkedin.com/company/example"
+                    error={orgErrors.linkedin_url?.message}
+                    {...registerOrg('linkedin_url', {
+                      maxLength: {
+                        value: 255,
+                        message: 'LinkedIn URL cannot exceed 255 characters',
+                      },
+                    })}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                    Organization Description
+                  </label>
+                  <textarea
+                    rows={4}
+                    placeholder="Describe your organization, industry sector, hiring focus, or company background..."
+                    className="w-full rounded-xl bg-background/50 border border-border/80 px-3.5 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-500 transition-all placeholder:text-muted-foreground resize-y"
+                    {...registerOrg('description', {
+                      maxLength: {
+                        value: 2000,
+                        message: 'Description cannot exceed 2000 characters',
+                      },
+                    })}
+                  />
+                  {orgErrors.description?.message && (
+                    <p className="text-xs text-destructive">
+                      {orgErrors.description.message}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-3">
+                  {verification?.is_submitted && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleCancelOrgEdit}
+                      disabled={isSubmittingOrg || submitOrgMutation.isPending}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                  <Button
+                    type="submit"
+                    isLoading={isSubmittingOrg || submitOrgMutation.isPending}
+                    className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                  >
+                    <Save className="h-4 w-4" />
+                    <span>
+                      {activeStatus === 'NEEDS_CLARIFICATION'
+                        ? 'Resubmit Verification Details'
+                        : 'Save & Submit Organization'}
+                    </span>
+                  </Button>
+                </div>
+              </div>
+            </form>
+          ) : (
+            /* View Mode for Organization */
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-secondary/20 border border-border/40 space-y-1">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                    Submitted Organization Name
+                  </span>
+                  <p className="text-sm font-semibold text-foreground">
+                    {verification?.organization_name || (
+                      <span className="text-muted-foreground italic">
+                        Not submitted
+                      </span>
+                    )}
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-xl bg-secondary/20 border border-border/40 space-y-1">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                    Recruiter Designation
+                  </span>
+                  <p className="text-sm font-medium text-foreground">
+                    {verification?.designation || (
+                      <span className="text-muted-foreground italic">
+                        Not specified
+                      </span>
+                    )}
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-xl bg-secondary/20 border border-border/40 space-y-1">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                    Company Website
+                  </span>
+                  {verification?.website_url ? (
+                    <a
+                      href={verification.website_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm text-emerald-400 hover:underline font-medium truncate pt-0.5"
+                    >
+                      <Globe className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">
+                        {verification.website_url}
+                      </span>
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                  ) : (
+                    <span className="text-sm text-muted-foreground italic">
+                      Not specified
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-4 rounded-xl bg-secondary/20 border border-border/40 space-y-1">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                    Company LinkedIn
+                  </span>
+                  {verification?.linkedin_url ? (
+                    <a
+                      href={verification.linkedin_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm text-sky-400 hover:underline font-medium truncate pt-0.5"
+                    >
+                      <Linkedin className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">
+                        {verification.linkedin_url}
+                      </span>
+                      <ExternalLink className="h-3 w-3 shrink-0" />
+                    </a>
+                  ) : (
+                    <span className="text-sm text-muted-foreground italic">
+                      Not specified
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {verification?.description && (
+                <div className="p-4 rounded-xl bg-secondary/20 border border-border/40 space-y-1">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider block">
+                    Organization Description
+                  </span>
+                  <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
+                    {verification.description}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Verification Evidence Document Section */}
+          <div className="pt-4 border-t border-border/50 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
+                  <FileText className="h-4 w-4 text-emerald-400" />
+                  <span>Verification Evidence Document</span>
+                </h3>
+                <p className="text-xs text-muted-foreground">
+                  Supporting document (e.g. Certificate of Incorporation, GST
+                  registration, company ID, or official authorization letter).
+                </p>
+              </div>
+            </div>
+
+            {verification?.evidence_original_name ? (
+              <div className="p-4 rounded-xl bg-secondary/30 border border-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-foreground truncate">
+                      {verification.evidence_original_name}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatFileSize(verification.evidence_size_bytes)} •{' '}
+                      {verification.evidence_mime_type}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={getRecruiterEvidenceDownloadUrl()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-border/70 bg-secondary/50 text-foreground hover:bg-secondary transition-colors"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>Download Evidence</span>
+                  </a>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadEvidenceMutation.isPending}
+                    className="gap-1.5 text-xs"
+                  >
+                    <UploadCloud className="h-3.5 w-3.5" />
+                    <span>Replace Document</span>
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="p-6 rounded-xl border-2 border-dashed border-border/70 bg-secondary/10 flex flex-col items-center justify-center text-center gap-2">
+                <UploadCloud className="h-8 w-8 text-muted-foreground" />
+                <p className="text-sm font-medium text-foreground">
+                  No verification evidence uploaded
+                </p>
+                <p className="text-xs text-muted-foreground max-w-sm">
+                  Upload an official document (PDF, PNG, JPEG up to 5MB) to
+                  expedite your account verification.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploadEvidenceMutation.isPending}
+                  className="mt-2 gap-1.5 text-xs border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                >
+                  {uploadEvidenceMutation.isPending ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <UploadCloud className="h-3.5 w-3.5" />
+                  )}
+                  <span>Upload Document</span>
+                </Button>
+              </div>
+            )}
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+              onChange={handleEvidenceFileChange}
+              className="hidden"
+              data-testid="evidence-file-input"
+            />
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 };

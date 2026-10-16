@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthContext';
-import { useRecruiterProfile } from './hooks';
+import { useRecruiterProfile, useRecruiterOrganization } from './hooks';
 import {
   Card,
   CardHeader,
@@ -27,11 +27,19 @@ import {
   Mail,
   PlusCircle,
   Info,
+  AlertTriangle,
+  FileText,
 } from 'lucide-react';
+import { VerificationStatus } from './types';
 
 export const RecruiterDashboardPage: React.FC = () => {
   const { user } = useAuth();
   const { data: profile, isLoading, isError, refetch } = useRecruiterProfile();
+  const {
+    data: verification,
+    isLoading: isVerificationLoading,
+    refetch: refetchVerification,
+  } = useRecruiterOrganization();
 
   const fullName = [profile?.first_name, profile?.last_name]
     .filter(Boolean)
@@ -39,15 +47,23 @@ export const RecruiterDashboardPage: React.FC = () => {
     .trim();
   const displayName = fullName || user?.email || 'Recruiter';
 
+  const companyName =
+    profile?.is_company_assigned && profile.company?.name
+      ? profile.company.name
+      : verification?.organization_name || null;
+
   const companyInitials =
-    profile?.company?.name
+    companyName
       ?.split(' ')
       .slice(0, 2)
       .map((w) => w[0])
       .join('')
       .toUpperCase() || 'CO';
 
-  if (isLoading) {
+  const activeStatus: VerificationStatus =
+    verification?.status || (profile?.is_approved ? 'APPROVED' : 'PENDING');
+
+  if (isLoading || isVerificationLoading) {
     return (
       <div
         data-testid="loading-state"
@@ -77,7 +93,14 @@ export const RecruiterDashboardPage: React.FC = () => {
           We encountered an issue retrieving your recruiter profile. Please try
           again.
         </p>
-        <Button variant="outline" size="sm" onClick={() => refetch()}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            refetch();
+            refetchVerification();
+          }}
+        >
           Retry
         </Button>
       </div>
@@ -86,6 +109,41 @@ export const RecruiterDashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-8 pb-12 animate-fade-in">
+      {/* Clarification Alert Banner */}
+      {activeStatus === 'NEEDS_CLARIFICATION' &&
+        verification?.clarification_message && (
+          <div
+            data-testid="clarification-banner"
+            className="p-5 rounded-2xl border border-amber-500/50 bg-amber-500/15 text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg shadow-amber-500/5 animate-fade-in"
+          >
+            <div className="flex items-start gap-3.5">
+              <AlertTriangle className="h-6 w-6 text-amber-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h2 className="text-base font-bold text-amber-300">
+                  Action Required: Clarification Requested for Organization
+                  Verification
+                </h2>
+                <p className="text-sm text-amber-100/90 leading-relaxed font-mono text-xs sm:text-sm bg-black/20 p-2 rounded-lg border border-amber-500/20">
+                  {verification.clarification_message}
+                </p>
+                <p className="text-xs text-amber-300/80">
+                  Please update your organization details or upload additional
+                  evidence in your profile to continue verification.
+                </p>
+              </div>
+            </div>
+            <Link to="/recruiter/profile" className="shrink-0 w-full sm:w-auto">
+              <Button
+                size="sm"
+                className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-black font-semibold gap-1.5"
+              >
+                <span>Update Details</span>
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
+        )}
+
       {/* Welcome Banner */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 p-6 sm:p-8 rounded-2xl glass-card border border-border/70 relative overflow-hidden">
         <div className="space-y-2 z-10">
@@ -98,8 +156,7 @@ export const RecruiterDashboardPage: React.FC = () => {
           </h1>
           <p className="text-sm text-muted-foreground max-w-xl">
             Manage your hiring requisitions, evaluate candidate profiles, and
-            represent {profile?.company?.name || 'your organization'} on
-            CareerForge.
+            represent {companyName || 'your organization'} on CareerForge.
           </p>
         </div>
 
@@ -124,7 +181,9 @@ export const RecruiterDashboardPage: React.FC = () => {
               <p className="text-sm font-semibold text-foreground truncate">
                 {profile?.is_company_assigned
                   ? profile.company.name
-                  : 'No company assigned'}
+                  : verification?.organization_name
+                    ? `${verification.organization_name}`
+                    : 'No company assigned'}
               </p>
             </div>
           </div>
@@ -146,10 +205,23 @@ export const RecruiterDashboardPage: React.FC = () => {
 
           <div className="pt-1 flex items-center justify-between border-t border-border/40 text-xs">
             <span className="text-muted-foreground">Status:</span>
-            {profile?.is_approved ? (
+            {activeStatus === 'APPROVED' ? (
               <Badge variant="success" className="gap-1 items-center">
                 <ShieldCheck className="h-3 w-3" />
                 <span>Verified</span>
+              </Badge>
+            ) : activeStatus === 'NEEDS_CLARIFICATION' ? (
+              <Badge
+                variant="warning"
+                className="gap-1 items-center border-amber-500/50 bg-amber-500/20 text-amber-300"
+              >
+                <AlertTriangle className="h-3 w-3" />
+                <span>Clarification Needed</span>
+              </Badge>
+            ) : activeStatus === 'REJECTED' ? (
+              <Badge variant="destructive" className="gap-1 items-center">
+                <AlertCircle className="h-3 w-3" />
+                <span>Rejected</span>
               </Badge>
             ) : (
               <Badge variant="warning" className="gap-1 items-center">
@@ -171,17 +243,44 @@ export const RecruiterDashboardPage: React.FC = () => {
             <Info className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <p className="text-sm font-semibold text-amber-400">
-                Your account is not yet linked to a company
+                Your account is not yet linked to an authoritative company
               </p>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                An administrator needs to create your organization in
-                CareerForge and assign your recruiter account to it. Until then,
-                you can browse the platform but cannot post job requisitions.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                If your company already exists, please contact the platform
-                administrator to request assignment.
-              </p>
+              {verification?.is_submitted ? (
+                <>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Organization details for{' '}
+                    <strong className="text-foreground">
+                      {verification.organization_name}
+                    </strong>{' '}
+                    have been submitted and are under administrator review. Once
+                    an administrator verifies your details and links your
+                    company, you will be authorized to post job requisitions.
+                  </p>
+                  <Link
+                    to="/recruiter/profile"
+                    className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:underline font-medium pt-1"
+                  >
+                    <span>View or update verification submission</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    An administrator needs to review your organization details
+                    and link your company in CareerForge. Please submit your
+                    organization verification details and supporting proof to
+                    request approval.
+                  </p>
+                  <Link
+                    to="/recruiter/profile"
+                    className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:underline font-medium pt-1"
+                  >
+                    <span>Submit organization details for verification</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -309,7 +408,12 @@ export const RecruiterDashboardPage: React.FC = () => {
                 <span>Company Organization</span>
               </div>
               <p className="text-sm font-medium text-foreground">
-                {profile?.company?.name || 'Unassigned Company'}
+                {companyName || 'Unassigned Company'}
+                {!profile?.is_company_assigned && companyName && (
+                  <span className="text-xs text-amber-400 block pt-0.5">
+                    (Pending Verification)
+                  </span>
+                )}
               </p>
               {profile?.company?.website && (
                 <a
@@ -332,9 +436,20 @@ export const RecruiterDashboardPage: React.FC = () => {
                 <span>Access Status</span>
               </div>
               <div className="pt-0.5">
-                {profile?.is_approved ? (
+                {activeStatus === 'APPROVED' ? (
                   <Badge variant="success" className="text-xs">
                     Approved Recruiter
+                  </Badge>
+                ) : activeStatus === 'NEEDS_CLARIFICATION' ? (
+                  <Badge
+                    variant="warning"
+                    className="text-xs border-amber-500/50 bg-amber-500/20 text-amber-300"
+                  >
+                    Clarification Needed
+                  </Badge>
+                ) : activeStatus === 'REJECTED' ? (
+                  <Badge variant="destructive" className="text-xs">
+                    Application Rejected
                   </Badge>
                 ) : (
                   <Badge variant="warning" className="text-xs">
@@ -343,9 +458,11 @@ export const RecruiterDashboardPage: React.FC = () => {
                 )}
               </div>
               <p className="text-xs text-muted-foreground pt-1">
-                {profile?.is_approved
+                {activeStatus === 'APPROVED'
                   ? 'Authorized to create job postings and manage applicants.'
-                  : 'Company registration is awaiting administrator verification.'}
+                  : activeStatus === 'NEEDS_CLARIFICATION'
+                    ? 'Administrator requested clarification on your organization details.'
+                    : 'Company registration is awaiting administrator verification.'}
               </p>
             </div>
           </div>
@@ -376,8 +493,8 @@ export const RecruiterDashboardPage: React.FC = () => {
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 Create and publish internships and full-time tech roles linked
-                directly to {profile?.company?.name || 'your company'}, complete
-                with required skill sets and employment criteria.
+                directly to {companyName || 'your company'}, complete with
+                required skill sets and employment criteria.
               </p>
             </div>
 
