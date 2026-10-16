@@ -5,6 +5,7 @@ import {
   approveRecruiter,
   getPendingRecruiters,
   rejectRecruiter,
+  requestRecruiterClarification,
 } from './adminRecruiterApi';
 import { ListPendingRecruitersQuery } from './types';
 
@@ -48,7 +49,42 @@ export function useRejectRecruiter() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (recruiterId: string) => rejectRecruiter(recruiterId),
+    mutationFn: (
+      payload: string | { recruiterId: string; reason?: string }
+    ) => {
+      if (typeof payload === 'string') {
+        return rejectRecruiter(payload);
+      }
+      return rejectRecruiter(payload.recruiterId, payload.reason);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: adminPendingRecruitersBaseKey(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'users'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'metrics'],
+      });
+    },
+  });
+}
+
+/**
+ * Hook to request clarification from a recruiter on their organization verification.
+ */
+export function useRequestClarification() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      recruiterId,
+      message,
+    }: {
+      recruiterId: string;
+      message: string;
+    }) => requestRecruiterClarification(recruiterId, message),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: adminPendingRecruitersBaseKey(),

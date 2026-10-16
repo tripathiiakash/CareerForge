@@ -111,21 +111,51 @@ export async function approveRecruiter(
 }
 
 /**
- * Rejects or disables a recruiter account.
+ * Rejects or disables a recruiter account with an optional or required reason.
  * PATCH /api/v1/admin/recruiters/:id/reject
  */
 export async function rejectRecruiter(
-  recruiterId: string
+  recruiterId: string,
+  reason?: string
 ): Promise<ModerateRecruiterData> {
   if (!isValidUuid(recruiterId)) {
     throw new Error('Invalid recruiterId format (must be a valid UUID)');
   }
 
   const response = await apiClient.patch<ModerateRecruiterResponse>(
-    `/admin/recruiters/${encodeURIComponent(recruiterId)}/reject`
+    `/admin/recruiters/${encodeURIComponent(recruiterId)}/reject`,
+    reason ? { reason: reason.trim() } : undefined
   );
 
   return response.data.data;
+}
+
+/**
+ * Requests clarification from recruiter on their organization verification submission.
+ * PATCH /api/v1/admin/recruiters/:id/clarification
+ */
+export async function requestRecruiterClarification(
+  recruiterId: string,
+  message: string
+): Promise<ModerateRecruiterData> {
+  if (!isValidUuid(recruiterId)) {
+    throw new Error('Invalid recruiterId format (must be a valid UUID)');
+  }
+
+  const response = await apiClient.patch<ModerateRecruiterResponse>(
+    `/admin/recruiters/${encodeURIComponent(recruiterId)}/clarification`,
+    { message: message.trim() }
+  );
+
+  return response.data.data;
+}
+
+/**
+ * Returns the download URL for a recruiter's verification evidence document for admin review.
+ */
+export function getAdminEvidenceDownloadUrl(recruiterId: string): string {
+  const base = apiClient.defaults.baseURL || '/api/v1';
+  return `${base}/admin/recruiters/${encodeURIComponent(recruiterId)}/evidence`;
 }
 
 export { extractApiError };

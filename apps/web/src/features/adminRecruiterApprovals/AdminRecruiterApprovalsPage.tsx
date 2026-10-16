@@ -18,6 +18,7 @@ import {
   usePendingRecruiters,
   useApproveRecruiter,
   useRejectRecruiter,
+  useRequestClarification,
 } from './hooks';
 import {
   PendingRecruiterCard,
@@ -50,17 +51,18 @@ export const AdminRecruiterApprovalsPage: React.FC = () => {
 
   const approveMutation = useApproveRecruiter();
   const rejectMutation = useRejectRecruiter();
+  const clarifyMutation = useRequestClarification();
 
   // In-flight mutation and dialog tracking
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [updatingAction, setUpdatingAction] = useState<
-    'APPROVE' | 'REJECT' | null
+    'APPROVE' | 'REJECT' | 'CLARIFY' | null
   >(null);
   const [dialogRecruiter, setDialogRecruiter] =
     useState<PendingRecruiter | null>(null);
-  const [dialogAction, setDialogAction] = useState<'APPROVE' | 'REJECT' | null>(
-    null
-  );
+  const [dialogAction, setDialogAction] = useState<
+    'APPROVE' | 'REJECT' | 'CLARIFY' | null
+  >(null);
   const [successBanner, setSuccessBanner] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -102,8 +104,16 @@ export const AdminRecruiterApprovalsPage: React.FC = () => {
     setDialogAction('REJECT');
   };
 
+  const handleClarifyClick = (recruiter: PendingRecruiter) => {
+    setDialogRecruiter(recruiter);
+    setDialogAction('CLARIFY');
+  };
+
   // Modal confirmation execution
-  const handleConfirmModeration = async () => {
+  const handleConfirmModeration = async (payload?: {
+    message?: string;
+    reason?: string;
+  }) => {
     if (!dialogRecruiter || !dialogAction) return;
 
     const recruiterId = dialogRecruiter.id;
@@ -130,8 +140,25 @@ export const AdminRecruiterApprovalsPage: React.FC = () => {
           description: result.message || msg,
           variant: 'success',
         });
+      } else if (action === 'CLARIFY') {
+        const result = await clarifyMutation.mutateAsync({
+          recruiterId,
+          message:
+            payload?.message ||
+            'Please update your organization details or upload proof.',
+        });
+        const msg = `Clarification request sent to ${recruiterName}.`;
+        setSuccessBanner(msg);
+        toast({
+          title: 'Clarification Requested',
+          description: result.message || msg,
+          variant: 'default',
+        });
       } else {
-        const result = await rejectMutation.mutateAsync(recruiterId);
+        const result = await rejectMutation.mutateAsync({
+          recruiterId,
+          reason: payload?.reason,
+        });
         const msg = `Recruiter verification for ${recruiterName} was rejected.`;
         setSuccessBanner(msg);
         toast({
@@ -248,15 +275,19 @@ export const AdminRecruiterApprovalsPage: React.FC = () => {
 
       {/* Main Content Area */}
       {isLoading ? (
-        <PendingRecruiterListSkeleton count={3} />
+        <PendingRecruiterListSkeleton />
       ) : isError ? (
         <PendingRecruiterErrorState
           message={
-            extractApiError(error).message ||
-            'Unable to retrieve pending recruiters for verification.'
+            error
+              ? extractApiError(error).message
+              : 'Failed to load pending recruiters. Please try again.'
           }
-          onRetry={() => refetch()}
           isRetrying={isFetching}
+          onRetry={() => {
+            setErrorMessage(null);
+            refetch();
+          }}
         />
       ) : recruiters.length === 0 ? (
         <PendingRecruiterEmptyState />
@@ -268,6 +299,7 @@ export const AdminRecruiterApprovalsPage: React.FC = () => {
               recruiter={recruiter}
               onApprove={handleApproveClick}
               onReject={handleRejectClick}
+              onClarify={handleClarifyClick}
               isUpdating={updatingId === recruiter.id}
               updatingAction={
                 updatingId === recruiter.id ? updatingAction : null
@@ -317,16 +349,18 @@ export const AdminRecruiterApprovalsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Confirmation Dialog */}
+      {/* Confirmation & Review Dialog */}
       <RecruiterApprovalDialog
+        isOpen={Boolean(dialogRecruiter && dialogAction)}
         recruiter={dialogRecruiter}
         action={dialogAction}
-        isOpen={Boolean(dialogRecruiter && dialogAction)}
-        isSubmitting={Boolean(updatingId === dialogRecruiter?.id)}
+        isSubmitting={Boolean(updatingId)}
         onConfirm={handleConfirmModeration}
         onCancel={() => {
-          setDialogRecruiter(null);
-          setDialogAction(null);
+          if (!updatingId) {
+            setDialogRecruiter(null);
+            setDialogAction(null);
+          }
         }}
       />
     </div>
