@@ -17,6 +17,24 @@ export interface AdminPendingRecruiterUserSummary {
   created_at: Date | string;
 }
 
+export interface AdminRecruiterVerificationSummary {
+  id: string;
+  organization_name: string;
+  website_url: string | null;
+  linkedin_url: string | null;
+  designation: string | null;
+  description: string | null;
+  evidence_file_key: string | null;
+  evidence_original_name: string | null;
+  evidence_mime_type: string | null;
+  evidence_size_bytes: number | null;
+  status: 'PENDING' | 'NEEDS_CLARIFICATION' | 'APPROVED' | 'REJECTED';
+  clarification_message: string | null;
+  clarification_requested_at: Date | string | null;
+  rejection_reason: string | null;
+  reviewed_at: Date | string | null;
+}
+
 export interface AdminPendingRecruiterItem {
   id: string;
   user_id: string;
@@ -27,6 +45,7 @@ export interface AdminPendingRecruiterItem {
   created_at: Date | string;
   company: AdminPendingRecruiterCompanySummary | null;
   user?: AdminPendingRecruiterUserSummary | null;
+  verification?: AdminRecruiterVerificationSummary | null;
 }
 
 export interface ListPendingRecruitersPaginationMeta {
@@ -48,12 +67,21 @@ export interface ModerateRecruiterResult {
   first_name: string;
   last_name: string;
   is_approved: boolean;
+  status?: string;
   message: string;
 }
 
 export interface ModerateRecruiterResponseDto {
   success: true;
   data: ModerateRecruiterResult;
+}
+
+export interface RequestClarificationDto {
+  message: string;
+}
+
+export interface RejectRecruiterDto {
+  reason: string;
 }
 
 export type ListPendingRecruitersQueryDto = ListPendingRecruitersQueryInput;

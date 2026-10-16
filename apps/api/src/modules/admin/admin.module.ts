@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
+import { RecruiterModule } from '../recruiter/recruiter.module';
 import { AdminBootstrapService } from './admin-bootstrap.service';
 import { AdminCompanyController } from './admin-company.controller';
 import { AdminCompanyService } from './admin-company.service';
@@ -11,7 +12,7 @@ import { AdminUserController } from './admin-user.controller';
 import { AdminUserService } from './admin-user.service';
 
 @Module({
-  imports: [AuthModule],
+  imports: [AuthModule, RecruiterModule],
   controllers: [
     AdminUserController,
     AdminMetricsController,
