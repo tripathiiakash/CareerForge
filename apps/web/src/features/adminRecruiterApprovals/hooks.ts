@@ -27,7 +27,16 @@ export function useApproveRecruiter() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (recruiterId: string) => approveRecruiter(recruiterId),
+    mutationFn: (
+      payload: string | { recruiterId: string; company_id?: string }
+    ) => {
+      if (typeof payload === 'string') {
+        return approveRecruiter(payload);
+      }
+      return approveRecruiter(payload.recruiterId, {
+        company_id: payload.company_id,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: adminPendingRecruitersBaseKey(),
@@ -37,6 +46,9 @@ export function useApproveRecruiter() {
       });
       queryClient.invalidateQueries({
         queryKey: ['admin', 'metrics'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['admin', 'companies'],
       });
     },
   });

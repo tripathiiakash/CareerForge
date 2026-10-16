@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { Response } from 'express';
 import {
+  approveRecruiterSchema,
   listPendingRecruitersQuerySchema,
   moderateRecruiterStatusSchema,
   requestClarificationSchema,
@@ -26,6 +27,7 @@ import { RolesGuard } from '../../core/guards/roles.guard';
 import { ZodValidationPipe } from '../../core/pipes/zod-validation.pipe';
 import { AdminRecruiterService } from './admin-recruiter.service';
 import {
+  ApproveRecruiterDto,
   ListPendingRecruitersQueryDto,
   ListPendingRecruitersResponseDto,
   ModerateRecruiterDto,
@@ -113,10 +115,12 @@ export class AdminRecruiterController {
   @HttpCode(HttpStatus.OK)
   async approveRecruiter(
     @Param('id', uuidPipe) id: string,
+    @Body() dto?: ApproveRecruiterDto,
     @CurrentUser('userId') adminUserId?: string
   ): Promise<ModerateRecruiterResponseDto> {
     const data = await this.adminRecruiterService.approveRecruiter(
       id,
+      dto,
       adminUserId
     );
     return {

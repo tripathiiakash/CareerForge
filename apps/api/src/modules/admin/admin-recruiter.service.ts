@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { EvidenceStorageService } from '../recruiter/evidence-storage.service';
 import {
   AdminPendingRecruiterItem,
+  ApproveRecruiterDto,
   ListPendingRecruitersPaginationMeta,
   ListPendingRecruitersQueryDto,
   ModerateRecruiterDto,
@@ -240,11 +241,15 @@ export class AdminRecruiterService {
   }
 
   /**
-   * Approve a recruiter account.
+   * Approve a recruiter account and ensure company association.
+   * Can associate with an existing company via dto.company_id,
+   * or auto-links/provisions company using submitted organization details so the recruiter
+   * never encounters the "Recruiter has no linked company" error.
    * PATCH /api/v1/admin/recruiters/:id/approve
    */
   async approveRecruiter(
     id: string,
+    dto?: ApproveRecruiterDto,
     adminUserId?: string
   ): Promise<ModerateRecruiterResult> {
     const recruiter = await this.prisma.recruiter.findFirst({
@@ -265,9 +270,71 @@ export class AdminRecruiterService {
       });
     }
 
+    let linkedCompanyId = recruiter.company_id;
+    let linkedCompanyName = recruiter.company?.name || '';
+
+    // 1. Explicit admin company assignment
+    if (dto?.company_id) {
+      const targetCompany = await this.prisma.company.findUnique({
+        where: { id: dto.company_id },
+      });
+      if (!targetCompany) {
+        throw new NotFoundException({
+          code: 'NOT_FOUND',
+          message: 'Company not found',
+        });
+      }
+      linkedCompanyId = targetCompany.id;
+      linkedCompanyName = targetCompany.name;
+    } else {
+      // 2. Auto-provision or upgrade placeholder company if recruiter's company is unnamed
+      const currentName = recruiter.company?.name?.trim();
+      const verifiedOrgName = recruiter.verification?.organization_name?.trim();
+
+      if (!currentName && verifiedOrgName) {
+        // Check if an existing company already matches the verified organization name (case-insensitive)
+        const existingCompany = await this.prisma.company.findFirst({
+          where: {
+            name: { equals: verifiedOrgName, mode: 'insensitive' },
+          },
+        });
+
+        if (existingCompany) {
+          linkedCompanyId = existingCompany.id;
+          linkedCompanyName = existingCompany.name;
+        } else if (recruiter.company_id) {
+          // Upgrade placeholder company record in place
+          const updatedCompany = await this.prisma.company.update({
+            where: { id: recruiter.company_id },
+            data: {
+              name: verifiedOrgName,
+              ...(recruiter.verification?.website_url && {
+                website: recruiter.verification.website_url,
+              }),
+            },
+          });
+          linkedCompanyId = updatedCompany.id;
+          linkedCompanyName = updatedCompany.name;
+        } else {
+          // Create new company and link
+          const newCompany = await this.prisma.company.create({
+            data: {
+              name: verifiedOrgName,
+              website: recruiter.verification?.website_url || null,
+            },
+          });
+          linkedCompanyId = newCompany.id;
+          linkedCompanyName = newCompany.name;
+        }
+      }
+    }
+
     const updated = await this.prisma.recruiter.update({
       where: { id: recruiter.id },
-      data: { is_approved: true },
+      data: {
+        is_approved: true,
+        ...(linkedCompanyId ? { company_id: linkedCompanyId } : {}),
+      },
     });
 
     if (this.prisma.recruiterVerification && recruiter.verification) {
@@ -288,7 +355,11 @@ export class AdminRecruiterService {
       last_name: updated.last_name,
       is_approved: true,
       status: 'APPROVED',
-      message: 'Recruiter approved successfully',
+      company_id: linkedCompanyId || undefined,
+      company_name: linkedCompanyName || undefined,
+      message: linkedCompanyName
+        ? `Recruiter approved successfully and linked with "${linkedCompanyName}"`
+        : 'Recruiter approved successfully',
     };
   }
 
@@ -374,7 +445,11 @@ export class AdminRecruiterService {
     adminUserId?: string
   ): Promise<ModerateRecruiterResult> {
     if (dto.status === 'APPROVED' || dto.is_approved === true) {
-      return this.approveRecruiter(id, adminUserId);
+      return this.approveRecruiter(
+        id,
+        dto.company_id ? { company_id: dto.company_id } : undefined,
+        adminUserId
+      );
     }
 
     if (dto.status === 'NEEDS_CLARIFICATION') {

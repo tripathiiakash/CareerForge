@@ -1,4 +1,5 @@
 import {
+  ApproveRecruiterInput,
   ListPendingRecruitersQueryInput,
   ModerateRecruiterStatusInput,
 } from '@careerforge/validation';
@@ -68,6 +69,8 @@ export interface ModerateRecruiterResult {
   last_name: string;
   is_approved: boolean;
   status?: string;
+  company_id?: string;
+  company_name?: string;
   message: string;
 }
 
@@ -86,3 +89,4 @@ export interface RejectRecruiterDto {
 
 export type ListPendingRecruitersQueryDto = ListPendingRecruitersQueryInput;
 export type ModerateRecruiterDto = ModerateRecruiterStatusInput;
+export type ApproveRecruiterDto = ApproveRecruiterInput;

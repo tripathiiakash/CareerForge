@@ -224,6 +224,14 @@ export const rejectRecruiterSchema = z
 
 export type RejectRecruiterInput = z.infer<typeof rejectRecruiterSchema>;
 
+export const approveRecruiterSchema = z
+  .object({
+    company_id: z.string().uuid('Invalid company ID format').optional(),
+  })
+  .strict();
+
+export type ApproveRecruiterInput = z.infer<typeof approveRecruiterSchema>;
+
 export const createCompanySchema = z.object({
   name: z
     .string({ message: 'Company name is required' })
@@ -560,6 +568,7 @@ export const moderateRecruiterStatusSchema = z
       .max(1000, 'Clarification message cannot exceed 1000 characters')
       .optional()
       .nullable(),
+    company_id: z.string().uuid('Invalid company ID format').optional(),
   })
   .refine(
     (data) => data.status !== undefined || data.is_approved !== undefined,

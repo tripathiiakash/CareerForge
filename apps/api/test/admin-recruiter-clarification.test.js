@@ -353,4 +353,200 @@ describe('Admin Recruiter Clarification & Verification Review Test Suite', () =>
       assert.deepEqual(sentBuffer, validPdfBuffer);
     });
   });
+
+  // =========================================================================
+  // 6. Approval & Company Association Workflow
+  // =========================================================================
+  describe('6. AdminRecruiterService - Approval & Company Association', () => {
+    const existingTargetCompanyId = '55555555-5555-4555-8555-555555555555';
+
+    it('approves recruiter and associates with explicit target company when company_id provided', async () => {
+      let updatedRecruiterData = null;
+      let updatedVerificationData = null;
+
+      const mockPrisma = {
+        recruiter: {
+          findFirst: async () => ({
+            id: recruiterProfileId,
+            user_id: recruiterUserId,
+            first_name: 'Tony',
+            last_name: 'Stark',
+            is_approved: false,
+            company_id: companyId,
+            company: { id: companyId, name: '' },
+            verification: {
+              id: verificationId,
+              recruiter_id: recruiterProfileId,
+              organization_name: 'Stark Industries',
+              status: VerificationStatus.PENDING,
+            },
+          }),
+          update: async ({ data }) => {
+            updatedRecruiterData = data;
+            return {
+              id: recruiterProfileId,
+              user_id: recruiterUserId,
+              first_name: 'Tony',
+              last_name: 'Stark',
+              is_approved: true,
+              company_id: data.company_id,
+            };
+          },
+        },
+        company: {
+          findUnique: async ({ where }) => {
+            if (where.id === existingTargetCompanyId) {
+              return {
+                id: existingTargetCompanyId,
+                name: 'Stark Global Enterprises',
+              };
+            }
+            return null;
+          },
+        },
+        recruiterVerification: {
+          update: async ({ data }) => {
+            updatedVerificationData = data;
+            return { id: verificationId, ...data };
+          },
+        },
+      };
+
+      const service = new AdminRecruiterService(mockPrisma, {});
+      const result = await service.approveRecruiter(
+        recruiterProfileId,
+        { company_id: existingTargetCompanyId },
+        adminUserId
+      );
+
+      assert.equal(result.is_approved, true);
+      assert.equal(result.status, 'APPROVED');
+      assert.equal(result.company_id, existingTargetCompanyId);
+      assert.equal(result.company_name, 'Stark Global Enterprises');
+      assert.equal(updatedRecruiterData.is_approved, true);
+      assert.equal(updatedRecruiterData.company_id, existingTargetCompanyId);
+      assert.equal(updatedVerificationData.status, VerificationStatus.APPROVED);
+      assert.equal(updatedVerificationData.reviewed_by_id, adminUserId);
+    });
+
+    it('auto-provisions placeholder company from verified organization details so job creation succeeds', async () => {
+      let updatedCompanyData = null;
+      let updatedRecruiterData = null;
+
+      const mockPrisma = {
+        recruiter: {
+          findFirst: async () => ({
+            id: recruiterProfileId,
+            user_id: recruiterUserId,
+            first_name: 'Bruce',
+            last_name: 'Wayne',
+            is_approved: false,
+            company_id: companyId,
+            company: { id: companyId, name: '', website: null },
+            verification: {
+              id: verificationId,
+              recruiter_id: recruiterProfileId,
+              organization_name: 'Wayne Enterprises Corp',
+              website_url: 'https://waynecorp.example.com',
+              status: VerificationStatus.PENDING,
+            },
+          }),
+          update: async ({ data }) => {
+            updatedRecruiterData = data;
+            return {
+              id: recruiterProfileId,
+              user_id: recruiterUserId,
+              first_name: 'Bruce',
+              last_name: 'Wayne',
+              is_approved: true,
+              company_id: data.company_id,
+            };
+          },
+        },
+        company: {
+          findFirst: async () => null, // No existing company by this name
+          update: async ({ where, data }) => {
+            updatedCompanyData = { id: where.id, ...data };
+            return updatedCompanyData;
+          },
+        },
+        recruiterVerification: {
+          update: async () => ({ id: verificationId, status: 'APPROVED' }),
+        },
+      };
+
+      const service = new AdminRecruiterService(mockPrisma, {});
+      const result = await service.approveRecruiter(
+        recruiterProfileId,
+        undefined,
+        adminUserId
+      );
+
+      assert.equal(result.is_approved, true);
+      assert.equal(result.company_name, 'Wayne Enterprises Corp');
+      assert.equal(updatedCompanyData.name, 'Wayne Enterprises Corp');
+      assert.equal(
+        updatedCompanyData.website,
+        'https://waynecorp.example.com'
+      );
+      assert.ok(
+        result.company_name && result.company_name.trim().length > 0,
+        'Approved recruiter must have a non-empty company name for job creation'
+      );
+    });
+
+    it('auto-links to existing company when name matches verified organization name', async () => {
+      const existingMatchedId = '77777777-7777-4777-8777-777777777777';
+      let updatedRecruiterData = null;
+
+      const mockPrisma = {
+        recruiter: {
+          findFirst: async () => ({
+            id: recruiterProfileId,
+            user_id: recruiterUserId,
+            first_name: 'Peter',
+            last_name: 'Parker',
+            is_approved: false,
+            company_id: companyId,
+            company: { id: companyId, name: '' },
+            verification: {
+              id: verificationId,
+              recruiter_id: recruiterProfileId,
+              organization_name: 'Daily Bugle Media',
+              website_url: 'https://dailybugle.example.com',
+              status: VerificationStatus.PENDING,
+            },
+          }),
+          update: async ({ data }) => {
+            updatedRecruiterData = data;
+            return {
+              id: recruiterProfileId,
+              user_id: recruiterUserId,
+              first_name: 'Peter',
+              last_name: 'Parker',
+              is_approved: true,
+              company_id: data.company_id,
+            };
+          },
+        },
+        company: {
+          findFirst: async () => ({
+            id: existingMatchedId,
+            name: 'Daily Bugle Media',
+          }),
+        },
+        recruiterVerification: {
+          update: async () => ({ id: verificationId, status: 'APPROVED' }),
+        },
+      };
+
+      const service = new AdminRecruiterService(mockPrisma, {});
+      const result = await service.approveRecruiter(recruiterProfileId);
+
+      assert.equal(result.is_approved, true);
+      assert.equal(result.company_id, existingMatchedId);
+      assert.equal(result.company_name, 'Daily Bugle Media');
+      assert.equal(updatedRecruiterData.company_id, existingMatchedId);
+    });
+  });
 });

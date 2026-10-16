@@ -97,14 +97,16 @@ export async function getPendingRecruiters(
  * PATCH /api/v1/admin/recruiters/:id/approve
  */
 export async function approveRecruiter(
-  recruiterId: string
+  recruiterId: string,
+  payload?: { company_id?: string }
 ): Promise<ModerateRecruiterData> {
   if (!isValidUuid(recruiterId)) {
     throw new Error('Invalid recruiterId format (must be a valid UUID)');
   }
 
   const response = await apiClient.patch<ModerateRecruiterResponse>(
-    `/admin/recruiters/${encodeURIComponent(recruiterId)}/approve`
+    `/admin/recruiters/${encodeURIComponent(recruiterId)}/approve`,
+    payload
   );
 
   return response.data.data;
