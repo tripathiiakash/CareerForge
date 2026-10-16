@@ -590,6 +590,154 @@ Manages the hiring manager's profile data.
 
 ---
 
+### 4.4 Get Organization Verification Submission
+
+**Method:** `GET`
+
+**Endpoint:** `/api/v1/recruiters/me/organization`
+
+**Authorization Requirements:** Bearer Token / Cookie, Role: `RECRUITER`
+
+**Purpose:** Fetches the authenticated recruiter's organization details, verification evidence metadata, and review status (including clarification request message or rejection reason if applicable).
+
+**Request Body:** None
+
+**Response Body:** (200 OK)
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "11111111-2222-3333-4444-555555555555",
+    "organization_name": "TechNova Solutions",
+    "website_url": "https://technova.example.com",
+    "linkedin_url": "https://linkedin.com/company/technova",
+    "designation": "Talent Acquisition Lead",
+    "description": "TechNova specializes in AI-powered cloud infrastructure.",
+    "evidence_file_key": "c3f8e02d-1234-4567-89ab-cdef01234567.pdf",
+    "evidence_original_name": "certificate_of_incorporation.pdf",
+    "evidence_mime_type": "application/pdf",
+    "evidence_size_bytes": 1048576,
+    "status": "PENDING",
+    "clarification_message": null,
+    "clarification_requested_at": null,
+    "rejection_reason": null,
+    "reviewed_at": null,
+    "is_submitted": true
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Authenticated user is not a `RECRUITER` |
+| 404 | `NOT_FOUND` | Recruiter profile does not exist |
+
+**Database Entities:** `recruiter_verifications`, `recruiters`
+
+---
+
+### 4.5 Submit / Update Organization Verification Details
+
+**Method:** `PUT`
+
+**Endpoint:** `/api/v1/recruiters/me/organization`
+
+**Authorization Requirements:** Bearer Token / Cookie, Role: `RECRUITER`
+
+**Purpose:** Submits or updates organization details for platform administrator review. Resubmission from `NEEDS_CLARIFICATION` transitions status back to `PENDING`.
+
+**Validation Rules:**
+
+- `organization_name`: Required string, 2–255 characters, trimmed.
+- `website_url`: Optional valid HTTP/HTTPS URL, max 255 characters.
+- `linkedin_url`: Optional valid HTTP/HTTPS URL, max 255 characters.
+- `designation`: Optional string, max 100 characters.
+- `description`: Optional string, max 2000 characters.
+
+**Request Body:**
+
+```json
+{
+  "organization_name": "TechNova Solutions",
+  "website_url": "https://technova.example.com",
+  "linkedin_url": "https://linkedin.com/company/technova",
+  "designation": "Lead Technical Recruiter",
+  "description": "Enterprise cloud services and AI products."
+}
+```
+
+**Response Body:** (200 OK — Returns updated verification submission object)
+
+**Error Responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| 400 | `VALIDATION_ERROR` | Validation failed on provided fields |
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Authenticated user is not a `RECRUITER` |
+
+**Database Entities:** `recruiter_verifications`, `recruiters`
+
+---
+
+### 4.6 Upload Verification Evidence Document
+
+**Method:** `POST`
+
+**Endpoint:** `/api/v1/recruiters/me/evidence`
+
+**Authorization Requirements:** Bearer Token / Cookie, Role: `RECRUITER`
+
+**Content-Type:** `multipart/form-data`
+
+**Purpose:** Uploads business registration, GST proof, certificate of incorporation, or official authorization letter for verification.
+
+**Validation Rules:**
+
+- `file`: Required multipart file under form field `file`.
+- Allowed MIME types: `application/pdf`, `image/png`, `image/jpeg`.
+- Max file size: 5 MB (5,242,880 bytes).
+
+**Response Body:** (200 OK — Returns updated verification submission object with evidence metadata)
+
+**Error Responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| 400 | `VALIDATION_ERROR` | Missing file, unsupported file extension/MIME type, or file exceeds 5MB limit |
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Authenticated user is not a `RECRUITER` |
+
+**Database Entities:** `recruiter_verifications`, `recruiters`
+
+---
+
+### 4.7 Download Own Verification Evidence Document
+
+**Method:** `GET`
+
+**Endpoint:** `/api/v1/recruiters/me/evidence`
+
+**Authorization Requirements:** Bearer Token / Cookie, Role: `RECRUITER`
+
+**Purpose:** Downloads the recruiter's own uploaded verification evidence document with safe disposition headers (`X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'`).
+
+**Response Body:** Binary file stream with `Content-Disposition: attachment; filename="<sanitized_filename>"`.
+
+**Error Responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Authenticated user is not a `RECRUITER` |
+| 404 | `NOT_FOUND` | No evidence document uploaded for this recruiter |
+
+---
+
 ## 5. Jobs
 
 Manages job postings.
@@ -1677,6 +1825,200 @@ npm run admin:bootstrap -- --email="admin@yourdomain.com"
 | 403 | `FORBIDDEN` | Role is not `ADMIN` |
 
 **Database Entities:** `users` (count by role), `jobs` (count by status), `applications` (total count)
+
+---
+
+### 9.7 List Pending Recruiters for Verification
+
+**Method:** `GET`
+
+**Endpoint:** `/api/v1/admin/recruiters/pending`
+
+**Authorization Requirements:** Bearer Token / Cookie, Role: `ADMIN`
+
+**Purpose:** Returns a paginated list of recruiters awaiting verification review, including submitted organization details and uploaded evidence metadata.
+
+**Validation Rules:**
+
+- `page`: Optional query parameter. Integer, min `1`, default `1`.
+- `limit`: Optional query parameter. Integer, min `1`, default `10`, max `50`.
+
+**Request Body:** None
+
+**Response Body:** (200 OK)
+
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "e42e476e-3607-4e68-9a2f-98eb413ce161",
+      "user_id": "99999999-9999-4999-8999-999999999999",
+      "first_name": "Sarah",
+      "last_name": "Connor",
+      "email": "sarah@cyberdyne.example.com",
+      "is_approved": false,
+      "created_at": "2026-09-25T12:00:00.000Z",
+      "company": {
+        "id": "7b92f72a-3b56-42d4-a162-8152341499aa",
+        "name": "Cyberdyne Systems",
+        "website": "https://cyberdyne.example.com",
+        "logo_url": null
+      },
+      "verification": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "organization_name": "Cyberdyne Systems Global",
+        "website_url": "https://cyberdyne.example.com",
+        "linkedin_url": "https://linkedin.com/company/cyberdyne",
+        "designation": "Director of Talent",
+        "description": "Autonomous defense technology and systems engineering.",
+        "evidence_file_key": "c3f8e02d-1234-4567-89ab-cdef01234567.pdf",
+        "evidence_original_name": "incorporation_cert.pdf",
+        "evidence_mime_type": "application/pdf",
+        "evidence_size_bytes": 524288,
+        "status": "PENDING",
+        "clarification_message": null,
+        "clarification_requested_at": null,
+        "rejection_reason": null,
+        "reviewed_at": null
+      }
+    }
+  ],
+  "meta": {
+    "total": 1,
+    "page": 1,
+    "limit": 10,
+    "totalPages": 1
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| 400 | `VALIDATION_ERROR` | Invalid pagination parameters |
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Role is not `ADMIN` |
+
+**Database Entities:** `recruiters`, `recruiter_verifications`, `companies`, `users`
+
+---
+
+### 9.8 Request Clarification on Recruiter Verification
+
+**Method:** `PATCH`
+
+**Endpoint:** `/api/v1/admin/recruiters/:id/clarification`
+
+**Authorization Requirements:** Bearer Token / Cookie, Role: `ADMIN`
+
+**Purpose:** Flags a recruiter's organization submission as `NEEDS_CLARIFICATION` and records an administrator clarification message explaining what needs correction or supplementary proof.
+
+**Validation Rules:**
+
+- `id`: Required UUID in path parameter.
+- `message`: Required string, 5–1000 characters.
+
+**Request Body:**
+
+```json
+{
+  "message": "Please upload an official Certificate of Incorporation or GST registration."
+}
+```
+
+**Response Body:** (200 OK)
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "e42e476e-3607-4e68-9a2f-98eb413ce161",
+    "user_id": "99999999-9999-4999-8999-999999999999",
+    "first_name": "Sarah",
+    "last_name": "Connor",
+    "is_approved": false,
+    "status": "NEEDS_CLARIFICATION",
+    "message": "Clarification requested from recruiter"
+  }
+}
+```
+
+**Error Responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| 400 | `VALIDATION_ERROR` | Missing or invalid clarification message |
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Role is not `ADMIN` |
+| 404 | `NOT_FOUND` | Recruiter profile does not exist |
+
+**Database Entities:** `recruiters`, `recruiter_verifications`
+
+---
+
+### 9.9 Moderate Recruiter Status (Approve / Reject)
+
+**Method:** `PATCH`
+
+**Endpoints:**
+- `/api/v1/admin/recruiters/:id/approve`
+- `/api/v1/admin/recruiters/:id/reject`
+- `/api/v1/admin/recruiters/:id/status`
+
+**Authorization Requirements:** Bearer Token / Cookie, Role: `ADMIN`
+
+**Purpose:** Approves a recruiter account (`is_approved: true`, status `APPROVED`) or rejects their application with a recorded reason (`is_approved: false`, status `REJECTED`).
+
+**Request Body (for reject or status):**
+
+```json
+{
+  "reason": "Unable to verify business entity legitimacy from registry."
+}
+```
+
+**Response Body:** (200 OK)
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "e42e476e-3607-4e68-9a2f-98eb413ce161",
+    "user_id": "99999999-9999-4999-8999-999999999999",
+    "first_name": "Sarah",
+    "last_name": "Connor",
+    "is_approved": true,
+    "status": "APPROVED",
+    "message": "Recruiter approved successfully"
+  }
+}
+```
+
+**Database Entities:** `recruiters`, `recruiter_verifications`
+
+---
+
+### 9.10 Download Recruiter Verification Evidence for Admin Review
+
+**Method:** `GET`
+
+**Endpoint:** `/api/v1/admin/recruiters/:id/evidence`
+
+**Authorization Requirements:** Bearer Token / Cookie, Role: `ADMIN`
+
+**Purpose:** Securely streams the recruiter's uploaded verification evidence document to administrators for identity and entity verification with safe content disposition headers.
+
+**Response Body:** Binary file stream with `Content-Disposition: attachment; filename="<sanitized_filename>"`.
+
+**Error Responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 403 | `FORBIDDEN` | Role is not `ADMIN` |
+| 404 | `NOT_FOUND` | Recruiter not found or no evidence uploaded |
 
 ---
 
