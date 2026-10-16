@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { VerificationStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EvidenceStorageService } from '../recruiter/evidence-storage.service';
@@ -292,16 +296,26 @@ export class AdminRecruiterService {
       const verifiedOrgName = recruiter.verification?.organization_name?.trim();
 
       if (!currentName && verifiedOrgName) {
-        // Check if an existing company already matches the verified organization name (case-insensitive)
-        const existingCompany = await this.prisma.company.findFirst({
+        // Query matching companies to check for ambiguity or duplicates
+        const matchingCompanies = await this.prisma.company.findMany({
           where: {
             name: { equals: verifiedOrgName, mode: 'insensitive' },
           },
+          take: 2,
         });
 
-        if (existingCompany) {
-          linkedCompanyId = existingCompany.id;
-          linkedCompanyName = existingCompany.name;
+        if (matchingCompanies.length > 1) {
+          // Ambiguous match: multiple companies share this name.
+          // Mandate explicit admin company selection to avoid unintended association.
+          throw new BadRequestException({
+            code: 'AMBIGUOUS_COMPANY_MATCH',
+            message: `Multiple companies exist matching organization "${verifiedOrgName}". Please approve with an explicit company_id or assign the target company via the Admin Companies panel.`,
+          });
+        }
+
+        if (matchingCompanies.length === 1) {
+          linkedCompanyId = matchingCompanies[0].id;
+          linkedCompanyName = matchingCompanies[0].name;
         } else if (recruiter.company_id) {
           // Upgrade placeholder company record in place
           const updatedCompany = await this.prisma.company.update({

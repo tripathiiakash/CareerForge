@@ -196,7 +196,14 @@ export class B2NativeStorageProvider implements IStorageProvider {
 
   async upload(input: StorageUploadInput): Promise<StorageUploadResult> {
     const ext = path.extname(input.originalName || '').toLowerCase();
-    const safeExt = ext === '.html' || ext === '.htm' ? ext : '.pdf';
+    const safeExt =
+      ext === '.html' ||
+      ext === '.htm' ||
+      ext === '.png' ||
+      ext === '.jpg' ||
+      ext === '.jpeg'
+        ? ext
+        : '.pdf';
     const fileKey = `${crypto.randomUUID()}${safeExt}`;
     this.verifyKey(fileKey);
 
@@ -541,7 +548,12 @@ export class B2NativeStorageProvider implements IStorageProvider {
         input.mimeType ||
         (fileKey.toLowerCase().endsWith('.pdf')
           ? 'application/pdf'
-          : 'text/html'),
+          : fileKey.toLowerCase().endsWith('.png')
+            ? 'image/png'
+            : fileKey.toLowerCase().endsWith('.jpg') ||
+                fileKey.toLowerCase().endsWith('.jpeg')
+              ? 'image/jpeg'
+              : 'text/html'),
       'Content-Length': String(input.buffer.byteLength),
       'X-Bz-Content-Sha1': sha1,
     };
@@ -734,7 +746,7 @@ export class B2NativeStorageProvider implements IStorageProvider {
   // ---------------------------------------------------------------------------
 
   private verifyKey(fileKey: string): void {
-    if (!/^[a-zA-Z0-9-]+\.(pdf|html|htm)$/i.test(fileKey)) {
+    if (!/^[a-zA-Z0-9-]+\.(pdf|html|htm|png|jpe?g)$/i.test(fileKey)) {
       throw new StorageInvalidKeyError(
         fileKey,
         'Invalid storage file key format'

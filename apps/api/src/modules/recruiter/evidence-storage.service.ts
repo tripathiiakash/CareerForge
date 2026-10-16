@@ -10,6 +10,7 @@ import {
   S3ClientConfig,
 } from '@aws-sdk/client-s3';
 import { ConfigService } from '../../core/config/config.service';
+import { B2NativeStorageProvider } from '../resume/storage/b2-native-storage.provider';
 
 const UUID_FILENAME_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(pdf|png|jpe?g)$/i;
@@ -33,21 +34,27 @@ export class EvidenceStorageService {
   private readonly logger = new Logger(EvidenceStorageService.name);
   private readonly storageDir: string;
   private readonly s3Client?: S3Client;
+  private readonly b2Provider?: B2NativeStorageProvider;
   private readonly bucket?: string;
-  private readonly isS3: boolean;
+  private readonly mode: 'local' | 's3' | 'b2';
 
   constructor(
     private readonly configService: ConfigService,
-    @Optional() injectedS3Client?: S3Client
+    @Optional() injectedS3Client?: S3Client,
+    @Optional() injectedB2Provider?: B2NativeStorageProvider
   ) {
     const baseDir = process.cwd().includes('apps')
       ? path.resolve(process.cwd(), '..', '..')
       : process.cwd();
     this.storageDir = path.resolve(baseDir, 'uploads', 'verification-evidence');
 
-    this.isS3 = this.configService.storageProvider === 's3';
-
-    if (this.isS3) {
+    const provider = this.configService.storageProvider;
+    if (provider === 'b2') {
+      this.mode = 'b2';
+      this.b2Provider =
+        injectedB2Provider ?? new B2NativeStorageProvider(this.configService);
+    } else if (provider === 's3') {
+      this.mode = 's3';
       this.bucket = this.configService.s3Bucket || '';
       if (injectedS3Client) {
         this.s3Client = injectedS3Client;
@@ -69,6 +76,8 @@ export class EvidenceStorageService {
         }
         this.s3Client = new S3Client(clientConfig);
       }
+    } else {
+      this.mode = 'local';
     }
   }
 
@@ -100,7 +109,22 @@ export class EvidenceStorageService {
     const fileKey = `${crypto.randomUUID()}${ext}`;
     this.verifyKey(fileKey);
 
-    if (this.isS3 && this.s3Client && this.bucket) {
+    if (this.mode === 'b2' && this.b2Provider) {
+      const res = await this.b2Provider.upload({
+        buffer: input.buffer,
+        mimeType: input.mimeType,
+        originalName: input.originalName || `evidence${ext}`,
+        studentId: input.recruiterId,
+      });
+      return {
+        fileKey: res.fileKey,
+        originalName: input.originalName || res.fileKey,
+        mimeType: input.mimeType,
+        sizeBytes: input.buffer.byteLength,
+      };
+    }
+
+    if (this.mode === 's3' && this.s3Client && this.bucket) {
       await this.s3Client.send(
         new PutObjectCommand({
           Bucket: this.bucket,
@@ -127,7 +151,11 @@ export class EvidenceStorageService {
   async getBuffer(fileKey: string): Promise<Buffer> {
     this.verifyKey(fileKey);
 
-    if (this.isS3 && this.s3Client && this.bucket) {
+    if (this.mode === 'b2' && this.b2Provider) {
+      return await this.b2Provider.getBuffer(fileKey);
+    }
+
+    if (this.mode === 's3' && this.s3Client && this.bucket) {
       const response = await this.s3Client.send(
         new GetObjectCommand({
           Bucket: this.bucket,
@@ -148,7 +176,12 @@ export class EvidenceStorageService {
   async delete(fileKey: string): Promise<void> {
     this.verifyKey(fileKey);
 
-    if (this.isS3 && this.s3Client && this.bucket) {
+    if (this.mode === 'b2' && this.b2Provider) {
+      await this.b2Provider.delete(fileKey);
+      return;
+    }
+
+    if (this.mode === 's3' && this.s3Client && this.bucket) {
       try {
         await this.s3Client.send(
           new DeleteObjectCommand({

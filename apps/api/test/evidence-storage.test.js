@@ -162,4 +162,108 @@ describe('EvidenceStorageService - Multi-Provider Storage Test Suite', () => {
       );
     });
   });
+
+  // =========================================================================
+  // 3. Backblaze B2 Native Storage Provider Tests
+  // =========================================================================
+  describe('3. Backblaze B2 Native Storage Provider (storageProvider = b2)', () => {
+    const mockConfigB2 = {
+      storageProvider: 'b2',
+      b2KeyId: 'test-b2-key-id',
+      b2ApplicationKey: 'test-b2-app-key',
+      b2BucketId: 'test-b2-bucket-id',
+      b2BucketName: 'careerforge-evidence-b2',
+    };
+
+    it('uploads evidence file via B2 provider and returns valid fileKey', async () => {
+      let b2UploadInput = null;
+
+      const mockB2Provider = {
+        upload: async (input) => {
+          b2UploadInput = input;
+          return {
+            fileKey: '88888888-8888-4888-8888-888888888888.pdf',
+            fileUrl: 'https://f000.backblazeb2.com/file/careerforge-evidence-b2/88888888-8888-4888-8888-888888888888.pdf',
+          };
+        },
+      };
+
+      const storage = new EvidenceStorageService(
+        mockConfigB2,
+        undefined,
+        mockB2Provider
+      );
+
+      const result = await storage.upload({
+        buffer: samplePdfBuffer,
+        mimeType: 'application/pdf',
+        originalName: 'tax_certificate.pdf',
+        recruiterId,
+      });
+
+      assert.equal(
+        result.fileKey,
+        '88888888-8888-4888-8888-888888888888.pdf'
+      );
+      assert.equal(result.sizeBytes, samplePdfBuffer.byteLength);
+      assert.ok(b2UploadInput);
+      assert.deepEqual(b2UploadInput.buffer, samplePdfBuffer);
+      assert.equal(b2UploadInput.studentId, recruiterId);
+    });
+
+    it('retrieves evidence buffer via B2 provider', async () => {
+      let requestedKey = null;
+
+      const mockB2Provider = {
+        getBuffer: async (key) => {
+          requestedKey = key;
+          return samplePdfBuffer;
+        },
+      };
+
+      const storage = new EvidenceStorageService(
+        mockConfigB2,
+        undefined,
+        mockB2Provider
+      );
+      const validKey = '88888888-8888-4888-8888-888888888888.png';
+      const buffer = await storage.getBuffer(validKey);
+
+      assert.equal(requestedKey, validKey);
+      assert.deepEqual(buffer, samplePdfBuffer);
+    });
+
+    it('deletes evidence file via B2 provider', async () => {
+      let deletedKey = null;
+
+      const mockB2Provider = {
+        delete: async (key) => {
+          deletedKey = key;
+        },
+      };
+
+      const storage = new EvidenceStorageService(
+        mockConfigB2,
+        undefined,
+        mockB2Provider
+      );
+      const validKey = '88888888-8888-4888-8888-888888888888.pdf';
+      await storage.delete(validKey);
+
+      assert.equal(deletedKey, validKey);
+    });
+
+    it('enforces UUID fileKey validation in B2 mode', async () => {
+      const storage = new EvidenceStorageService(mockConfigB2, undefined, {});
+
+      await assert.rejects(
+        () => storage.getBuffer('malicious/traversal/path.pdf'),
+        /Invalid evidence fileKey format/
+      );
+      await assert.rejects(
+        () => storage.delete('../../etc/hosts'),
+        /Invalid evidence fileKey format/
+      );
+    });
+  });
 });

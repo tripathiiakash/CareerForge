@@ -464,7 +464,7 @@ describe('Admin Recruiter Clarification & Verification Review Test Suite', () =>
           },
         },
         company: {
-          findFirst: async () => null, // No existing company by this name
+          findMany: async () => [], // No existing company by this name
           update: async ({ where, data }) => {
             updatedCompanyData = { id: where.id, ...data };
             return updatedCompanyData;
@@ -530,10 +530,12 @@ describe('Admin Recruiter Clarification & Verification Review Test Suite', () =>
           },
         },
         company: {
-          findFirst: async () => ({
-            id: existingMatchedId,
-            name: 'Daily Bugle Media',
-          }),
+          findMany: async () => [
+            {
+              id: existingMatchedId,
+              name: 'Daily Bugle Media',
+            },
+          ],
         },
         recruiterVerification: {
           update: async () => ({ id: verificationId, status: 'APPROVED' }),
@@ -547,6 +549,49 @@ describe('Admin Recruiter Clarification & Verification Review Test Suite', () =>
       assert.equal(result.company_id, existingMatchedId);
       assert.equal(result.company_name, 'Daily Bugle Media');
       assert.equal(updatedRecruiterData.company_id, existingMatchedId);
+    });
+
+    it('rejects approval with AMBIGUOUS_COMPANY_MATCH when multiple companies share the same name', async () => {
+      const mockPrisma = {
+        recruiter: {
+          findFirst: async () => ({
+            id: recruiterProfileId,
+            user_id: recruiterUserId,
+            first_name: 'Clark',
+            last_name: 'Kent',
+            is_approved: false,
+            company_id: companyId,
+            company: { id: companyId, name: '' },
+            verification: {
+              id: verificationId,
+              recruiter_id: recruiterProfileId,
+              organization_name: 'LexCorp Industries',
+              status: VerificationStatus.PENDING,
+            },
+          }),
+        },
+        company: {
+          findMany: async () => [
+            { id: 'company-branch-1', name: 'LexCorp Industries' },
+            { id: 'company-branch-2', name: 'LexCorp Industries' },
+          ],
+        },
+      };
+
+      const service = new AdminRecruiterService(mockPrisma, {});
+
+      await assert.rejects(
+        () => service.approveRecruiter(recruiterProfileId),
+        (err) => {
+          assert.equal(err.status, 400);
+          assert.equal(err.response.code, 'AMBIGUOUS_COMPANY_MATCH');
+          assert.match(
+            err.response.message,
+            /Multiple companies exist matching organization "LexCorp Industries"/
+          );
+          return true;
+        }
+      );
     });
   });
 });
