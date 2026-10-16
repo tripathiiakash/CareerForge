@@ -143,6 +143,87 @@ export type UpdateRecruiterProfileInput = z.infer<
   typeof updateRecruiterProfileSchema
 >;
 
+// ---------------------------------------------------------------------------
+// Recruiter Organization Verification Schemas
+// ---------------------------------------------------------------------------
+
+const optionalUrl = (fieldName: string) =>
+  z
+    .string()
+    .trim()
+    .max(255, `${fieldName} cannot exceed 255 characters`)
+    .optional()
+    .nullable()
+    .transform((val) => (val === '' ? null : val))
+    .refine(
+      (val) => {
+        if (!val) return true;
+        try {
+          const u = new URL(val);
+          return u.protocol === 'http:' || u.protocol === 'https:';
+        } catch {
+          return false;
+        }
+      },
+      { message: `${fieldName} must be a valid HTTP or HTTPS URL` }
+    );
+
+export const submitRecruiterOrganizationSchema = z
+  .object({
+    organization_name: z
+      .string({ message: 'Organization name is required' })
+      .trim()
+      .min(2, 'Organization name must be between 2 and 255 characters')
+      .max(255, 'Organization name cannot exceed 255 characters'),
+    website_url: optionalUrl('Website URL'),
+    linkedin_url: optionalUrl('LinkedIn URL'),
+    designation: z
+      .string()
+      .trim()
+      .max(100, 'Designation cannot exceed 100 characters')
+      .optional()
+      .nullable()
+      .transform((val) => (val === '' ? null : val)),
+    description: z
+      .string()
+      .trim()
+      .max(2000, 'Description cannot exceed 2000 characters')
+      .optional()
+      .nullable()
+      .transform((val) => (val === '' ? null : val)),
+  })
+  .strict();
+
+export type SubmitRecruiterOrganizationInput = z.infer<
+  typeof submitRecruiterOrganizationSchema
+>;
+
+export const requestClarificationSchema = z
+  .object({
+    message: z
+      .string({ message: 'Clarification message is required' })
+      .trim()
+      .min(5, 'Clarification message must be at least 5 characters')
+      .max(1000, 'Clarification message cannot exceed 1000 characters'),
+  })
+  .strict();
+
+export type RequestClarificationInput = z.infer<
+  typeof requestClarificationSchema
+>;
+
+export const rejectRecruiterSchema = z
+  .object({
+    reason: z
+      .string({ message: 'Rejection reason is required' })
+      .trim()
+      .min(5, 'Rejection reason must be at least 5 characters')
+      .max(1000, 'Rejection reason cannot exceed 1000 characters'),
+  })
+  .strict();
+
+export type RejectRecruiterInput = z.infer<typeof rejectRecruiterSchema>;
+
 export const createCompanySchema = z.object({
   name: z
     .string({ message: 'Company name is required' })
@@ -457,8 +538,9 @@ export type ListPendingRecruitersQueryInput = z.infer<
 export const moderateRecruiterStatusSchema = z
   .object({
     status: z
-      .enum(['APPROVED', 'REJECTED'], {
-        message: "Status must be exactly 'APPROVED' or 'REJECTED'",
+      .enum(['APPROVED', 'REJECTED', 'NEEDS_CLARIFICATION'], {
+        message:
+          "Status must be 'APPROVED', 'REJECTED', or 'NEEDS_CLARIFICATION'",
       })
       .optional(),
     is_approved: z
@@ -466,12 +548,24 @@ export const moderateRecruiterStatusSchema = z
         message: 'is_approved must be a boolean (true or false)',
       })
       .optional(),
+    reason: z
+      .string()
+      .trim()
+      .max(1000, 'Rejection reason cannot exceed 1000 characters')
+      .optional()
+      .nullable(),
+    message: z
+      .string()
+      .trim()
+      .max(1000, 'Clarification message cannot exceed 1000 characters')
+      .optional()
+      .nullable(),
   })
   .refine(
     (data) => data.status !== undefined || data.is_approved !== undefined,
     {
       message:
-        "Either 'status' ('APPROVED' | 'REJECTED') or 'is_approved' boolean must be provided",
+        "Either 'status' ('APPROVED' | 'REJECTED' | 'NEEDS_CLARIFICATION') or 'is_approved' boolean must be provided",
     }
   );
 

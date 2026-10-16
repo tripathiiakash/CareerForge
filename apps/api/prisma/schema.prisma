@@ -60,6 +60,14 @@ enum EmailDeliveryStatus {
   FAILED
 }
 
+/// Recruiter organization verification status — docs/DATABASE.md §12
+enum VerificationStatus {
+  PENDING
+  NEEDS_CLARIFICATION
+  APPROVED
+  REJECTED
+}
+
 // ---------------------------------------------------------------------------
 // 1. Users (Auth Module)
 // docs/DATABASE.md §1
@@ -75,8 +83,9 @@ model User {
   is_banned     Boolean   @default(false)
 
   // Relations
-  recruiter Recruiter?
-  student   Student?
+  recruiter              Recruiter?
+  student                Student?
+  reviewed_verifications RecruiterVerification[] @relation("RecruiterVerificationReviewer")
 
   @@map("users")
 }
@@ -115,9 +124,10 @@ model Recruiter {
   is_approved Boolean @default(false)
 
   // Relations
-  user    User    @relation(fields: [user_id], references: [id])
-  company Company @relation(fields: [company_id], references: [id])
-  jobs    Job[]
+  user         User                   @relation(fields: [user_id], references: [id])
+  company      Company                @relation(fields: [company_id], references: [id])
+  jobs         Job[]
+  verification RecruiterVerification?
 
   @@map("recruiters")
 }
@@ -303,4 +313,38 @@ model EmailDelivery {
 
   @@index([status])
   @@map("email_deliveries")
+}
+
+// ---------------------------------------------------------------------------
+// 12. Recruiter Verifications (Recruiter Module)
+// docs/DATABASE.md §12
+// Recruiter-submitted organization details and admin verification state.
+// ---------------------------------------------------------------------------
+model RecruiterVerification {
+  id                         String             @id @default(uuid()) @db.Uuid
+  recruiter_id               String             @unique @db.Uuid
+  organization_name          String             @db.VarChar(255)
+  website_url                String?            @db.VarChar(255)
+  linkedin_url               String?            @db.VarChar(255)
+  designation                String?            @db.VarChar(100)
+  description                String?            @db.Text
+  evidence_file_key          String?            @db.VarChar(255)
+  evidence_original_name     String?            @db.VarChar(255)
+  evidence_mime_type         String?            @db.VarChar(100)
+  evidence_size_bytes        Int?
+  status                     VerificationStatus @default(PENDING)
+  clarification_message      String?            @db.Text
+  clarification_requested_at DateTime?
+  rejection_reason           String?            @db.Text
+  reviewed_by_id             String?            @db.Uuid
+  reviewed_at                DateTime?
+  created_at                 DateTime           @default(now())
+  updated_at                 DateTime           @default(now()) @updatedAt
+
+  // Relations
+  recruiter                  Recruiter          @relation(fields: [recruiter_id], references: [id], onDelete: Cascade)
+  reviewed_by                User?              @relation("RecruiterVerificationReviewer", fields: [reviewed_by_id], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("recruiter_verifications")
 }

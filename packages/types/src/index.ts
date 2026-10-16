@@ -33,3 +33,9 @@ export interface PaginatedData<T> {
  * User roles defined across the system
  */
 export type UserRole = 'STUDENT' | 'RECRUITER' | 'ADMIN';
+
+/**
+ * Recruiter organization verification status lifecycle
+ */
+export type VerificationStatus =
+  'PENDING' | 'NEEDS_CLARIFICATION' | 'APPROVED' | 'REJECTED';
