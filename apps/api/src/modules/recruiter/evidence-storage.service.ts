@@ -1,7 +1,14 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+  S3ClientConfig,
+} from '@aws-sdk/client-s3';
 import { ConfigService } from '../../core/config/config.service';
 
 const UUID_FILENAME_REGEX =
@@ -25,18 +32,54 @@ export interface EvidenceUploadResult {
 export class EvidenceStorageService {
   private readonly logger = new Logger(EvidenceStorageService.name);
   private readonly storageDir: string;
+  private readonly s3Client?: S3Client;
+  private readonly bucket?: string;
+  private readonly isS3: boolean;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    @Optional() injectedS3Client?: S3Client
+  ) {
     const baseDir = process.cwd().includes('apps')
       ? path.resolve(process.cwd(), '..', '..')
       : process.cwd();
     this.storageDir = path.resolve(baseDir, 'uploads', 'verification-evidence');
+
+    this.isS3 = this.configService.storageProvider === 's3';
+
+    if (this.isS3) {
+      this.bucket = this.configService.s3Bucket || '';
+      if (injectedS3Client) {
+        this.s3Client = injectedS3Client;
+      } else {
+        const clientConfig: S3ClientConfig = {
+          region: this.configService.s3Region || 'auto',
+          credentials: {
+            accessKeyId: this.configService.s3AccessKeyId || '',
+            secretAccessKey: this.configService.s3SecretAccessKey || '',
+          },
+          requestChecksumCalculation: 'WHEN_REQUIRED',
+          responseChecksumValidation: 'WHEN_REQUIRED',
+        };
+        if (this.configService.s3Endpoint) {
+          clientConfig.endpoint = this.configService.s3Endpoint;
+        }
+        if (this.configService.s3ForcePathStyle) {
+          clientConfig.forcePathStyle = true;
+        }
+        this.s3Client = new S3Client(clientConfig);
+      }
+    }
   }
 
-  resolveAndVerifyPath(fileKey: string): string {
+  verifyKey(fileKey: string): void {
     if (!fileKey || !UUID_FILENAME_REGEX.test(fileKey)) {
       throw new Error(`Invalid evidence fileKey format: ${fileKey}`);
     }
+  }
+
+  resolveAndVerifyPath(fileKey: string): string {
+    this.verifyKey(fileKey);
     const resolved = path.resolve(this.storageDir, path.basename(fileKey));
     if (!resolved.startsWith(this.storageDir)) {
       throw new Error(`Path traversal attempt detected for key: ${fileKey}`);
@@ -44,18 +87,34 @@ export class EvidenceStorageService {
     return resolved;
   }
 
-  async upload(input: EvidenceUploadInput): Promise<EvidenceUploadResult> {
-    await fs.mkdir(this.storageDir, { recursive: true });
+  private getS3ObjectKey(fileKey: string): string {
+    return `verification-evidence/${fileKey}`;
+  }
 
+  async upload(input: EvidenceUploadInput): Promise<EvidenceUploadResult> {
     const rawExt = path.extname(input.originalName || '').toLowerCase();
     const ext =
       rawExt === '.png' || rawExt === '.jpg' || rawExt === '.jpeg'
         ? rawExt
         : '.pdf';
     const fileKey = `${crypto.randomUUID()}${ext}`;
-    const targetPath = this.resolveAndVerifyPath(fileKey);
+    this.verifyKey(fileKey);
 
-    await fs.writeFile(targetPath, input.buffer);
+    if (this.isS3 && this.s3Client && this.bucket) {
+      await this.s3Client.send(
+        new PutObjectCommand({
+          Bucket: this.bucket,
+          Key: this.getS3ObjectKey(fileKey),
+          Body: input.buffer,
+          ContentLength: input.buffer.byteLength,
+          ContentType: input.mimeType || 'application/octet-stream',
+        })
+      );
+    } else {
+      await fs.mkdir(this.storageDir, { recursive: true });
+      const targetPath = this.resolveAndVerifyPath(fileKey);
+      await fs.writeFile(targetPath, input.buffer);
+    }
 
     return {
       fileKey,
@@ -66,11 +125,45 @@ export class EvidenceStorageService {
   }
 
   async getBuffer(fileKey: string): Promise<Buffer> {
+    this.verifyKey(fileKey);
+
+    if (this.isS3 && this.s3Client && this.bucket) {
+      const response = await this.s3Client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: this.getS3ObjectKey(fileKey),
+        })
+      );
+      if (!response.Body) {
+        throw new Error(`Empty response body for evidence key: ${fileKey}`);
+      }
+      const byteArray = await response.Body.transformToByteArray();
+      return Buffer.from(byteArray);
+    }
+
     const targetPath = this.resolveAndVerifyPath(fileKey);
     return await fs.readFile(targetPath);
   }
 
   async delete(fileKey: string): Promise<void> {
+    this.verifyKey(fileKey);
+
+    if (this.isS3 && this.s3Client && this.bucket) {
+      try {
+        await this.s3Client.send(
+          new DeleteObjectCommand({
+            Bucket: this.bucket,
+            Key: this.getS3ObjectKey(fileKey),
+          })
+        );
+      } catch (err: unknown) {
+        this.logger.warn(
+          `Failed to delete evidence S3 object ${fileKey}: ${err}`
+        );
+      }
+      return;
+    }
+
     try {
       const targetPath = this.resolveAndVerifyPath(fileKey);
       await fs.unlink(targetPath);
