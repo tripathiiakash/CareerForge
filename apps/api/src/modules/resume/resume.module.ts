@@ -96,6 +96,7 @@ import { ResumeExtractionWorker } from './workers/resume-extraction.worker';
     ResumeStorageService,
     ResumeAnalysisService,
     HtmlParserService,
+    B2NativeStorageProvider,
   ],
 })
 export class ResumeModule {}

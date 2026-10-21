@@ -265,5 +265,25 @@ describe('EvidenceStorageService - Multi-Provider Storage Test Suite', () => {
         /Invalid evidence fileKey format/
       );
     });
+
+    it('throws explicit error at construction time when b2 mode is selected but no provider is injected', () => {
+      // Verifies Finding #1 fix: the silent `new B2NativeStorageProvider(...)` fallback has
+      // been replaced with an explicit startup error so misconfiguration is caught immediately.
+      assert.throws(
+        () => new EvidenceStorageService(mockConfigB2, undefined, undefined),
+        (err) => {
+          assert.ok(err instanceof Error);
+          assert.match(
+            err.message,
+            /B2NativeStorageProvider was not injected/
+          );
+          assert.match(
+            err.message,
+            /RecruiterModule imports ResumeModule/
+          );
+          return true;
+        }
+      );
+    });
   });
 });

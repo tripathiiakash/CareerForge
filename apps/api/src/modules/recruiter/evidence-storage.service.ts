@@ -40,8 +40,8 @@ export class EvidenceStorageService {
 
   constructor(
     private readonly configService: ConfigService,
-    @Optional() injectedS3Client?: S3Client,
-    @Optional() injectedB2Provider?: B2NativeStorageProvider
+    @Optional() private readonly injectedS3Client?: S3Client,
+    injectedB2Provider?: B2NativeStorageProvider
   ) {
     const baseDir = process.cwd().includes('apps')
       ? path.resolve(process.cwd(), '..', '..')
@@ -50,14 +50,19 @@ export class EvidenceStorageService {
 
     const provider = this.configService.storageProvider;
     if (provider === 'b2') {
+      if (!injectedB2Provider) {
+        throw new Error(
+          'EvidenceStorageService: B2NativeStorageProvider was not injected. ' +
+            'Ensure RecruiterModule imports ResumeModule so the shared provider is available.'
+        );
+      }
       this.mode = 'b2';
-      this.b2Provider =
-        injectedB2Provider ?? new B2NativeStorageProvider(this.configService);
+      this.b2Provider = injectedB2Provider;
     } else if (provider === 's3') {
       this.mode = 's3';
       this.bucket = this.configService.s3Bucket || '';
-      if (injectedS3Client) {
-        this.s3Client = injectedS3Client;
+      if (this.injectedS3Client) {
+        this.s3Client = this.injectedS3Client;
       } else {
         const clientConfig: S3ClientConfig = {
           region: this.configService.s3Region || 'auto',
