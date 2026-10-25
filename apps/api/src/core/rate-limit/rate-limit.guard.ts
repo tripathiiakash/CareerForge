@@ -57,7 +57,8 @@ export class RateLimitGuard implements CanActivate {
     const response = context.switchToHttp().getResponse<Response>();
 
     const clientIp = this.getClientIp(request);
-    let userId = (request as unknown as { user?: { userId?: string } }).user?.userId;
+    let userId = (request as unknown as { user?: { userId?: string } }).user
+      ?.userId;
 
     // If user is not yet populated on the request (e.g. RateLimitGuard executing as APP_GUARD
     // prior to controller-scoped JwtAuthGuard), attempt to extract and verify the auth token
@@ -131,8 +132,13 @@ export class RateLimitGuard implements CanActivate {
     const cookieName = this.configService?.authCookieName ?? 'cf_auth';
 
     // 1. Check req.cookies (populated by cookie-parser middleware)
-    const cookies = (request as unknown as { cookies?: Record<string, string> }).cookies;
-    if (cookies && typeof cookies[cookieName] === 'string' && cookies[cookieName]) {
+    const cookies = (request as unknown as { cookies?: Record<string, string> })
+      .cookies;
+    if (
+      cookies &&
+      typeof cookies[cookieName] === 'string' &&
+      cookies[cookieName]
+    ) {
       return cookies[cookieName];
     }
 

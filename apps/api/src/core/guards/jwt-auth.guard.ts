@@ -102,8 +102,13 @@ export class JwtAuthGuard implements CanActivate {
     const cookieName = this.configService?.authCookieName ?? 'cf_auth';
 
     // 1. Check req.cookies (populated by cookie-parser middleware)
-    const cookies = (request as unknown as { cookies?: Record<string, string> }).cookies;
-    if (cookies && typeof cookies[cookieName] === 'string' && cookies[cookieName]) {
+    const cookies = (request as unknown as { cookies?: Record<string, string> })
+      .cookies;
+    if (
+      cookies &&
+      typeof cookies[cookieName] === 'string' &&
+      cookies[cookieName]
+    ) {
       return cookies[cookieName];
     }
 

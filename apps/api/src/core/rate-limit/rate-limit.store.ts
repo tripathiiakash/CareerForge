@@ -1,9 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  Optional,
-} from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RateLimitResult } from './rate-limit.types';
 
@@ -41,7 +36,9 @@ export class RateLimitStore implements OnModuleDestroy {
     // Run lightweight background cleanup every 60 seconds
     this.cleanupInterval = setInterval(() => {
       this.cleanupExpired().catch((err) => {
-        this.logger.warn(`Background rate-limit cleanup failed: ${err.message}`);
+        this.logger.warn(
+          `Background rate-limit cleanup failed: ${err.message}`
+        );
       });
     }, 60000);
 

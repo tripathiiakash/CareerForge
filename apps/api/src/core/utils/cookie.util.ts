@@ -32,10 +32,7 @@ export function setAuthCookie(
  * Clears the auth cookie on logout.
  * Sets Max-Age=0 and expires in the past so all browsers immediately delete it.
  */
-export function clearAuthCookie(
-  res: Response,
-  config: ConfigService
-): void {
+export function clearAuthCookie(res: Response, config: ConfigService): void {
   const sameSite = config.authCookieSameSite ?? 'lax';
   const secure = sameSite === 'none' ? true : config.isProduction;
 

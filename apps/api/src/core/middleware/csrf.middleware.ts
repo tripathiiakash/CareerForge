@@ -20,12 +20,7 @@ import { ConfigService } from '../config/config.service';
  * Non-browser / server-to-server requests where the Origin header is absent
  * are permitted, allowing curl, CLI scripts, and backend integrations.
  */
-const STATE_CHANGING_METHODS = new Set([
-  'POST',
-  'PUT',
-  'PATCH',
-  'DELETE',
-]);
+const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 @Injectable()
 export class CsrfMiddleware implements NestMiddleware {
