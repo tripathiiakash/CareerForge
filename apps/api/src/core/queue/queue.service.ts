@@ -70,6 +70,12 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     return this.isStarted;
   }
 
+  /**
+   * Idempotently creates or registers an application queue in the pg-boss schema.
+   *
+   * @param name - Unique queue identifier from QUEUE_NAMES.
+   * @param options - Queue options, including queue policy (e.g., 'exclusive' for single-consumer queues).
+   */
   async createQueue(
     name: string,
     options?: { policy?: QueuePolicy }
@@ -82,6 +88,14 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /**
+   * Dispatches a job payload to the specified pg-boss queue.
+   *
+   * @param name - Target queue name.
+   * @param data - Strongly-typed job payload object.
+   * @param options - Scheduling and deduplication options (e.g., singletonKey, retryLimit, retryDelay).
+   * @returns The generated job UUID string, or null if deduplicated via singletonKey.
+   */
   async send<T extends object>(
     name: string,
     data: T,
@@ -90,10 +104,19 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     return this.boss.send(name, data, options);
   }
 
+  /**
+   * Forces an immediate pg-boss maintenance/supervision cycle for housekeeping.
+   */
   async supervise(): Promise<void> {
     await this.boss.supervise();
   }
 
+  /**
+   * Subscribes a worker callback to consume jobs from the given queue.
+   *
+   * @param name - Queue to listen on.
+   * @param handler - Handler function receiving normalized job metadata and payload.
+   */
   async work<T extends object>(
     name: string,
     handler: JobHandler<T>
