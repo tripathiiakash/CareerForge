@@ -193,6 +193,15 @@ export class ResumeAnalysisWorker implements OnModuleInit {
     }
   }
 
+  /**
+   * Updates the AiAnalysis record status to FAILED in the database.
+   *
+   * Catches and logs any database update errors locally so that unexpected
+   * Prisma write issues do not mask the root processing error being handled.
+   *
+   * @param resumeId - The target resume UUID.
+   * @param errorMessage - Human-readable error message to record for UI display.
+   */
   private async markAnalysisFailed(
     resumeId: string,
     errorMessage: string
