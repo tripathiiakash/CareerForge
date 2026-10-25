@@ -8,7 +8,13 @@ import {
   listAllRecruiters,
   updateAdminCompany,
 } from './adminCompanyApi';
-import { AssignCompanyPayload, CreateCompanyPayload, ListAllRecruitersQuery, ListCompaniesQuery, UpdateCompanyPayload } from './types';
+import {
+  AssignCompanyPayload,
+  CreateCompanyPayload,
+  ListAllRecruitersQuery,
+  ListCompaniesQuery,
+  UpdateCompanyPayload,
+} from './types';
 
 // ---------------------------------------------------------------------------
 // List companies
@@ -43,8 +49,13 @@ export function useCreateCompany() {
 export function useUpdateCompany() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: UpdateCompanyPayload }) =>
-      updateAdminCompany(id, payload),
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: UpdateCompanyPayload;
+    }) => updateAdminCompany(id, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'companies'] });
     },

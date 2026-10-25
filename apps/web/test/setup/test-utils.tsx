@@ -27,7 +27,10 @@ export function createTestQueryClient(): QueryClient {
   });
 }
 
-export interface RenderWithProvidersOptions extends Omit<RenderOptions, 'wrapper'> {
+export interface RenderWithProvidersOptions extends Omit<
+  RenderOptions,
+  'wrapper'
+> {
   route?: string;
   initialEntries?: string[];
   queryClient?: QueryClient;
@@ -39,7 +42,10 @@ export interface RenderWithProvidersOptions extends Omit<RenderOptions, 'wrapper
 export function renderWithProviders(
   ui: React.ReactElement,
   options: RenderWithProvidersOptions = {}
-): RenderResult & { queryClient: QueryClient; user: ReturnType<typeof userEvent.setup> } {
+): RenderResult & {
+  queryClient: QueryClient;
+  user: ReturnType<typeof userEvent.setup>;
+} {
   const {
     route = '/',
     initialEntries = [route],
@@ -52,9 +58,7 @@ export function renderWithProviders(
   function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        <MemoryRouter initialEntries={initialEntries}>
-          {children}
-        </MemoryRouter>
+        <MemoryRouter initialEntries={initialEntries}>{children}</MemoryRouter>
       </QueryClientProvider>
     );
   }
