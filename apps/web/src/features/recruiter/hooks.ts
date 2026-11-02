@@ -49,7 +49,7 @@ export function useUpdateRecruiterProfile() {
  * Hook to retrieve current recruiter's organization verification submission.
  */
 export function useRecruiterOrganization() {
-  return useQuery<RecruiterVerificationSubmission, Error>({
+  return useQuery<RecruiterVerificationSubmission | null, Error>({
     queryKey: RECRUITER_ORGANIZATION_QUERY_KEY,
     queryFn: getRecruiterOrganization,
     staleTime: 60 * 1000,
@@ -64,7 +64,7 @@ export function useSubmitRecruiterOrganization() {
   const queryClient = useQueryClient();
 
   return useMutation<
-    RecruiterVerificationSubmission,
+    RecruiterVerificationSubmission | null,
     Error,
     SubmitRecruiterOrganizationInput
   >({
@@ -85,7 +85,7 @@ export function useSubmitRecruiterOrganization() {
 export function useUploadRecruiterEvidence() {
   const queryClient = useQueryClient();
 
-  return useMutation<RecruiterVerificationSubmission, Error, File>({
+  return useMutation<RecruiterVerificationSubmission | null, Error, File>({
     mutationFn: uploadRecruiterEvidence,
     onSuccess: (data) => {
       queryClient.setQueryData(RECRUITER_ORGANIZATION_QUERY_KEY, data);

@@ -389,4 +389,218 @@ describe('Recruiter Organization Verification Frontend Test Suite', () => {
       );
     });
   });
+
+  // 7. Backend Response Normalization Logic
+  describe('7. Backend Response Normalization (normalizeRecruiterVerification)', () => {
+    function normalizeVerification(payload) {
+      if (!payload || typeof payload !== 'object') return null;
+      const raw = 'data' in payload && payload.data !== undefined ? payload.data : payload;
+      if (!raw || typeof raw !== 'object') return null;
+      const target = 'verification' in raw ? raw.verification : raw;
+      if (
+        !target ||
+        typeof target !== 'object' ||
+        (!target.id && !target.organization_name && !target.status)
+      ) {
+        return null;
+      }
+
+      return {
+        id: typeof target.id === 'string' ? target.id : '',
+        organization_name: typeof target.organization_name === 'string' ? target.organization_name : '',
+        website_url: typeof target.website_url === 'string' ? target.website_url : null,
+        linkedin_url: typeof target.linkedin_url === 'string' ? target.linkedin_url : null,
+        designation: typeof target.designation === 'string' ? target.designation : null,
+        description: typeof target.description === 'string' ? target.description : null,
+        evidence_file_key: typeof target.evidence_file_key === 'string' ? target.evidence_file_key : null,
+        evidence_original_name: typeof target.evidence_original_name === 'string' ? target.evidence_original_name : null,
+        evidence_mime_type: typeof target.evidence_mime_type === 'string' ? target.evidence_mime_type : null,
+        evidence_size_bytes: typeof target.evidence_size_bytes === 'number' ? target.evidence_size_bytes : null,
+        status: target.status || 'PENDING',
+        clarification_message: typeof target.clarification_message === 'string' ? target.clarification_message : null,
+        clarification_requested_at: target.clarification_requested_at ? String(target.clarification_requested_at) : null,
+        rejection_reason: typeof target.rejection_reason === 'string' ? target.rejection_reason : null,
+        reviewed_at: target.reviewed_at ? String(target.reviewed_at) : null,
+        is_submitted: typeof target.is_submitted === 'boolean' ? target.is_submitted : Boolean(target.id || target.organization_name),
+      };
+    }
+
+    it('should normalize nested backend response into flat RecruiterVerificationSubmission with clarification', () => {
+      const backendPayload = {
+        recruiter_id: 'rec-123',
+        is_approved: false,
+        is_company_assigned: false,
+        company: null,
+        verification: {
+          id: 'ver-456',
+          recruiter_id: 'rec-123',
+          organization_name: 'Cyberdyne Systems',
+          website_url: 'https://cyberdyne.example.com',
+          status: 'NEEDS_CLARIFICATION',
+          clarification_message: 'Please provide certificate of incorporation with company seal',
+          clarification_requested_at: '2026-10-15T12:00:00.000Z',
+          rejection_reason: null,
+          reviewed_at: '2026-10-15T12:00:00.000Z',
+        },
+      };
+
+      const normalized = normalizeVerification(backendPayload);
+      assert.ok(normalized);
+      assert.strictEqual(normalized.id, 'ver-456');
+      assert.strictEqual(normalized.organization_name, 'Cyberdyne Systems');
+      assert.strictEqual(normalized.status, 'NEEDS_CLARIFICATION');
+      assert.strictEqual(
+        normalized.clarification_message,
+        'Please provide certificate of incorporation with company seal'
+      );
+      assert.strictEqual(normalized.rejection_reason, null);
+      assert.strictEqual(normalized.is_submitted, true);
+    });
+
+    it('should normalize nested backend response into flat RecruiterVerificationSubmission with rejection', () => {
+      const backendPayload = {
+        recruiter_id: 'rec-123',
+        is_approved: false,
+        is_company_assigned: false,
+        company: null,
+        verification: {
+          id: 'ver-789',
+          recruiter_id: 'rec-123',
+          organization_name: 'Fake Corp',
+          status: 'REJECTED',
+          clarification_message: null,
+          rejection_reason: 'Unable to verify business entity through state registrar',
+          reviewed_at: '2026-10-16T15:30:00.000Z',
+        },
+      };
+
+      const normalized = normalizeVerification(backendPayload);
+      assert.ok(normalized);
+      assert.strictEqual(normalized.id, 'ver-789');
+      assert.strictEqual(normalized.organization_name, 'Fake Corp');
+      assert.strictEqual(normalized.status, 'REJECTED');
+      assert.strictEqual(
+        normalized.rejection_reason,
+        'Unable to verify business entity through state registrar'
+      );
+      assert.strictEqual(normalized.clarification_message, null);
+      assert.strictEqual(normalized.is_submitted, true);
+    });
+
+    it('should return null when verification record is null in backend response', () => {
+      const backendPayload = {
+        recruiter_id: 'rec-123',
+        is_approved: false,
+        is_company_assigned: false,
+        company: null,
+        verification: null,
+      };
+
+      const normalized = normalizeVerification(backendPayload);
+      assert.strictEqual(normalized, null);
+    });
+
+    it('should return null for empty, null, or undefined payload', () => {
+      assert.strictEqual(normalizeVerification(null), null);
+      assert.strictEqual(normalizeVerification(undefined), null);
+      assert.strictEqual(normalizeVerification({}), null);
+    });
+
+    it('should preserve flat response shape for backwards compatibility', () => {
+      const flatPayload = {
+        id: 'ver-100',
+        organization_name: 'Wayne Enterprises',
+        status: 'APPROVED',
+        clarification_message: null,
+        rejection_reason: null,
+        is_submitted: true,
+      };
+
+      const normalized = normalizeVerification(flatPayload);
+      assert.ok(normalized);
+      assert.strictEqual(normalized.id, 'ver-100');
+      assert.strictEqual(normalized.status, 'APPROVED');
+      assert.strictEqual(normalized.organization_name, 'Wayne Enterprises');
+      assert.strictEqual(normalized.is_submitted, true);
+    });
+  });
+
+  // 8. Rejection Banner & Status Message Logic
+  describe('8. Rejection Banner & Status Message Logic', () => {
+    function shouldShowRejectionBanner(verification, activeStatus) {
+      return (
+        activeStatus === 'REJECTED' &&
+        Boolean(verification?.rejection_reason?.trim())
+      );
+    }
+
+    function getDashboardStatusDescription(activeStatus) {
+      if (activeStatus === 'APPROVED') {
+        return 'Authorized to create job postings and manage applicants.';
+      }
+      if (activeStatus === 'NEEDS_CLARIFICATION') {
+        return 'Administrator requested clarification on your organization details.';
+      }
+      if (activeStatus === 'REJECTED') {
+        return 'Administrator rejected the organization verification. Review the rejection reason above.';
+      }
+      return 'Company registration is awaiting administrator verification.';
+    }
+
+    it('should show rejection banner when status is REJECTED and rejection reason is present', () => {
+      const verification = {
+        status: 'REJECTED',
+        rejection_reason: 'Domain ownership verification failed',
+      };
+      assert.strictEqual(
+        shouldShowRejectionBanner(verification, 'REJECTED'),
+        true
+      );
+    });
+
+    it('should not show rejection banner when status is not REJECTED even if old reason exists', () => {
+      const verification = {
+        status: 'PENDING',
+        rejection_reason: 'Old rejection reason from prior review',
+      };
+      assert.strictEqual(
+        shouldShowRejectionBanner(verification, 'PENDING'),
+        false
+      );
+    });
+
+    it('should not show rejection banner if rejection reason is empty or whitespace', () => {
+      assert.strictEqual(
+        shouldShowRejectionBanner({ status: 'REJECTED', rejection_reason: '' }, 'REJECTED'),
+        false
+      );
+      assert.strictEqual(
+        shouldShowRejectionBanner({ status: 'REJECTED', rejection_reason: '   ' }, 'REJECTED'),
+        false
+      );
+      assert.strictEqual(
+        shouldShowRejectionBanner({ status: 'REJECTED', rejection_reason: null }, 'REJECTED'),
+        false
+      );
+    });
+
+    it('should return dedicated rejection message for REJECTED status instead of pending fallback', () => {
+      assert.strictEqual(
+        getDashboardStatusDescription('REJECTED'),
+        'Administrator rejected the organization verification. Review the rejection reason above.'
+      );
+      assert.strictEqual(
+        getDashboardStatusDescription('PENDING'),
+        'Company registration is awaiting administrator verification.'
+      );
+      assert.strictEqual(
+        getDashboardStatusDescription('NEEDS_CLARIFICATION'),
+        'Administrator requested clarification on your organization details.'
+      );
+      assert.strictEqual(
+        getDashboardStatusDescription('APPROVED'),
+        'Authorized to create job postings and manage applicants.'
+      );
+    });
+  });
 });

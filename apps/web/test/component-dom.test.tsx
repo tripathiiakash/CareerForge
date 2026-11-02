@@ -17,6 +17,7 @@ import {
   waitFor,
   cleanup,
   act,
+  createTestQueryClient,
 } from './setup/test-utils';
 
 // Production Components
@@ -36,6 +37,8 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { JobCard } from '@/features/jobs/components/JobCard';
 import { JobFilters } from '@/features/jobs/components/JobFilters';
 import { LoginPage } from '@/pages/AuthPages';
+import { RecruiterDashboardPage, RecruiterProfilePage } from '@/pages/RecruiterPages';
+import { normalizeRecruiterVerification } from '@/features/recruiter/recruiterApi';
 import { AuthProvider } from '@/auth/AuthContext';
 import { JobListItem } from '@/features/jobs/types';
 import { Route, Routes } from 'react-router-dom';
@@ -576,6 +579,199 @@ describe('Frontend DOM & Component Test Suite (Phase 6.6-G)', () => {
       await user.click(reactSkillBtn);
       assert.ok(skillUpdate !== null);
       assert.equal(skillUpdate.skills, 'React');
+    });
+  });
+  // =========================================================================
+  // 8. Recruiter Verification Alerts & Dashboard Banners Component Integration
+  // =========================================================================
+  describe('8. Recruiter Verification Alerts & Dashboard Banners Component Integration', () => {
+    const mockRecruiterProfile = {
+      id: 'rec-001',
+      first_name: 'Sarah',
+      last_name: 'Connor',
+      is_approved: false,
+      company: {
+        id: 'comp-001',
+        name: 'Cyberdyne Systems',
+        website: 'https://cyberdyne.example.com',
+        logo_url: null,
+      },
+      is_company_assigned: false,
+    };
+
+    it('8.1 normalizeRecruiterVerification: should properly normalize nested backend response', () => {
+      const nestedBackendResponse = {
+        recruiter_id: 'rec-001',
+        is_approved: false,
+        is_company_assigned: false,
+        company: null,
+        verification: {
+          id: 'ver-001',
+          recruiter_id: 'rec-001',
+          organization_name: 'Cyberdyne Systems',
+          website_url: 'https://cyberdyne.example.com',
+          status: 'NEEDS_CLARIFICATION',
+          clarification_message: 'Please provide certificate of incorporation with company seal',
+          clarification_requested_at: '2026-10-15T12:00:00.000Z',
+          rejection_reason: null,
+          reviewed_at: '2026-10-15T12:00:00.000Z',
+        },
+      };
+
+      const normalized = normalizeRecruiterVerification(nestedBackendResponse);
+      assert.ok(normalized);
+      assert.equal(normalized.id, 'ver-001');
+      assert.equal(normalized.organization_name, 'Cyberdyne Systems');
+      assert.equal(normalized.status, 'NEEDS_CLARIFICATION');
+      assert.equal(
+        normalized.clarification_message,
+        'Please provide certificate of incorporation with company seal'
+      );
+      assert.equal(normalized.is_submitted, true);
+    });
+
+    it('8.2 normalizeRecruiterVerification: should return null for missing or null verification records', () => {
+      const missingVerificationResponse = {
+        recruiter_id: 'rec-001',
+        is_approved: false,
+        is_company_assigned: false,
+        company: null,
+        verification: null,
+      };
+
+      assert.equal(normalizeRecruiterVerification(missingVerificationResponse), null);
+      assert.equal(normalizeRecruiterVerification(null), null);
+      assert.equal(normalizeRecruiterVerification({}), null);
+    });
+
+    it('8.3 RecruiterDashboardPage: should render clarification banner with exact persisted message', () => {
+      const queryClient = createTestQueryClient();
+      queryClient.setQueryData(['recruiter', 'profile'], mockRecruiterProfile);
+      queryClient.setQueryData(['recruiter', 'organization'], {
+        id: 'ver-001',
+        organization_name: 'Cyberdyne Systems',
+        status: 'NEEDS_CLARIFICATION',
+        clarification_message: 'Business license registration number cannot be verified',
+        is_submitted: true,
+      });
+
+      renderWithProviders(
+        <AuthProvider>
+          <RecruiterDashboardPage />
+        </AuthProvider>,
+        { queryClient }
+      );
+
+      const banner = screen.getByTestId('clarification-banner');
+      assert.ok(banner);
+      assert.ok(
+        banner.textContent?.includes('Business license registration number cannot be verified')
+      );
+      assert.ok(screen.getByRole('button', { name: /update details/i }));
+      assert.equal(screen.queryByTestId('rejection-banner'), null);
+    });
+
+    it('8.4 RecruiterDashboardPage: should render rejection banner with exact persisted reason', () => {
+      const queryClient = createTestQueryClient();
+      queryClient.setQueryData(['recruiter', 'profile'], mockRecruiterProfile);
+      queryClient.setQueryData(['recruiter', 'organization'], {
+        id: 'ver-002',
+        organization_name: 'Cyberdyne Systems',
+        status: 'REJECTED',
+        rejection_reason: 'Submitted organization could not be validated via official state registry',
+        is_submitted: true,
+      });
+
+      renderWithProviders(
+        <AuthProvider>
+          <RecruiterDashboardPage />
+        </AuthProvider>,
+        { queryClient }
+      );
+
+      const banner = screen.getByTestId('rejection-banner');
+      assert.ok(banner);
+      assert.ok(
+        banner.textContent?.includes(
+          'Submitted organization could not be validated via official state registry'
+        )
+      );
+      assert.ok(screen.getByRole('button', { name: /review in profile/i }));
+      assert.equal(screen.queryByTestId('clarification-banner'), null);
+      assert.ok(
+        screen.getByText(/Administrator rejected the organization verification. Review the rejection reason above./i)
+      );
+    });
+
+    it('8.5 RecruiterDashboardPage: should render no alert banners when verification is not submitted or pending', () => {
+      const queryClient = createTestQueryClient();
+      queryClient.setQueryData(['recruiter', 'profile'], mockRecruiterProfile);
+      queryClient.setQueryData(['recruiter', 'organization'], null);
+
+      renderWithProviders(
+        <AuthProvider>
+          <RecruiterDashboardPage />
+        </AuthProvider>,
+        { queryClient }
+      );
+
+      assert.equal(screen.queryByTestId('clarification-banner'), null);
+      assert.equal(screen.queryByTestId('rejection-banner'), null);
+      assert.ok(
+        screen.getByText(/Company registration is awaiting administrator verification./i)
+      );
+    });
+
+    it('8.6 RecruiterProfilePage: should render clarification alert with exact message in organization card', () => {
+      const queryClient = createTestQueryClient();
+      queryClient.setQueryData(['recruiter', 'profile'], mockRecruiterProfile);
+      queryClient.setQueryData(['recruiter', 'organization'], {
+        id: 'ver-001',
+        organization_name: 'Cyberdyne Systems',
+        status: 'NEEDS_CLARIFICATION',
+        clarification_message: 'Please re-upload business license with clear resolution',
+        is_submitted: true,
+      });
+
+      renderWithProviders(
+        <AuthProvider>
+          <RecruiterProfilePage />
+        </AuthProvider>,
+        { queryClient }
+      );
+
+      const alert = screen.getByTestId('clarification-alert');
+      assert.ok(alert);
+      assert.ok(
+        alert.textContent?.includes('Please re-upload business license with clear resolution')
+      );
+      assert.equal(screen.queryByTestId('rejection-alert'), null);
+    });
+
+    it('8.7 RecruiterProfilePage: should render rejection alert with exact reason in organization card', () => {
+      const queryClient = createTestQueryClient();
+      queryClient.setQueryData(['recruiter', 'profile'], mockRecruiterProfile);
+      queryClient.setQueryData(['recruiter', 'organization'], {
+        id: 'ver-002',
+        organization_name: 'Cyberdyne Systems',
+        status: 'REJECTED',
+        rejection_reason: 'Discrepancy in company name against registered trademark',
+        is_submitted: true,
+      });
+
+      renderWithProviders(
+        <AuthProvider>
+          <RecruiterProfilePage />
+        </AuthProvider>,
+        { queryClient }
+      );
+
+      const alert = screen.getByTestId('rejection-alert');
+      assert.ok(alert);
+      assert.ok(
+        alert.textContent?.includes('Discrepancy in company name against registered trademark')
+      );
+      assert.equal(screen.queryByTestId('clarification-alert'), null);
     });
   });
 });

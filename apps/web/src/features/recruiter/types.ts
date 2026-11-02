@@ -49,7 +49,7 @@ export interface RecruiterVerificationSubmission {
 
 export interface RecruiterVerificationResponse {
   success: boolean;
-  data: RecruiterVerificationSubmission;
+  data: any;
 }
 
 export interface RecruiterOrganizationFormValues {

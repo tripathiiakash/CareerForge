@@ -144,6 +144,40 @@ export const RecruiterDashboardPage: React.FC = () => {
           </div>
         )}
 
+      {/* Rejection Alert Banner */}
+      {activeStatus === 'REJECTED' &&
+        verification?.rejection_reason && (
+          <div
+            data-testid="rejection-banner"
+            className="p-5 rounded-2xl border border-destructive/50 bg-destructive/15 text-destructive flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-lg shadow-destructive/5 animate-fade-in"
+          >
+            <div className="flex items-start gap-3.5">
+              <AlertCircle className="h-6 w-6 text-destructive shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h2 className="text-base font-bold text-destructive">
+                  Organization Verification Not Approved
+                </h2>
+                <p className="text-sm text-destructive font-mono text-xs sm:text-sm bg-black/20 p-2 rounded-lg border border-destructive/20 leading-relaxed">
+                  {verification.rejection_reason}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Your verification application was not approved by the administrator. Review your submitted details and evidence in your profile.
+                </p>
+              </div>
+            </div>
+            <Link to="/recruiter/profile" className="shrink-0 w-full sm:w-auto">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full sm:w-auto border-destructive/40 hover:bg-destructive/10 text-destructive gap-1.5 font-semibold"
+              >
+                <span>Review in Profile</span>
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+          </div>
+        )}
+
       {/* Welcome Banner */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 p-6 sm:p-8 rounded-2xl glass-card border border-border/70 relative overflow-hidden">
         <div className="space-y-2 z-10">
@@ -462,7 +496,9 @@ export const RecruiterDashboardPage: React.FC = () => {
                   ? 'Authorized to create job postings and manage applicants.'
                   : activeStatus === 'NEEDS_CLARIFICATION'
                     ? 'Administrator requested clarification on your organization details.'
-                    : 'Company registration is awaiting administrator verification.'}
+                    : activeStatus === 'REJECTED'
+                      ? 'Administrator rejected the organization verification. Review the rejection reason above.'
+                      : 'Company registration is awaiting administrator verification.'}
               </p>
             </div>
           </div>
