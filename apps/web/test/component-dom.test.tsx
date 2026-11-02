@@ -31,12 +31,12 @@ import {
   CardContent,
   CardFooter,
 } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Input, PasswordInput } from '@/components/ui/input';
 import { Toast, ToastTitle, ToastDescription } from '@/components/ui/toast';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { JobCard } from '@/features/jobs/components/JobCard';
 import { JobFilters } from '@/features/jobs/components/JobFilters';
-import { LoginPage } from '@/pages/AuthPages';
+import { LoginPage, RegisterPage } from '@/pages/AuthPages';
 import { RecruiterDashboardPage, RecruiterProfilePage } from '@/pages/RecruiterPages';
 import { normalizeRecruiterVerification } from '@/features/recruiter/recruiterApi';
 import { AuthProvider } from '@/auth/AuthContext';
@@ -239,6 +239,143 @@ describe('Frontend DOM & Component Test Suite (Phase 6.6-G)', () => {
       await user.click(closeButton);
       assert.equal(dismissed, true, 'Dismiss callback must be invoked on close click');
     });
+
+    it('1.7 PasswordInput: should be hidden by default with type="password" and accessible show label', () => {
+      renderWithProviders(
+        <PasswordInput
+          label="Password"
+          placeholder="Enter password"
+          defaultValue="Secret123!"
+        />
+      );
+
+      const input = screen.getByLabelText(/^password$/i) as HTMLInputElement;
+      const toggleBtn = screen.getByRole('button', { name: /show password/i });
+
+      assert.ok(input);
+      assert.ok(toggleBtn);
+      assert.equal(input.type, 'password');
+      assert.equal(input.value, 'Secret123!');
+      assert.equal(toggleBtn.getAttribute('type'), 'button');
+    });
+
+    it('1.8 PasswordInput: clicking toggle reveals password as text and updates label to hide', async () => {
+      const { user } = renderWithProviders(
+        <PasswordInput
+          label="Password"
+          defaultValue="Secret123!"
+        />
+      );
+
+      const input = screen.getByLabelText(/^password$/i) as HTMLInputElement;
+      const toggleBtn = screen.getByRole('button', { name: /show password/i });
+
+      await user.click(toggleBtn);
+
+      assert.equal(input.type, 'text');
+      assert.equal(input.value, 'Secret123!');
+      assert.ok(screen.getByRole('button', { name: /hide password/i }));
+    });
+
+    it('1.9 PasswordInput: clicking toggle twice hides password again and preserves entered value', async () => {
+      const { user } = renderWithProviders(
+        <PasswordInput
+          label="Password"
+          defaultValue="Secret123!"
+        />
+      );
+
+      const input = screen.getByLabelText(/^password$/i) as HTMLInputElement;
+      const toggleBtn = screen.getByRole('button', { name: /show password/i });
+
+      // Click to reveal
+      await user.click(toggleBtn);
+      assert.equal(input.type, 'text');
+      assert.equal(input.value, 'Secret123!');
+
+      // Click to hide
+      const hideBtn = screen.getByRole('button', { name: /hide password/i });
+      await user.click(hideBtn);
+      assert.equal(input.type, 'password');
+      assert.equal(input.value, 'Secret123!');
+      assert.ok(screen.getByRole('button', { name: /show password/i }));
+    });
+
+    it('1.10 PasswordInput: toggle button does not trigger form submit', async () => {
+      let formSubmitted = false;
+      const { user } = renderWithProviders(
+        <form onSubmit={(e) => { e.preventDefault(); formSubmitted = true; }}>
+          <PasswordInput label="Password" defaultValue="Pass123!" />
+          <button type="submit">Submit Form</button>
+        </form>
+      );
+
+      const toggleBtn = screen.getByRole('button', { name: /show password/i });
+      await user.click(toggleBtn);
+
+      assert.equal(formSubmitted, false, 'Visibility button must have type="button" and not submit the form');
+    });
+
+    it('1.11 PasswordInput: multiple fields maintain independent visibility state', async () => {
+      const { user } = renderWithProviders(
+        <div>
+          <PasswordInput label="New Password" defaultValue="Alpha123!" />
+          <PasswordInput label="Confirm Password" defaultValue="Beta123!" />
+        </div>
+      );
+
+      const newPassInput = screen.getByLabelText(/new password/i) as HTMLInputElement;
+      const confirmPassInput = screen.getByLabelText(/confirm password/i) as HTMLInputElement;
+
+      const [newPassToggle, confirmPassToggle] = screen.getAllByRole('button', { name: /show password/i });
+
+      // Toggle first field only
+      await user.click(newPassToggle);
+
+      assert.equal(newPassInput.type, 'text');
+      assert.equal(confirmPassInput.type, 'password', 'Second field must remain password when first is toggled');
+
+      // Toggle second field
+      await user.click(confirmPassToggle);
+      assert.equal(newPassInput.type, 'text');
+      assert.equal(confirmPassInput.type, 'text');
+    });
+
+    it('1.12 PasswordInput: should manage aria-describedby for helper text, error, and both absent', () => {
+      // 1. Both absent
+      const { unmount: unmount1 } = renderWithProviders(
+        <PasswordInput label="Password A" />
+      );
+      const inputA = screen.getByLabelText(/password a/i) as HTMLInputElement;
+      assert.equal(inputA.getAttribute('aria-describedby'), null);
+      assert.equal(inputA.getAttribute('aria-invalid'), 'false');
+      unmount1();
+
+      // 2. Helper text present
+      const { unmount: unmount2 } = renderWithProviders(
+        <PasswordInput label="Password B" helperText="Must be at least 8 characters" />
+      );
+      const inputB = screen.getByLabelText(/password b/i) as HTMLInputElement;
+      const helper = screen.getByText('Must be at least 8 characters');
+      assert.equal(inputB.getAttribute('aria-describedby'), 'password-b-helper-text');
+      assert.equal(helper.getAttribute('id'), 'password-b-helper-text');
+      assert.equal(inputB.getAttribute('aria-invalid'), 'false');
+      unmount2();
+
+      // 3. Error present (overrides helper text in UI and aria-describedby)
+      renderWithProviders(
+        <PasswordInput
+          label="Password C"
+          helperText="Must be at least 8 characters"
+          error="Password is required"
+        />
+      );
+      const inputC = screen.getByLabelText(/password c/i) as HTMLInputElement;
+      const errorEl = screen.getByText('Password is required');
+      assert.equal(inputC.getAttribute('aria-describedby'), 'password-c-error');
+      assert.equal(errorEl.getAttribute('id'), 'password-c-error');
+      assert.equal(inputC.getAttribute('aria-invalid'), 'true');
+    });
   });
 
   // =========================================================================
@@ -309,7 +446,7 @@ describe('Frontend DOM & Component Test Suite (Phase 6.6-G)', () => {
     it('2.4 should render server error banner when API returns authentication failure', () => {
       renderWithProviders(
         <TestLoginForm
-          onSubmitCallback={() => {}}
+          onSubmitCallback={() => { }}
           serverError={{
             code: 'UNAUTHORIZED',
             message: 'Invalid email or password',
@@ -337,7 +474,8 @@ describe('Frontend DOM & Component Test Suite (Phase 6.6-G)', () => {
       assert.ok(screen.getByRole('heading', { level: 3, name: /welcome back/i }));
       assert.ok(screen.getByText(/enter your credentials to access your careerforge account/i));
       assert.ok(screen.getByLabelText(/email address/i));
-      assert.ok(screen.getByLabelText(/password/i));
+      assert.ok(screen.getByLabelText(/^password$/i));
+      assert.ok(screen.getByRole('button', { name: /show password/i }));
       assert.ok(screen.getByRole('button', { name: /sign in/i }));
       assert.ok(screen.getByRole('link', { name: /create one now/i }));
     });
@@ -355,6 +493,32 @@ describe('Frontend DOM & Component Test Suite (Phase 6.6-G)', () => {
       await waitFor(() => {
         assert.ok(screen.getByText(/must be a valid email format/i));
       });
+    });
+
+    it('3.3 should toggle password visibility in LoginPage without clearing password', async () => {
+      const { user } = renderWithProviders(
+        <AuthProvider>
+          <LoginPage />
+        </AuthProvider>
+      );
+
+      const passwordInput = screen.getByLabelText(/^password$/i) as HTMLInputElement;
+      assert.equal(passwordInput.type, 'password');
+
+      await user.type(passwordInput, 'MySecretPassword123!');
+      assert.equal(passwordInput.value, 'MySecretPassword123!');
+
+      const showBtn = screen.getByRole('button', { name: /show password/i });
+      await user.click(showBtn);
+
+      assert.equal(passwordInput.type, 'text');
+      assert.equal(passwordInput.value, 'MySecretPassword123!');
+
+      const hideBtn = screen.getByRole('button', { name: /hide password/i });
+      await user.click(hideBtn);
+
+      assert.equal(passwordInput.type, 'password');
+      assert.equal(passwordInput.value, 'MySecretPassword123!');
     });
   });
 
@@ -581,6 +745,56 @@ describe('Frontend DOM & Component Test Suite (Phase 6.6-G)', () => {
       assert.equal(skillUpdate.skills, 'React');
     });
   });
+
+  // =========================================================================
+  // 7. Production RegisterPage Component DOM Integration
+  // =========================================================================
+  describe('7. Production RegisterPage Component DOM Integration', () => {
+    it('7.1 should render full RegisterPage with role selector, email, and password visibility toggle', () => {
+      renderWithProviders(
+        <AuthProvider>
+          <RegisterPage />
+        </AuthProvider>
+      );
+
+      assert.ok(screen.getByRole('heading', { level: 3, name: /join careerforge/i }));
+      assert.ok(screen.getByText(/create your account and start your journey/i));
+      assert.ok(screen.getByRole('button', { name: /student \/ job seeker/i }));
+      assert.ok(screen.getByRole('button', { name: /employer \/ recruiter/i }));
+      assert.ok(screen.getByLabelText(/email address/i));
+      assert.ok(screen.getByLabelText(/^password$/i));
+      assert.ok(screen.getByRole('button', { name: /show password/i }));
+      assert.ok(screen.getByRole('button', { name: /create account/i }));
+      assert.ok(screen.getByRole('link', { name: /sign in/i }));
+    });
+
+    it('7.2 should toggle password visibility in RegisterPage without modifying entered password', async () => {
+      const { user } = renderWithProviders(
+        <AuthProvider>
+          <RegisterPage />
+        </AuthProvider>
+      );
+
+      const passwordInput = screen.getByLabelText(/^password$/i) as HTMLInputElement;
+      assert.equal(passwordInput.type, 'password');
+
+      await user.type(passwordInput, 'NewSecretP@ssw0rd!');
+      assert.equal(passwordInput.value, 'NewSecretP@ssw0rd!');
+
+      const showBtn = screen.getByRole('button', { name: /show password/i });
+      await user.click(showBtn);
+
+      assert.equal(passwordInput.type, 'text');
+      assert.equal(passwordInput.value, 'NewSecretP@ssw0rd!');
+
+      const hideBtn = screen.getByRole('button', { name: /hide password/i });
+      await user.click(hideBtn);
+
+      assert.equal(passwordInput.type, 'password');
+      assert.equal(passwordInput.value, 'NewSecretP@ssw0rd!');
+    });
+  });
+
   // =========================================================================
   // 8. Recruiter Verification Alerts & Dashboard Banners Component Integration
   // =========================================================================

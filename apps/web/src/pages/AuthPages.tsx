@@ -17,7 +17,7 @@ import {
   CardFooter,
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Input, PasswordInput } from '@/components/ui/input';
 import { useAuth } from '@/auth/AuthContext';
 import { extractApiError } from '@/lib/api';
 import {
@@ -128,9 +128,8 @@ export const LoginPage: React.FC = () => {
               {...register('email')}
             />
 
-            <Input
+            <PasswordInput
               label="Password"
-              type="password"
               placeholder="••••••••"
               autoComplete="current-password"
               error={errors.password?.message}
@@ -283,9 +282,8 @@ export const RegisterPage: React.FC = () => {
               {...register('email')}
             />
 
-            <Input
+            <PasswordInput
               label="Password"
-              type="password"
               placeholder="Min. 8 chars with 1 number & 1 special"
               autoComplete="new-password"
               helperText="Must be 8-72 characters and contain at least 1 number and 1 special character"
