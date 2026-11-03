@@ -54,6 +54,7 @@ export const LoginPage: React.FC = () => {
   });
 
   const onSubmit = async (data: LoginInput) => {
+    if (isSubmitting) return;
     setServerError(null);
     try {
       await login(data);
@@ -98,14 +99,16 @@ export const LoginPage: React.FC = () => {
                 className={`p-3.5 rounded-lg border text-sm flex items-start gap-2.5 animate-fade-in ${
                   serverError.code === 'FORBIDDEN'
                     ? 'border-destructive/60 bg-destructive/15 text-destructive-foreground'
-                    : 'border-destructive/40 bg-destructive/10 text-destructive'
+                    : serverError.code === 'RATE_LIMITED'
+                      ? 'border-amber-500/40 bg-amber-500/10 text-amber-500 dark:text-amber-400'
+                      : 'border-destructive/40 bg-destructive/10 text-destructive'
                 }`}
                 role="alert"
               >
                 {serverError.code === 'FORBIDDEN' ? (
                   <ShieldAlert className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
                 ) : (
-                  <AlertCircle className="h-5 w-5 shrink-0 text-destructive mt-0.5" />
+                  <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
                 )}
                 <div>
                   <p className="font-semibold">{serverError.message}</p>
@@ -113,6 +116,11 @@ export const LoginPage: React.FC = () => {
                     <p className="text-xs mt-1 text-muted-foreground">
                       Please reach out to support@careerforge.local for appeal
                       inquiries.
+                    </p>
+                  )}
+                  {serverError.code === 'RATE_LIMITED' && (
+                    <p className="text-xs mt-1 text-muted-foreground">
+                      Security rate limit active. Please wait approximately 60 seconds before retrying.
                     </p>
                   )}
                 </div>
@@ -124,6 +132,7 @@ export const LoginPage: React.FC = () => {
               type="email"
               placeholder="you@domain.com"
               autoComplete="email"
+              disabled={isSubmitting}
               error={errors.email?.message}
               {...register('email')}
             />
@@ -132,13 +141,19 @@ export const LoginPage: React.FC = () => {
               label="Password"
               placeholder="••••••••"
               autoComplete="current-password"
+              disabled={isSubmitting}
               error={errors.password?.message}
               {...register('password')}
             />
           </CardContent>
 
           <CardFooter className="flex flex-col gap-4">
-            <Button type="submit" className="w-full" isLoading={isSubmitting}>
+            <Button
+              type="submit"
+              className="w-full"
+              isLoading={isSubmitting}
+              disabled={isSubmitting}
+            >
               Sign In
             </Button>
 
@@ -184,6 +199,7 @@ export const RegisterPage: React.FC = () => {
   const selectedRole = watch('role');
 
   const onSubmit = async (data: RegisterInput) => {
+    if (isSubmitting) return;
     setServerError(null);
     try {
       await registerAuth(data);
@@ -219,7 +235,11 @@ export const RegisterPage: React.FC = () => {
             {/* Server Error Alert Banner */}
             {serverError && (
               <div
-                className="p-3.5 rounded-lg border border-destructive/40 bg-destructive/10 text-destructive text-sm flex items-start gap-2.5 animate-fade-in"
+                className={`p-3.5 rounded-lg border text-sm flex items-start gap-2.5 animate-fade-in ${
+                  serverError.code === 'RATE_LIMITED'
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-500 dark:text-amber-400'
+                    : 'border-destructive/40 bg-destructive/10 text-destructive'
+                }`}
                 role="alert"
               >
                 <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
@@ -233,6 +253,11 @@ export const RegisterPage: React.FC = () => {
                       Proceed to Sign In &rarr;
                     </Link>
                   )}
+                  {serverError.code === 'RATE_LIMITED' && (
+                    <p className="text-xs mt-1 text-muted-foreground">
+                      Security rate limit active. Please wait approximately 60 seconds before retrying.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -245,23 +270,25 @@ export const RegisterPage: React.FC = () => {
               <div className="grid grid-cols-2 gap-2 p-1 rounded-lg bg-secondary/40 border border-border/60">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setValue('role', 'STUDENT')}
                   className={`py-2 text-xs font-semibold rounded-md transition-all ${
                     selectedRole === 'STUDENT'
                       ? 'bg-primary text-white shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                  } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   Student / Job Seeker
                 </button>
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setValue('role', 'RECRUITER')}
                   className={`py-2 text-xs font-semibold rounded-md transition-all ${
                     selectedRole === 'RECRUITER'
                       ? 'bg-primary text-white shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
-                  }`}
+                  } ${isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   Employer / Recruiter
                 </button>
@@ -278,6 +305,7 @@ export const RegisterPage: React.FC = () => {
               type="email"
               placeholder="you@domain.com"
               autoComplete="email"
+              disabled={isSubmitting}
               error={errors.email?.message}
               {...register('email')}
             />
@@ -287,13 +315,19 @@ export const RegisterPage: React.FC = () => {
               placeholder="Min. 8 chars with 1 number & 1 special"
               autoComplete="new-password"
               helperText="Must be 8-72 characters and contain at least 1 number and 1 special character"
+              disabled={isSubmitting}
               error={errors.password?.message}
               {...register('password')}
             />
           </CardContent>
 
           <CardFooter className="flex flex-col gap-4">
-            <Button type="submit" className="w-full" isLoading={isSubmitting}>
+            <Button
+              type="submit"
+              className="w-full"
+              isLoading={isSubmitting}
+              disabled={isSubmitting}
+            >
               Create Account
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
