@@ -117,30 +117,124 @@ export function mapHttpStatusToMessage(status?: number): string {
 
 /**
  * Standardizes API error responses into typed AuthError objects.
+ * Accurately extracts messages from standard API envelopes, NestJS/Express formats,
+ * HTTP status fallbacks (401, 403, 409, 429, 500, 502/503/504), network timeouts,
+ * and proxy HTML/plaintext error responses without ever displaying raw Axios technical strings.
  */
 export function extractApiError(error: unknown): AuthError {
-  if (axios.isAxiosError(error) && error.response?.data?.error) {
-    const apiErr = error.response.data.error;
-    return {
-      code: apiErr.code || 'UNKNOWN_ERROR',
-      message:
-        apiErr.message || 'An unexpected error occurred. Please try again.',
-      details: Array.isArray(apiErr.details) ? apiErr.details : undefined,
-    };
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const data = error.response?.data;
+
+    // 1. Structured API error envelope: { success: false, error: { code, message, details } }
+    if (data && typeof data === 'object' && 'error' in data) {
+      const apiErr = (data as { error?: unknown }).error;
+      if (apiErr && typeof apiErr === 'object') {
+        const code =
+          (apiErr as { code?: string }).code || mapHttpStatusToCode(status);
+        const message =
+          (apiErr as { message?: string }).message ||
+          mapHttpStatusToMessage(status);
+        const rawDetails = (apiErr as { details?: unknown }).details;
+        const details = Array.isArray(rawDetails)
+          ? (rawDetails as Array<{ field?: string; issue?: string }>)
+          : undefined;
+
+        return { code, message, details };
+      }
+
+      // Handle NestJS validation array when error is status text: { statusCode: 400, message: [...], error: 'Bad Request' }
+      if (
+        'message' in data &&
+        Array.isArray((data as { message?: unknown }).message) &&
+        (data as { message: unknown[] }).message.length > 0
+      ) {
+        const rawMessage = (data as { message: unknown[] }).message;
+        const first = rawMessage[0];
+        return {
+          code: mapHttpStatusToCode(status),
+          message: typeof first === 'string' ? first : 'Validation failed',
+          details: rawMessage.map((m) => ({
+            issue: typeof m === 'string' ? m : String(m),
+          })),
+        };
+      }
+
+      // If .error is a string (e.g. { error: "Too Many Requests" })
+      if (typeof apiErr === 'string' && apiErr.trim().length > 0) {
+        return {
+          code: mapHttpStatusToCode(status),
+          message: apiErr.trim(),
+        };
+      }
+    }
+
+    // 2. Standard NestJS / Express error format: { statusCode, message: string | string[], error?: string }
+    if (data && typeof data === 'object' && 'message' in data) {
+      const rawMessage = (data as { message?: unknown }).message;
+      if (typeof rawMessage === 'string' && rawMessage.trim().length > 0) {
+        return {
+          code: mapHttpStatusToCode(status),
+          message: rawMessage.trim(),
+        };
+      }
+      if (Array.isArray(rawMessage) && rawMessage.length > 0) {
+        const first = rawMessage[0];
+        return {
+          code: mapHttpStatusToCode(status),
+          message: typeof first === 'string' ? first : 'Validation failed',
+          details: rawMessage.map((m) => ({
+            issue: typeof m === 'string' ? m : String(m),
+          })),
+        };
+      }
+    }
+
+    // 3. Response was received, but body was HTML, plain text, or empty (e.g. 502 no-deploy, 429, 504)
+    if (status) {
+      return {
+        code: mapHttpStatusToCode(status),
+        message: mapHttpStatusToMessage(status),
+      };
+    }
+
+    // 4. Request was made but no response received (timeout, abort, network loss)
+    if (!error.response) {
+      if (
+        error.code === 'ECONNABORTED' ||
+        error.message?.toLowerCase().includes('timeout')
+      ) {
+        return {
+          code: 'TIMEOUT_ERROR',
+          message:
+            'The request timed out. The server may be restarting or taking longer than usual. Please try again.',
+        };
+      }
+
+      return {
+        code: 'NETWORK_ERROR',
+        message:
+          'Unable to connect to the server. Please check your internet connection or try again later.',
+      };
+    }
   }
 
-  if (axios.isAxiosError(error) && !error.response) {
-    return {
-      code: 'NETWORK_ERROR',
-      message:
-        'Unable to connect to the server. Please check your internet connection.',
-    };
-  }
-
+  // 5. Generic Error instance (not Axios or unrecognized)
   if (error instanceof Error) {
+    // If an error message looks like "Request failed with status code XYZ", sanitize it
+    const statusMatch = error.message.match(/status code (\d{3})/);
+    if (statusMatch) {
+      const statusNum = parseInt(statusMatch[1], 10);
+      return {
+        code: mapHttpStatusToCode(statusNum),
+        message: mapHttpStatusToMessage(statusNum),
+      };
+    }
+
     return {
       code: 'CLIENT_ERROR',
-      message: error.message,
+      message:
+        error.message || 'An unexpected error occurred. Please try again.',
     };
   }
 
