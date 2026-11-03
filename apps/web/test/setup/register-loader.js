@@ -1,6 +1,7 @@
 import { register } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const loaderUrl = pathToFileURL(path.resolve('test/setup/esbuild-loader.js')).href;
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const loaderUrl = pathToFileURL(path.resolve(__dirname, 'esbuild-loader.js')).href;
 register(loaderUrl, import.meta.url);

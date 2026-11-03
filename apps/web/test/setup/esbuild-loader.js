@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const WEB_SRC = path.resolve('src');
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const WEB_SRC = path.resolve(__dirname, '../../src');
 
 export async function resolve(specifier, context, nextResolve) {
   // Resolve @/ path aliases to apps/web/src
