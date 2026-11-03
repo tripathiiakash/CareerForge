@@ -177,6 +177,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         return 'UNPROCESSABLE_ENTITY';
       case HttpStatus.TOO_MANY_REQUESTS:
         return 'RATE_LIMITED';
+      case HttpStatus.SERVICE_UNAVAILABLE:
+        return 'SERVICE_UNAVAILABLE';
+      case HttpStatus.GATEWAY_TIMEOUT:
+        return 'GATEWAY_TIMEOUT';
       case HttpStatus.INTERNAL_SERVER_ERROR:
       default:
         return 'INTERNAL_ERROR';
