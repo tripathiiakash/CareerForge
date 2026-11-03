@@ -12,7 +12,7 @@ async function loginStudent(
 ) {
   await page.goto('/login');
   await page.getByLabel(/email address/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
+  await page.getByLabel(/^password$/i).fill(password);
   await page.locator('form').getByRole('button', { name: /sign in/i }).click();
 }
 
