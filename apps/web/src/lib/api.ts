@@ -58,6 +58,64 @@ apiClient.interceptors.response.use(
 );
 
 /**
+ * Maps standard HTTP status codes to standardized CareerForge error codes.
+ */
+export function mapHttpStatusToCode(status?: number): string {
+  switch (status) {
+    case 400:
+      return 'VALIDATION_ERROR';
+    case 401:
+      return 'UNAUTHORIZED';
+    case 403:
+      return 'FORBIDDEN';
+    case 404:
+      return 'NOT_FOUND';
+    case 409:
+      return 'CONFLICT';
+    case 429:
+      return 'RATE_LIMITED';
+    case 500:
+      return 'INTERNAL_ERROR';
+    case 502:
+    case 503:
+      return 'SERVICE_UNAVAILABLE';
+    case 504:
+      return 'GATEWAY_TIMEOUT';
+    default:
+      return status ? `HTTP_${status}` : 'UNKNOWN_ERROR';
+  }
+}
+
+/**
+ * Maps standard HTTP status codes to user-friendly messages, preventing raw infrastructure leaks.
+ */
+export function mapHttpStatusToMessage(status?: number): string {
+  switch (status) {
+    case 400:
+      return 'Invalid request. Please check your submission.';
+    case 401:
+      return 'Invalid credentials';
+    case 403:
+      return 'Access denied. Your account does not have permission or has been suspended.';
+    case 404:
+      return 'The requested resource was not found.';
+    case 409:
+      return 'This email address is already registered. Please sign in instead.';
+    case 429:
+      return 'Too many attempts. Please wait a moment and try again.';
+    case 500:
+      return 'An unexpected server error occurred. Please try again later.';
+    case 502:
+    case 503:
+      return 'The server is temporarily unavailable or restarting. Please try again in a moment.';
+    case 504:
+      return 'The server took too long to respond. Please try again in a moment.';
+    default:
+      return 'An unexpected error occurred. Please try again.';
+  }
+}
+
+/**
  * Standardizes API error responses into typed AuthError objects.
  */
 export function extractApiError(error: unknown): AuthError {
