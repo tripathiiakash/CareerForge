@@ -48,8 +48,14 @@ apiClient.interceptors.response.use(
     if (error.response?.status === 401) {
       clearSession();
 
-      // Dispatch global event for auth listener
-      if (typeof window !== 'undefined') {
+      // Only dispatch global unauthorized event for expired/invalid sessions on protected calls,
+      // not for normal credential rejections on login/register endpoints.
+      const requestUrl = error.config?.url || '';
+      const isAuthAttempt =
+        requestUrl.includes('/auth/login') ||
+        requestUrl.includes('/auth/register');
+
+      if (!isAuthAttempt && typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('careerforge:unauthorized'));
       }
     }
