@@ -207,7 +207,38 @@ export const onRequest: PagesFunction<Env> = async (context) => {
     responseHeaders.append('Set-Cookie', sanitizeSetCookieHeader(cookie));
   }
 
-  // 7. Return response stream preserving status and headers
+  // 7. If upstream returned an infrastructure error (502, 503, 504) with non-JSON body
+  // (e.g. Render router 'no-deploy' HTML or text), synthesize a standard JSON API envelope
+  const contentType = upstreamResponse.headers.get('content-type') || '';
+  const isHtmlOrText =
+    contentType.includes('text/html') ||
+    contentType.includes('text/plain') ||
+    !contentType.includes('application/json');
+  const isRenderRoutingError = upstreamResponse.headers.has('x-render-routing');
+
+  if (
+    upstreamResponse.status >= 502 &&
+    upstreamResponse.status <= 504 &&
+    (isHtmlOrText || isRenderRoutingError)
+  ) {
+    responseHeaders.set('Content-Type', 'application/json');
+    return new Response(
+      JSON.stringify({
+        success: false,
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message:
+            'The backend service is temporarily unavailable or restarting. Please try again shortly.',
+        },
+      }),
+      {
+        status: upstreamResponse.status,
+        headers: responseHeaders,
+      }
+    );
+  }
+
+  // 8. Return response stream preserving status and headers
   return new Response(upstreamResponse.body, {
     status: upstreamResponse.status,
     statusText: upstreamResponse.statusText,
