@@ -391,6 +391,80 @@ describe('Cloudflare Pages Functions Same-Origin API Proxy Suite', () => {
       }
     });
 
+    it('synthesizes JSON SERVICE_UNAVAILABLE when upstream Render returns 502 no-deploy text', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        return new Response('no-deploy', {
+          status: 502,
+          headers: {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'x-render-routing': 'no-deploy',
+          },
+        });
+      };
+
+      try {
+        const context = {
+          request: new Request(
+            'https://careerforge-8oq.pages.dev/api/v1/auth/login',
+            { method: 'POST', body: JSON.stringify({ email: 'a@b.com', password: 'pwd' }) }
+          ),
+          env: {},
+          next: async () => new Response('next', { status: 404 }),
+          functionPath: '/api/v1',
+          waitUntil: () => {},
+          params: { path: ['auth', 'login'] },
+          data: {},
+        };
+
+        const res = await onRequest(context);
+        assert.equal(res.status, 502);
+        assert.equal(res.headers.get('content-type'), 'application/json');
+        const data = await res.json();
+        assert.equal(data.success, false);
+        assert.equal(data.error.code, 'SERVICE_UNAVAILABLE');
+        assert.match(data.error.message, /temporarily unavailable/i);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('synthesizes JSON SERVICE_UNAVAILABLE when upstream returns 503 HTML error page', async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async () => {
+        return new Response('<!DOCTYPE html><html><body><h1>503 Service Unavailable</h1></body></html>', {
+          status: 503,
+          headers: {
+            'Content-Type': 'text/html; charset=utf-8',
+          },
+        });
+      };
+
+      try {
+        const context = {
+          request: new Request(
+            'https://careerforge-8oq.pages.dev/api/v1/auth/login',
+            { method: 'POST', body: JSON.stringify({ email: 'a@b.com', password: 'pwd' }) }
+          ),
+          env: {},
+          next: async () => new Response('next', { status: 404 }),
+          functionPath: '/api/v1',
+          waitUntil: () => {},
+          params: { path: ['auth', 'login'] },
+          data: {},
+        };
+
+        const res = await onRequest(context);
+        assert.equal(res.status, 503);
+        assert.equal(res.headers.get('content-type'), 'application/json');
+        const data = await res.json();
+        assert.equal(data.success, false);
+        assert.equal(data.error.code, 'SERVICE_UNAVAILABLE');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
     it('forwards OPTIONS preflight requests correctly', async () => {
       let capturedMethod = '';
       const originalFetch = globalThis.fetch;

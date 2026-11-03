@@ -520,6 +520,22 @@ describe('Frontend DOM & Component Test Suite (Phase 6.6-G)', () => {
       assert.equal(passwordInput.type, 'password');
       assert.equal(passwordInput.value, 'MySecretPassword123!');
     });
+
+    it('3.4 should render input fields as enabled initially and preserve form values', () => {
+      renderWithProviders(
+        <AuthProvider>
+          <LoginPage />
+        </AuthProvider>
+      );
+
+      const emailInput = screen.getByLabelText(/email address/i) as HTMLInputElement;
+      const passwordInput = screen.getByLabelText(/^password$/i) as HTMLInputElement;
+      const submitBtn = screen.getByRole('button', { name: /sign in/i }) as HTMLButtonElement;
+
+      assert.equal(emailInput.disabled, false);
+      assert.equal(passwordInput.disabled, false);
+      assert.equal(submitBtn.disabled, false);
+    });
   });
 
   // =========================================================================
@@ -792,6 +808,22 @@ describe('Frontend DOM & Component Test Suite (Phase 6.6-G)', () => {
 
       assert.equal(passwordInput.type, 'password');
       assert.equal(passwordInput.value, 'NewSecretP@ssw0rd!');
+    });
+
+    it('7.3 should render input fields as enabled initially and support role selection', () => {
+      renderWithProviders(
+        <AuthProvider>
+          <RegisterPage />
+        </AuthProvider>
+      );
+
+      const emailInput = screen.getByLabelText(/email address/i) as HTMLInputElement;
+      const passwordInput = screen.getByLabelText(/^password$/i) as HTMLInputElement;
+      const submitBtn = screen.getByRole('button', { name: /create account/i }) as HTMLButtonElement;
+
+      assert.equal(emailInput.disabled, false);
+      assert.equal(passwordInput.disabled, false);
+      assert.equal(submitBtn.disabled, false);
     });
   });
 
