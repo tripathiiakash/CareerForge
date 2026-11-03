@@ -15,7 +15,8 @@ import { AuthError } from '@/auth/types';
  */
 export function resolveApiBaseUrl(
   envUrl?: string,
-  isProd: boolean = import.meta.env.PROD
+  isProd: boolean = typeof import.meta !== 'undefined' &&
+    Boolean(import.meta.env?.PROD)
 ): string {
   const trimmed = envUrl?.trim();
   if (isProd) {
@@ -32,7 +33,7 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 15000,
+  timeout: 30000,
   withCredentials: true,
 });
 
