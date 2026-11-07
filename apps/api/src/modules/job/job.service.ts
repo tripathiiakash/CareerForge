@@ -2,9 +2,16 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { EmploymentType, JobStatus, Prisma, UserRole } from '@prisma/client';
+import { QueueService } from '../../core/queue/queue.service';
+import {
+  QUEUE_NAMES,
+  JobModerationEmailJobData,
+} from '../../core/queue/queue.types';
 import { sanitizeHtml } from '../../core/utils/sanitize-html.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuthenticatedUser } from '../auth/interfaces/authenticated-user.interface';
@@ -46,10 +53,14 @@ export interface RecruiterJobSummaryItem {
 
 @Injectable()
 export class JobService {
+  private readonly logger = new Logger(JobService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly recruiterService: RecruiterService,
-    private readonly applicationService: ApplicationService
+    private readonly applicationService: ApplicationService,
+    @Optional()
+    private readonly queueService?: QueueService
   ) {}
 
   private validateUuid(id: string, fieldName = 'jobId'): void {
@@ -389,6 +400,30 @@ export class JobService {
       updatedJob.status === JobStatus.ACTIVE
         ? 'Job approved and now visible to students.'
         : 'Job rejected and hidden from students.';
+
+    if (this.queueService) {
+      try {
+        await this.queueService.send<JobModerationEmailJobData>(
+          QUEUE_NAMES.NOTIFICATION_EMAIL_JOB_MODERATION,
+          {
+            jobId: id,
+            status: updatedJob.status as 'ACTIVE' | 'REJECTED',
+          },
+          {
+            singletonKey: `job-moderation:${id}:${updatedJob.status}`,
+            retryLimit: 3,
+            retryDelay: 15,
+            retryBackoff: true,
+          }
+        );
+      } catch (err: unknown) {
+        const errMsg =
+          err instanceof Error ? err.message : 'Unknown queue error';
+        this.logger.error(
+          `Failed to enqueue job moderation email for job ${id}: ${errMsg}`
+        );
+      }
+    }
 
     return {
       id: updatedJob.id,

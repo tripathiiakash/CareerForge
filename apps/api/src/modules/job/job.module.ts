@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '../../core/config/config.module';
 import { ConfigService } from '../../core/config/config.service';
+import { QueueModule } from '../../core/queue/queue.module';
 import { AuthModule } from '../auth/auth.module';
 import { StudentModule } from '../student/student.module';
 import { ApplicationModule } from '../application/application.module';
@@ -23,6 +24,7 @@ import { PostgresInterviewPrepQuotaStore } from './quota/postgres-interview-prep
     ConfigModule,
     ApplicationModule,
     RecruiterModule,
+    QueueModule,
   ],
   controllers: [JobController, AdminJobController, RecruiterJobController],
   providers: [

@@ -1,9 +1,17 @@
+import { randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { VerificationStatus } from '@prisma/client';
+import { QueueService } from '../../core/queue/queue.service';
+import {
+  QUEUE_NAMES,
+  RecruiterVerificationStatusEmailJobData,
+} from '../../core/queue/queue.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EvidenceStorageService } from '../recruiter/evidence-storage.service';
 import {
@@ -19,9 +27,13 @@ import {
 
 @Injectable()
 export class AdminRecruiterService {
+  private readonly logger = new Logger(AdminRecruiterService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly evidenceStorageService: EvidenceStorageService
+    private readonly evidenceStorageService: EvidenceStorageService,
+    @Optional()
+    private readonly queueService?: QueueService
   ) {}
 
   /**
@@ -233,6 +245,30 @@ export class AdminRecruiterService {
       data: { is_approved: false },
     });
 
+    if (this.queueService) {
+      try {
+        await this.queueService.send<RecruiterVerificationStatusEmailJobData>(
+          QUEUE_NAMES.NOTIFICATION_EMAIL_RECRUITER_VERIFICATION_STATUS,
+          {
+            recruiterId: recruiter.id,
+            status: 'NEEDS_CLARIFICATION',
+            clarificationMessage: message,
+          },
+          {
+            singletonKey: `recruiter-clarification:${recruiter.id}:${Date.now()}`,
+            retryLimit: 3,
+            retryDelay: 15,
+            retryBackoff: true,
+          }
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Unknown queue error';
+        this.logger.error(
+          `Failed to enqueue recruiter clarification email for recruiter ${recruiter.id}: ${msg}`
+        );
+      }
+    }
+
     return {
       id: updated.id,
       user_id: updated.user_id,
@@ -362,6 +398,29 @@ export class AdminRecruiterService {
       });
     }
 
+    if (this.queueService) {
+      try {
+        await this.queueService.send<RecruiterVerificationStatusEmailJobData>(
+          QUEUE_NAMES.NOTIFICATION_EMAIL_RECRUITER_VERIFICATION_STATUS,
+          {
+            recruiterId: recruiter.id,
+            status: 'APPROVED',
+          },
+          {
+            singletonKey: `recruiter-approved:${recruiter.id}`,
+            retryLimit: 3,
+            retryDelay: 15,
+            retryBackoff: true,
+          }
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Unknown queue error';
+        this.logger.error(
+          `Failed to enqueue recruiter approval email for recruiter ${recruiter.id}: ${msg}`
+        );
+      }
+    }
+
     return {
       id: updated.id,
       user_id: updated.user_id,
@@ -435,6 +494,32 @@ export class AdminRecruiterService {
             reviewed_at: new Date(),
           },
         });
+      }
+    }
+
+    if (this.queueService) {
+      try {
+        const eventId = randomUUID();
+        await this.queueService.send<RecruiterVerificationStatusEmailJobData>(
+          QUEUE_NAMES.NOTIFICATION_EMAIL_RECRUITER_VERIFICATION_STATUS,
+          {
+            recruiterId: recruiter.id,
+            status: 'REJECTED',
+            rejectionReason,
+            eventId,
+          },
+          {
+            singletonKey: `recruiter-rejected:${recruiter.id}:${eventId}`,
+            retryLimit: 3,
+            retryDelay: 15,
+            retryBackoff: true,
+          }
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Unknown queue error';
+        this.logger.error(
+          `Failed to enqueue recruiter rejection email for recruiter ${recruiter.id}: ${msg}`
+        );
       }
     }
 

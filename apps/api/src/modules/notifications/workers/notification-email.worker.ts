@@ -5,7 +5,10 @@ import {
   ApplicationSubmittedRecruiterEmailJobData,
   ApplicationSubmittedStudentEmailJobData,
   JobEnvelope,
+  JobModerationEmailJobData,
   QUEUE_NAMES,
+  RecruiterVerificationStatusEmailJobData,
+  RecruiterVerificationSubmittedEmailJobData,
   WelcomeEmailJobData,
 } from '../../../core/queue/queue.types';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -14,6 +17,16 @@ import {
   maskEmailsInText,
   sanitizeEmailLogText,
 } from '../email/email-sanitizer.util';
+
+function escapeHtml(str: string): string {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 /**
  * NotificationEmailWorker handles asynchronous dispatch of transactional emails.
@@ -49,6 +62,18 @@ export class NotificationEmailWorker implements OnModuleInit {
       this.queueService.work<ApplicationStatusEmailJobData>(
         QUEUE_NAMES.NOTIFICATION_EMAIL_APPLICATION_STATUS,
         this.handleApplicationStatusJob.bind(this)
+      ),
+      this.queueService.work<RecruiterVerificationSubmittedEmailJobData>(
+        QUEUE_NAMES.NOTIFICATION_EMAIL_RECRUITER_VERIFICATION_SUBMITTED,
+        this.handleRecruiterVerificationSubmittedJob.bind(this)
+      ),
+      this.queueService.work<RecruiterVerificationStatusEmailJobData>(
+        QUEUE_NAMES.NOTIFICATION_EMAIL_RECRUITER_VERIFICATION_STATUS,
+        this.handleRecruiterVerificationStatusJob.bind(this)
+      ),
+      this.queueService.work<JobModerationEmailJobData>(
+        QUEUE_NAMES.NOTIFICATION_EMAIL_JOB_MODERATION,
+        this.handleJobModerationJob.bind(this)
       ),
     ]);
 
@@ -417,6 +442,379 @@ export class NotificationEmailWorker implements OnModuleInit {
 
     this.logger.log(
       `Status update email (${status}) delivered for application ${applicationId} [job: ${job.id}]`
+    );
+  }
+
+  /**
+   * Processes confirmation email to recruiter when organization verification is submitted or resubmitted.
+   */
+  async handleRecruiterVerificationSubmittedJob(
+    job: JobEnvelope<RecruiterVerificationSubmittedEmailJobData>
+  ): Promise<void> {
+    const { recruiterId, isResubmission } = job.data;
+    const retryCount = job.retryCount ?? 0;
+    const retryLimit = job.retryLimit ?? 3;
+    const queueName =
+      job.name ||
+      QUEUE_NAMES.NOTIFICATION_EMAIL_RECRUITER_VERIFICATION_SUBMITTED;
+
+    this.logger.log(
+      `Processing recruiter verification ${isResubmission ? 'resubmission' : 'submission'} confirmation for recruiter ${recruiterId} [queue: ${queueName}, job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1}]`
+    );
+
+    const recruiter = await this.prisma.recruiter.findUnique({
+      where: { id: recruiterId },
+      include: {
+        user: true,
+        company: true,
+        verification: true,
+      },
+    });
+
+    if (!recruiter || !recruiter.user) {
+      this.logger.warn(
+        `Recruiter ${recruiterId} or associated user not found. Skipping verification confirmation [job: ${job.id}].`
+      );
+      return;
+    }
+
+    if (recruiter.user.is_banned) {
+      this.logger.warn(
+        `User for recruiter ${recruiterId} is banned. Skipping verification confirmation [job: ${job.id}].`
+      );
+      return;
+    }
+
+    const recipientEmail = recruiter.user.email?.trim();
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+      this.logger.warn(
+        `Invalid recipient email for recruiter ${recruiterId}. Skipping verification confirmation.`
+      );
+      return;
+    }
+
+    const recruiterName =
+      `${recruiter.first_name || ''} ${recruiter.last_name || ''}`.trim() ||
+      'Recruiter';
+    const orgName =
+      recruiter.verification?.organization_name ||
+      recruiter.company?.name ||
+      'your organization';
+
+    const safeRecruiterName = escapeHtml(recruiterName);
+    const safeOrgName = escapeHtml(orgName);
+
+    const subject = isResubmission
+      ? `Organization Verification Resubmitted: ${orgName}`
+      : `Organization Verification Submitted: ${orgName}`;
+
+    const text = isResubmission
+      ? `Hello ${recruiterName},\n\nThank you for updating your organization details for "${orgName}".\n\nOur administration team has received your updated submission and will re-evaluate your organization profile. We will notify you by email once the review is finalized.\n\nYou can track your verification status anytime from your CareerForge dashboard.\n\nBest regards,\nThe CareerForge Team`
+      : `Hello ${recruiterName},\n\nThank you for submitting organization verification details for "${orgName}".\n\nOur administration team has received your submission and will review your credentials shortly. You will receive an email update once your verification has been reviewed.\n\nYou can check your current verification status at any time from your CareerForge dashboard.\n\nBest regards,\nThe CareerForge Team`;
+
+    const html = isResubmission
+      ? `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+           <h2>Verification Details Resubmitted</h2>
+           <p>Hello ${safeRecruiterName},</p>
+           <p>Thank you for updating your organization details for <strong>${safeOrgName}</strong>.</p>
+           <p>Our administration team has received your updated submission and will re-evaluate your organization profile. We will notify you by email once the review is finalized.</p>
+           <p>You can track your verification status anytime from your CareerForge recruiter dashboard.</p>
+           <p>Best regards,<br/>The CareerForge Team</p>
+         </div>`
+      : `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+           <h2>Verification Details Received</h2>
+           <p>Hello ${safeRecruiterName},</p>
+           <p>Thank you for submitting organization verification details for <strong>${safeOrgName}</strong>.</p>
+           <p>Our administration team has received your submission and will review your credentials shortly. You will receive an email notification once your verification has been reviewed.</p>
+           <p>You can check your current verification status at any time from your CareerForge recruiter dashboard.</p>
+           <p>Best regards,<br/>The CareerForge Team</p>
+         </div>`;
+
+    const idempotencyKey = job.data.eventId
+      ? `email:recruiter-verif-sub:${job.data.eventId}`
+      : isResubmission
+        ? `email:recruiter-verif-resub:${recruiterId}:${recruiter.verification?.updated_at?.getTime() || 'latest'}`
+        : `email:recruiter-verif-sub:${recruiterId}`;
+
+    await this.dispatchIdempotentEmail({
+      idempotencyKey,
+      eventType: isResubmission
+        ? 'recruiter_verification_resubmitted'
+        : 'recruiter_verification_submitted',
+      recipientEmail,
+      subject,
+      text,
+      html,
+      jobId: job.id,
+    });
+
+    this.logger.log(
+      `Recruiter verification ${isResubmission ? 'resubmission' : 'submission'} confirmation sent for recruiter ${recruiterId} [job: ${job.id}]`
+    );
+  }
+
+  /**
+   * Processes status update notifications to recruiter (NEEDS_CLARIFICATION, APPROVED, REJECTED).
+   */
+  async handleRecruiterVerificationStatusJob(
+    job: JobEnvelope<RecruiterVerificationStatusEmailJobData>
+  ): Promise<void> {
+    const { recruiterId, status, clarificationMessage, rejectionReason } =
+      job.data;
+    const retryCount = job.retryCount ?? 0;
+    const retryLimit = job.retryLimit ?? 3;
+    const queueName =
+      job.name ||
+      QUEUE_NAMES.NOTIFICATION_EMAIL_RECRUITER_VERIFICATION_STATUS;
+
+    this.logger.log(
+      `Processing recruiter verification status (${status}) for recruiter ${recruiterId} [queue: ${queueName}, job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1}]`
+    );
+
+    const recruiter = await this.prisma.recruiter.findUnique({
+      where: { id: recruiterId },
+      include: {
+        user: true,
+        company: true,
+        verification: true,
+      },
+    });
+
+    if (!recruiter || !recruiter.user) {
+      this.logger.warn(
+        `Recruiter ${recruiterId} or associated user not found. Skipping status notification [job: ${job.id}].`
+      );
+      return;
+    }
+
+    if (recruiter.user.is_banned) {
+      this.logger.warn(
+        `User for recruiter ${recruiterId} is banned. Skipping status notification [job: ${job.id}].`
+      );
+      return;
+    }
+
+    const recipientEmail = recruiter.user.email?.trim();
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+      this.logger.warn(
+        `Invalid recipient email for recruiter ${recruiterId}. Skipping status notification.`
+      );
+      return;
+    }
+
+    const recruiterName =
+      `${recruiter.first_name || ''} ${recruiter.last_name || ''}`.trim() ||
+      'Recruiter';
+    const orgName =
+      recruiter.verification?.organization_name ||
+      recruiter.company?.name ||
+      'your organization';
+
+    const safeRecruiterName = escapeHtml(recruiterName);
+    const safeOrgName = escapeHtml(orgName);
+
+    let subject: string;
+    let text: string;
+    let html: string;
+    let idempotencyKey: string;
+
+    if (status === 'NEEDS_CLARIFICATION') {
+      const effectiveMessage =
+        clarificationMessage?.trim() ||
+        recruiter.verification?.clarification_message?.trim() ||
+        'Please provide additional details or supporting evidence for your organization.';
+      const safeClarification = escapeHtml(effectiveMessage);
+
+      subject = `Action Required: Clarification requested for ${orgName} verification`;
+      text = `Hello ${recruiterName},\n\nOur administration team reviewed your organization verification for "${orgName}" and has requested additional clarification:\n\n"${effectiveMessage}"\n\nPlease log in to your CareerForge recruiter portal to update your organization details or upload requested documentation.\n\nBest regards,\nThe CareerForge Team`;
+      html = `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+           <h2 style="color: #d97706;">Action Required: Clarification Requested</h2>
+           <p>Hello ${safeRecruiterName},</p>
+           <p>Our administration team reviewed your organization verification for <strong>${safeOrgName}</strong> and requested additional information:</p>
+           <blockquote style="border-left: 4px solid #f59e0b; padding-left: 12px; margin: 16px 0; color: #555; background: #fffbeb; padding: 12px;">
+             ${safeClarification}
+           </blockquote>
+           <p>Please log in to your CareerForge recruiter dashboard to update your details or upload supporting proof.</p>
+           <p>Best regards,<br/>The CareerForge Team</p>
+         </div>`;
+
+      idempotencyKey = job.data.eventId
+        ? `email:recruiter-clarification:${job.data.eventId}`
+        : `email:recruiter-clarification:${recruiterId}:${recruiter.verification?.clarification_requested_at?.getTime() || recruiter.verification?.updated_at?.getTime() || 'latest'}`;
+    } else if (status === 'APPROVED') {
+      subject = `Congratulations! ${orgName} has been verified on CareerForge`;
+      text = `Hello ${recruiterName},\n\nGreat news! Your recruiter account and organization profile for "${orgName}" have been approved by the CareerForge administration team.\n\nYou now have full access to post job openings, browse qualified candidates, and manage student applications.\n\nBest regards,\nThe CareerForge Team`;
+      html = `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+           <h2 style="color: #10b981;">Organization Verification Approved!</h2>
+           <p>Hello ${safeRecruiterName},</p>
+           <p>Great news! Your recruiter account and organization profile for <strong>${safeOrgName}</strong> have been approved by the CareerForge administration team.</p>
+           <p>You now have full access to post job openings, search student talent, and review applicant submissions.</p>
+           <p>Best regards,<br/>The CareerForge Team</p>
+         </div>`;
+
+      idempotencyKey = job.data.eventId
+        ? `email:recruiter-approved:${job.data.eventId}`
+        : `email:recruiter-approved:${recruiterId}`;
+    } else if (status === 'REJECTED') {
+      const effectiveReason =
+        rejectionReason?.trim() ||
+        recruiter.verification?.rejection_reason?.trim() ||
+        'Application rejected by administrator';
+      const safeReason = escapeHtml(effectiveReason);
+
+      subject = `Update on your organization verification for ${orgName}`;
+      text = `Hello ${recruiterName},\n\nThank you for your interest in partnering with CareerForge.\n\nAfter reviewing your submission for "${orgName}", our administration team was unable to approve your recruiter account.\n\nReason: ${effectiveReason}\n\nIf you have questions or believe this decision was made in error, please reach out to our team.\n\nBest regards,\nThe CareerForge Team`;
+      html = `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+           <h2>Organization Verification Update</h2>
+           <p>Hello ${safeRecruiterName},</p>
+           <p>Thank you for your interest in partnering with CareerForge.</p>
+           <p>After reviewing your submission for <strong>${safeOrgName}</strong>, our administration team was unable to approve your recruiter account at this time.</p>
+           <p><strong>Reason:</strong> ${safeReason}</p>
+           <p>If you have questions or would like to submit further information, please contact our support team.</p>
+           <p>Best regards,<br/>The CareerForge Team</p>
+         </div>`;
+
+      idempotencyKey = job.data.eventId
+        ? `email:recruiter-rejected:${job.data.eventId}`
+        : `email:recruiter-rejected:${recruiterId}`;
+    } else {
+      this.logger.warn(
+        `Unknown recruiter verification status "${status}". Skipping [job: ${job.id}].`
+      );
+      return;
+    }
+
+    await this.dispatchIdempotentEmail({
+      idempotencyKey,
+      eventType: `recruiter_verification_${status.toLowerCase()}`,
+      recipientEmail,
+      subject,
+      text,
+      html,
+      jobId: job.id,
+    });
+
+    this.logger.log(
+      `Recruiter verification status (${status}) email delivered for recruiter ${recruiterId} [job: ${job.id}]`
+    );
+  }
+
+  /**
+   * Processes job moderation status notification to the owning recruiter (ACTIVE or REJECTED).
+   */
+  async handleJobModerationJob(
+    job: JobEnvelope<JobModerationEmailJobData>
+  ): Promise<void> {
+    const { jobId, status, reason } = job.data;
+    const retryCount = job.retryCount ?? 0;
+    const retryLimit = job.retryLimit ?? 3;
+    const queueName =
+      job.name || QUEUE_NAMES.NOTIFICATION_EMAIL_JOB_MODERATION;
+
+    this.logger.log(
+      `Processing job moderation notification (${status}) for job ${jobId} [queue: ${queueName}, job: ${job.id}, attempt: ${retryCount + 1}/${retryLimit + 1}]`
+    );
+
+    const jobEntity = await this.prisma.job.findUnique({
+      where: { id: jobId },
+      include: {
+        company: true,
+        recruiter: {
+          include: { user: true },
+        },
+      },
+    });
+
+    if (!jobEntity || !jobEntity.recruiter || !jobEntity.recruiter.user) {
+      this.logger.warn(
+        `Job ${jobId} or owning recruiter user not found. Skipping moderation notification [job: ${job.id}].`
+      );
+      return;
+    }
+
+    if (jobEntity.recruiter.user.is_banned) {
+      this.logger.warn(
+        `Owning recruiter user for job ${jobId} is banned. Skipping moderation notification [job: ${job.id}].`
+      );
+      return;
+    }
+
+    const recipientEmail = jobEntity.recruiter.user.email?.trim();
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+      this.logger.warn(
+        `Invalid recipient email for owning recruiter of job ${jobId}. Skipping.`
+      );
+      return;
+    }
+
+    const recruiterName =
+      `${jobEntity.recruiter.first_name || ''} ${jobEntity.recruiter.last_name || ''}`.trim() ||
+      'Hiring Manager';
+    const jobTitle = jobEntity.title;
+    const companyName = jobEntity.company?.name || 'your company';
+
+    const safeRecruiterName = escapeHtml(recruiterName);
+    const safeJobTitle = escapeHtml(jobTitle);
+    const safeCompanyName = escapeHtml(companyName);
+
+    let subject: string;
+    let text: string;
+    let html: string;
+    let idempotencyKey: string;
+
+    if (status === 'ACTIVE') {
+      subject = `Job Approved: "${jobTitle}" is now live on CareerForge`;
+      text = `Hello ${recruiterName},\n\nYour job posting for "${jobTitle}" at ${companyName} has been approved by our moderation team and is now live.\n\nStudents and candidates can now view and apply for this opportunity. You can manage incoming applications directly from your recruiter dashboard.\n\nBest regards,\nThe CareerForge Team`;
+      html = `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+           <h2 style="color: #10b981;">Job Posting Approved!</h2>
+           <p>Hello ${safeRecruiterName},</p>
+           <p>Your job posting for <strong>${safeJobTitle}</strong> at <strong>${safeCompanyName}</strong> has been approved by our moderation team and is now live on the platform.</p>
+           <p>Qualified students can now discover and submit applications for this role. You can review candidates in real time from your recruiter dashboard.</p>
+           <p>Best regards,<br/>The CareerForge Team</p>
+         </div>`;
+
+      idempotencyKey = job.data.eventId
+        ? `email:job-mod:${job.data.eventId}`
+        : `email:job-mod:${jobId}:ACTIVE`;
+    } else if (status === 'REJECTED') {
+      const effectiveReason =
+        reason?.trim() ||
+        'The job posting does not meet our platform posting guidelines.';
+      const safeReason = escapeHtml(effectiveReason);
+
+      subject = `Update on your job posting: "${jobTitle}"`;
+      text = `Hello ${recruiterName},\n\nOur moderation team has reviewed your job posting for "${jobTitle}" at ${companyName} and determined it cannot be published at this time.\n\nReason: ${effectiveReason}\n\nYou can review and update your job details from your recruiter dashboard to submit for re-evaluation.\n\nBest regards,\nThe CareerForge Team`;
+      html = `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+           <h2>Job Posting Update</h2>
+           <p>Hello ${safeRecruiterName},</p>
+           <p>Our moderation team reviewed your job posting for <strong>${safeJobTitle}</strong> at <strong>${safeCompanyName}</strong> and determined it cannot be published at this time.</p>
+           <p><strong>Reason:</strong> ${safeReason}</p>
+           <p>You can update your job details from your recruiter dashboard and submit for re-evaluation.</p>
+           <p>Best regards,<br/>The CareerForge Team</p>
+         </div>`;
+
+      idempotencyKey = job.data.eventId
+        ? `email:job-mod:${job.data.eventId}`
+        : `email:job-mod:${jobId}:REJECTED`;
+    } else {
+      this.logger.warn(
+        `Job status "${status}" does not require an email notification. Skipping [job: ${job.id}].`
+      );
+      return;
+    }
+
+    await this.dispatchIdempotentEmail({
+      idempotencyKey,
+      eventType: `job_moderation_${status.toLowerCase()}`,
+      recipientEmail,
+      subject,
+      text,
+      html,
+      jobId: job.id,
+    });
+
+    this.logger.log(
+      `Job moderation notification (${status}) sent for job ${jobId} [job: ${job.id}]`
     );
   }
 

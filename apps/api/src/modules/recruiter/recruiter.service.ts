@@ -1,9 +1,16 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { VerificationStatus } from '@prisma/client';
+import { QueueService } from '../../core/queue/queue.service';
+import {
+  QUEUE_NAMES,
+  RecruiterVerificationSubmittedEmailJobData,
+} from '../../core/queue/queue.types';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   RecruiterOrganizationData,
@@ -54,9 +61,13 @@ function validateMagicBytes(buffer: Buffer, mimeType: string): boolean {
 
 @Injectable()
 export class RecruiterService {
+  private readonly logger = new Logger(RecruiterService.name);
+
   constructor(
     private readonly prisma: PrismaService,
-    private readonly evidenceStorageService: EvidenceStorageService
+    private readonly evidenceStorageService: EvidenceStorageService,
+    @Optional()
+    private readonly queueService?: QueueService
   ) {}
 
   /**
@@ -230,6 +241,7 @@ export class RecruiterService {
     const linkedinUrl = dto.linkedin_url ?? null;
     const designation = dto.designation ?? null;
     const description = dto.description ?? null;
+    const isResubmission = recruiter.verification !== null;
 
     if (recruiter.verification) {
       // If clarification was requested, resubmission moves status back to PENDING
@@ -261,6 +273,30 @@ export class RecruiterService {
           status: VerificationStatus.PENDING,
         },
       });
+    }
+
+    // Asynchronously dispatch verification submission/resubmission notification via pg-boss
+    if (this.queueService) {
+      try {
+        await this.queueService.send<RecruiterVerificationSubmittedEmailJobData>(
+          QUEUE_NAMES.NOTIFICATION_EMAIL_RECRUITER_VERIFICATION_SUBMITTED,
+          {
+            recruiterId: recruiter.id,
+            isResubmission,
+          },
+          {
+            singletonKey: `recruiter-verif-sub:${recruiter.id}:${Date.now()}`,
+            retryLimit: 3,
+            retryDelay: 15,
+            retryBackoff: true,
+          }
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Unknown queue error';
+        this.logger.error(
+          `Failed to enqueue recruiter verification notification for recruiter ${recruiter.id}: ${msg}`
+        );
+      }
     }
 
     return this.getOrganizationSubmission(userId);
