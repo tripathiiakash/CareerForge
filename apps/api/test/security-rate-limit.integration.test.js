@@ -21,6 +21,7 @@ const {
   AllExceptionsFilter,
 } = require('../dist/core/filters/all-exceptions.filter');
 const {
+  DEFAULT_PRODUCTION_TRUST_PROXY,
   validateEnvironment,
   ConfigValidationError,
 } = require('../dist/core/config/config.validator');
@@ -1046,13 +1047,13 @@ describe('Security & Rate-Limit Hardening Suite (Phase 5.17.3)', () => {
       });
       assert.equal(devConfig.trustProxy, false);
 
-      // Production default: 1 (single-hop reverse proxy)
+      // Production default: DEFAULT_PRODUCTION_TRUST_PROXY (Cloudflare + Render private subnet chain)
       const prodConfig = validateEnvironment({
         ...validBaseEnv,
         NODE_ENV: 'production',
         JWT_SECRET: 'a'.repeat(32),
       });
-      assert.equal(prodConfig.trustProxy, 1);
+      assert.equal(prodConfig.trustProxy, DEFAULT_PRODUCTION_TRUST_PROXY);
 
       // Explicit overrides
       const overrideTrue = validateEnvironment({

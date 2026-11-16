@@ -96,7 +96,7 @@ export class RateLimitStore implements OnModuleDestroy {
         1,
         Math.ceil((resetAtMs - nowMs) / 1000)
       );
-      const isBlocked = totalHits > limit;
+      const isBlocked = totalHits > limit && nowMs < resetAtMs;
 
       return {
         totalHits,

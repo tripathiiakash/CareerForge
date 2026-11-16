@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { AppConfig, NodeEnv } from './config.types';
-import { validateEnvironment } from './config.validator';
+import {
+  DEFAULT_PRODUCTION_TRUST_PROXY,
+  validateEnvironment,
+} from './config.validator';
 
 /**
  * ConfigService encapsulates typed access to validated environment configuration.
@@ -141,7 +144,14 @@ export class ConfigService {
   }
 
   get trustProxy(): boolean | number | string {
-    return this.config.trustProxy ?? (this.isProduction ? 1 : false);
+    return (
+      this.config.trustProxy ??
+      (this.isProduction ? DEFAULT_PRODUCTION_TRUST_PROXY : false)
+    );
+  }
+
+  get proxySharedSecret(): string | undefined {
+    return this.config.proxySharedSecret;
   }
 
   get authCookieName(): string {

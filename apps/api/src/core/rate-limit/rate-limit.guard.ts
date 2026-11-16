@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
+import { timingSafeEqual } from 'node:crypto';
+import { isIP } from 'node:net';
 import { ConfigService } from '../config/config.service';
 import { RATE_LIMIT_KEY, SKIP_RATE_LIMIT_KEY } from './rate-limit.decorator';
 import { RateLimitStore } from './rate-limit.store';
@@ -115,12 +117,42 @@ export class RateLimitGuard implements CanActivate {
   }
 
   /**
-   * Resolves client IP address through Express trusted reverse proxy configuration,
-   * falling back to the direct socket address or localhost fallback.
-   * Arbitrary client-supplied X-Forwarded-For headers are never blindly parsed.
+   * Resolves client IP address:
+   * 1. If an authenticated proxy secret is configured on the server AND the incoming
+   *    request includes a matching proxy secret header (verified using constant-time comparison)
+   *    AND the visitor-IP header is syntactically valid (isIP !== 0):
+   *    returns the normalized authenticated visitor IP.
+   * 2. In all other cases (missing/invalid secret, invalid IP syntax, direct unauthenticated requests):
+   *    falls back to Express trusted reverse-proxy resolution (req.ip), socket remoteAddress,
+   *    or 127.0.0.1.
+   *
+   * Arbitrary client-supplied headers (X-Forwarded-For, x-cf-visitor-ip) are strictly ignored
+   * unless authenticated by the shared secret.
    */
   private getClientIp(request: Request): string {
-    return request.ip || request.socket?.remoteAddress || '127.0.0.1';
+    const configuredSecret = this.configService?.proxySharedSecret;
+
+    if (configuredSecret) {
+      const incomingSecret =
+        (request.headers?.[PROXY_AUTH_HEADER] as string | undefined) ||
+        (request.headers?.['x-proxy-secret'] as string | undefined);
+
+      if (safeCompareSecret(incomingSecret, configuredSecret)) {
+        const rawVisitorIp =
+          (request.headers?.[PROXY_VISITOR_IP_HEADER] as string | undefined) ||
+          (request.headers?.['x-visitor-ip'] as string | undefined);
+
+        if (rawVisitorIp && typeof rawVisitorIp === 'string') {
+          const trimmed = rawVisitorIp.trim();
+          if (isValidIp(trimmed)) {
+            return normalizeIp(trimmed);
+          }
+        }
+      }
+    }
+
+    const rawIp = request.ip || request.socket?.remoteAddress || '127.0.0.1';
+    return normalizeIp(rawIp);
   }
 
   /**
@@ -161,4 +193,59 @@ export class RateLimitGuard implements CanActivate {
 
     return undefined;
   }
+}
+
+export const PROXY_AUTH_HEADER = 'x-cf-proxy-secret';
+export const PROXY_VISITOR_IP_HEADER = 'x-cf-visitor-ip';
+
+/**
+ * Constant-time string comparison preventing timing side-channel attacks.
+ */
+export function safeCompareSecret(
+  provided?: string | null,
+  expected?: string | null
+): boolean {
+  if (
+    !provided ||
+    !expected ||
+    typeof provided !== 'string' ||
+    typeof expected !== 'string'
+  ) {
+    return false;
+  }
+  const bufA = Buffer.from(provided);
+  const bufB = Buffer.from(expected);
+  if (bufA.length !== bufB.length) {
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
+}
+
+/**
+ * Validates whether a given string is a syntactically valid IPv4 or IPv6 address.
+ */
+export function isValidIp(ip?: string | null): boolean {
+  if (!ip || typeof ip !== 'string') {
+    return false;
+  }
+  const trimmed = ip.trim();
+  return isIP(trimmed) !== 0;
+}
+
+/**
+ * Normalizes an IP address by trimming whitespace, stripping IPv4-mapped IPv6
+ * prefixes (::ffff:), and mapping IPv6 loopback (::1) to 127.0.0.1.
+ */
+export function normalizeIp(rawIp?: string | null): string {
+  if (!rawIp || typeof rawIp !== 'string') {
+    return '127.0.0.1';
+  }
+  let ip = rawIp.trim();
+  if (ip.startsWith('::ffff:')) {
+    ip = ip.substring(7);
+  }
+  if (ip === '::1') {
+    ip = '127.0.0.1';
+  }
+  return ip || '127.0.0.1';
 }

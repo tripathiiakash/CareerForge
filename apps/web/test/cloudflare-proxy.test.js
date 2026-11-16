@@ -10,6 +10,9 @@ import {
   getSetCookieHeaders,
   onRequest,
   DEFAULT_UPSTREAM_URL,
+  PROXY_AUTH_HEADER,
+  PROXY_VISITOR_IP_HEADER,
+  INTERNAL_PROXY_HEADERS,
 } from '../functions/api/v1/[[path]].ts';
 import { resolveApiBaseUrl } from '../src/lib/api.ts';
 
@@ -498,6 +501,119 @@ describe('Cloudflare Pages Functions Same-Origin API Proxy Suite', () => {
         const res = await onRequest(context);
         assert.equal(res.status, 204);
         assert.equal(capturedMethod, 'OPTIONS');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('attaches authenticated proxy secret and visitor IP headers when PROXY_SHARED_SECRET is configured', async () => {
+      let capturedHeaders = null;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (url, init) => {
+        capturedHeaders = init?.headers;
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      try {
+        const reqHeaders = new Headers({
+          'CF-Connecting-IP': '203.0.113.195',
+        });
+
+        const context = {
+          request: new Request('https://careerforge-8oq.pages.dev/api/v1/auth/login', {
+            method: 'POST',
+            headers: reqHeaders,
+            body: JSON.stringify({ email: 'test@example.com', password: 'password123' }),
+          }),
+          env: {
+            PROXY_SHARED_SECRET: 'test-secure-shared-secret-key-32chars',
+          },
+          next: async () => new Response('next', { status: 404 }),
+          functionPath: '/api/v1',
+          waitUntil: () => {},
+          params: { path: ['auth', 'login'] },
+          data: {},
+        };
+
+        const res = await onRequest(context);
+        assert.equal(res.status, 200);
+
+        assert.equal(
+          capturedHeaders.get(PROXY_AUTH_HEADER),
+          'test-secure-shared-secret-key-32chars',
+          'Must attach authenticated proxy secret header'
+        );
+        assert.equal(
+          capturedHeaders.get(PROXY_VISITOR_IP_HEADER),
+          '203.0.113.195',
+          'Must attach verified visitor IP header'
+        );
+        assert.equal(
+          capturedHeaders.get('x-forwarded-for'),
+          '203.0.113.195',
+          'Must also forward standard x-forwarded-for'
+        );
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    it('strictly strips any incoming client-supplied internal proxy headers to prevent spoofing', async () => {
+      let capturedHeaders = null;
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (url, init) => {
+        capturedHeaders = init?.headers;
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      };
+
+      try {
+        // Malicious client tries to spoof visitor IP and inject proxy secret from browser
+        const maliciousHeaders = new Headers({
+          'CF-Connecting-IP': '198.51.100.42',
+          'X-CF-Proxy-Secret': 'forged-attacker-secret',
+          'X-CF-Visitor-IP': '8.8.8.8',
+          'X-Proxy-Secret': 'forged-secret-2',
+          'X-Visitor-IP': '1.1.1.1',
+        });
+
+        const context = {
+          request: new Request('https://careerforge-8oq.pages.dev/api/v1/auth/login', {
+            method: 'POST',
+            headers: maliciousHeaders,
+            body: JSON.stringify({ email: 'test@example.com', password: 'password123' }),
+          }),
+          env: {
+            PROXY_SHARED_SECRET: 'real-server-proxy-secret',
+          },
+          next: async () => new Response('next', { status: 404 }),
+          functionPath: '/api/v1',
+          waitUntil: () => {},
+          params: { path: ['auth', 'login'] },
+          data: {},
+        };
+
+        const res = await onRequest(context);
+        assert.equal(res.status, 200);
+
+        // Header must contain real server secret, NOT attacker-forged secret
+        assert.equal(
+          capturedHeaders.get(PROXY_AUTH_HEADER),
+          'real-server-proxy-secret'
+        );
+        // Visitor IP must be Cloudflare-verified CF-Connecting-IP, NOT attacker-forged 8.8.8.8
+        assert.equal(
+          capturedHeaders.get(PROXY_VISITOR_IP_HEADER),
+          '198.51.100.42'
+        );
+        assert.notEqual(capturedHeaders.get(PROXY_VISITOR_IP_HEADER), '8.8.8.8');
+        assert.equal(capturedHeaders.get('x-proxy-secret'), null);
+        assert.equal(capturedHeaders.get('x-visitor-ip'), null);
       } finally {
         globalThis.fetch = originalFetch;
       }

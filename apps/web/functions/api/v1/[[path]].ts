@@ -24,6 +24,8 @@ export interface Env {
   BACKEND_URL?: string;
   API_URL?: string;
   RENDER_API_URL?: string;
+  PROXY_SHARED_SECRET?: string;
+  CF_PROXY_SECRET?: string;
 }
 
 export interface EventContext<Env, P extends string, Data> {
@@ -54,6 +56,24 @@ export const HOP_BY_HOP_HEADERS = new Set([
   'transfer-encoding',
   'upgrade',
   'host', // Managed by fetch based on destination target URL
+]);
+
+/**
+ * Authenticated reverse proxy boundary headers (SEC-02).
+ * Pre-shared secret and verified visitor IP passed from Cloudflare Pages to Render.
+ */
+export const PROXY_AUTH_HEADER = 'x-cf-proxy-secret';
+export const PROXY_VISITOR_IP_HEADER = 'x-cf-visitor-ip';
+
+/**
+ * Internal proxy headers that must NEVER be accepted from incoming client requests.
+ * Stripped unconditionally before proxying to upstream API.
+ */
+export const INTERNAL_PROXY_HEADERS = new Set([
+  'x-cf-proxy-secret',
+  'x-cf-visitor-ip',
+  'x-proxy-secret',
+  'x-visitor-ip',
 ]);
 
 /**
@@ -125,20 +145,34 @@ export const onRequest: PagesFunction<Env> = async (context) => {
   const forwardedHeaders = new Headers();
   for (const [key, value] of request.headers.entries()) {
     const lowerKey = key.toLowerCase();
-    if (HOP_BY_HOP_HEADERS.has(lowerKey)) {
+    if (
+      HOP_BY_HOP_HEADERS.has(lowerKey) ||
+      INTERNAL_PROXY_HEADERS.has(lowerKey)
+    ) {
       continue;
     }
     forwardedHeaders.set(key, value);
   }
 
   // Forward client IP for backend rate-limiting & logging
+  // cf-connecting-ip is prioritized to prevent client-side IP spoofing
   const clientIp =
     request.headers.get('cf-connecting-ip') ||
-    request.headers.get('x-forwarded-for') ||
-    request.headers.get('x-real-ip');
+    request.headers.get('x-real-ip') ||
+    request.headers.get('x-forwarded-for');
 
   if (clientIp) {
-    forwardedHeaders.set('x-forwarded-for', clientIp);
+    forwardedHeaders.set('x-forwarded-for', clientIp.trim());
+  }
+
+  // Authenticated reverse proxy boundary (SEC-02):
+  // Attach pre-shared secret and verified visitor IP to authenticate to Render API
+  const proxySecret =
+    env.PROXY_SHARED_SECRET?.trim() || env.CF_PROXY_SECRET?.trim();
+
+  if (proxySecret && clientIp) {
+    forwardedHeaders.set(PROXY_AUTH_HEADER, proxySecret);
+    forwardedHeaders.set(PROXY_VISITOR_IP_HEADER, clientIp.trim());
   }
 
   forwardedHeaders.set('x-forwarded-proto', url.protocol.replace(':', ''));
