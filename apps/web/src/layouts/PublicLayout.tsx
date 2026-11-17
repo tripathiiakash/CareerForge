@@ -6,8 +6,6 @@ import {
   X,
   ArrowRight,
   Github,
-  Twitter,
-  Linkedin,
   LogOut,
   User,
 } from 'lucide-react';
@@ -239,35 +237,21 @@ export const PublicLayout: React.FC = () => {
                 </div>
                 <span className="text-lg font-bold">CareerForge</span>
               </div>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Next-generation career platform bridging ambitious students with
-                high-growth companies through AI-driven matching and direct
-                hiring.
+              <p className="text-sm text-slate-300 leading-relaxed">
+                Full-stack career platform connecting talent with technical
+                roles through admin-moderated job listings and Gemini-powered
+                resume analysis.
               </p>
-              <div className="flex items-center gap-3 text-muted-foreground pt-1">
+              <div className="flex items-center gap-3 text-slate-300 pt-1">
                 <a
-                  href="https://github.com"
+                  href="https://github.com/tripathiiakash/CareerForge"
                   target="_blank"
                   rel="noreferrer"
-                  className="hover:text-foreground transition-colors"
+                  className="hover:text-foreground transition-colors inline-flex items-center gap-1.5 text-xs text-slate-300 hover:text-white"
+                  aria-label="GitHub Repository"
                 >
                   <Github className="h-4 w-4" />
-                </a>
-                <a
-                  href="https://twitter.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-foreground transition-colors"
-                >
-                  <Twitter className="h-4 w-4" />
-                </a>
-                <a
-                  href="https://linkedin.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:text-foreground transition-colors"
-                >
-                  <Linkedin className="h-4 w-4" />
+                  <span className="font-mono">GitHub</span>
                 </a>
               </div>
             </div>
@@ -276,7 +260,7 @@ export const PublicLayout: React.FC = () => {
               <h4 className="text-sm font-semibold tracking-wider text-foreground uppercase mb-3">
                 For Students
               </h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
+              <ul className="space-y-2 text-sm text-slate-300">
                 <li>
                   <Link
                     to="/jobs"
@@ -294,14 +278,20 @@ export const PublicLayout: React.FC = () => {
                   </Link>
                 </li>
                 <li>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">
+                  <Link
+                    to="/student/resume"
+                    className="hover:text-foreground transition-colors"
+                  >
                     AI Resume Feedback
-                  </span>
+                  </Link>
                 </li>
                 <li>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">
+                  <Link
+                    to="/student/applications"
+                    className="hover:text-foreground transition-colors"
+                  >
                     Application Tracker
-                  </span>
+                  </Link>
                 </li>
               </ul>
             </div>
@@ -310,7 +300,7 @@ export const PublicLayout: React.FC = () => {
               <h4 className="text-sm font-semibold tracking-wider text-foreground uppercase mb-3">
                 For Employers
               </h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
+              <ul className="space-y-2 text-sm text-slate-300">
                 <li>
                   <Link
                     to="/recruiter"
@@ -320,19 +310,20 @@ export const PublicLayout: React.FC = () => {
                   </Link>
                 </li>
                 <li>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">
+                  <Link
+                    to="/recruiter/jobs/new"
+                    className="hover:text-foreground transition-colors"
+                  >
                     Post Job Openings
-                  </span>
+                  </Link>
                 </li>
                 <li>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">
-                    Manage Candidates
-                  </span>
-                </li>
-                <li>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">
-                    Employer Branding
-                  </span>
+                  <Link
+                    to="/recruiter/jobs"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    Manage Postings
+                  </Link>
                 </li>
               </ul>
             </div>
@@ -341,7 +332,7 @@ export const PublicLayout: React.FC = () => {
               <h4 className="text-sm font-semibold tracking-wider text-foreground uppercase mb-3">
                 Platform
               </h4>
-              <ul className="space-y-2 text-sm text-muted-foreground">
+              <ul className="space-y-2 text-sm text-slate-300">
                 <li>
                   <Link
                     to="/admin"
@@ -351,31 +342,25 @@ export const PublicLayout: React.FC = () => {
                   </Link>
                 </li>
                 <li>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">
-                    API & Integrations
-                  </span>
-                </li>
-                <li>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">
-                    Privacy Policy
-                  </span>
-                </li>
-                <li>
-                  <span className="hover:text-foreground cursor-pointer transition-colors">
-                    Terms of Service
-                  </span>
+                  <a
+                    href="https://github.com/tripathiiakash/CareerForge"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="hover:text-foreground transition-colors"
+                  >
+                    GitHub Repository
+                  </a>
                 </li>
               </ul>
             </div>
           </div>
 
-          <div className="mt-10 border-t border-border/40 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
+          <div className="mt-10 border-t border-border/40 pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-400">
             <p>
-              © {new Date().getFullYear()} CareerForge Inc. All rights reserved.
+              © 2026 CareerForge, a portfolio project by Akash Tripathi.
             </p>
             <div className="flex items-center gap-2">
-              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Systems Operational &bull; Powered by Deep AI</span>
+              <span>Powered by Google Gemini</span>
             </div>
           </div>
         </div>

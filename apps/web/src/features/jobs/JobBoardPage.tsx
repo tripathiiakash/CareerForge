@@ -25,7 +25,7 @@ export const JobBoardPage: React.FC = () => {
   const filters: JobFilterParams = useMemo(() => {
     const pageParam = parseInt(searchParams.get('page') || '1', 10);
     const limitParam = parseInt(searchParams.get('limit') || '10', 10);
-    const search = searchParams.get('search') || '';
+    const search = searchParams.get('search') || searchParams.get('q') || '';
     const skills = searchParams.get('skills') || '';
     const empType = searchParams.get('employment_type') || '';
 
