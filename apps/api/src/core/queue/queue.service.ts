@@ -12,6 +12,14 @@ const DEFAULT_QUEUE_POLICIES: Partial<Record<string, QueuePolicy>> = {
   [QUEUE_NAMES.RESUME_AI_ANALYSIS]: 'exclusive',
 };
 
+/**
+ * Target maximum concurrent database connections allocated to PgBoss query pool (budget: 3).
+ * Combined with 1 dedicated LISTEN connection (useListenNotify: true),
+ * PgBoss uses at most 4 connections, leaving 11 for Prisma (5) and headroom (6)
+ * within the Supabase Session Pooler budget (15 max).
+ */
+export const PGBOSS_DEFAULT_POOL_MAX = 3;
+
 @Injectable()
 export class QueueService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(QueueService.name);
@@ -22,6 +30,8 @@ export class QueueService implements OnModuleInit, OnModuleDestroy {
     this.boss = new PgBoss({
       connectionString: this.configService.databaseUrl,
       schema: this.configService.pgBossSchema,
+      max: PGBOSS_DEFAULT_POOL_MAX,
+      useListenNotify: true,
     });
 
     this.boss.on('error', (error) => {

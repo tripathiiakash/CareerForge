@@ -41,7 +41,7 @@ This document provides the definitive preflight evaluation of the CareerForge re
 | :--- | :---: | :--- | :--- | :--- |
 | `NODE_ENV` | **YES** | NestJS Core, Exception Filters, Security Headers | Render Environment | Defaults to `development`. **Must be set to `production`**. |
 | `PORT` | **YES** | Express HTTP listener (`main.ts`) | Render Environment (Auto-injected) | Defaults to `5000` locally; Render automatically injects `10000`. |
-| `DATABASE_URL` | **YES** | PrismaClient, pg-boss, Admin Bootstrap | Render Postgres Connection String | **No default**. Must use direct port 5432 with `?sslmode=require&connection_limit=10`. |
+| `DATABASE_URL` | **YES** | PrismaClient, pg-boss, Admin Bootstrap | Render Postgres Connection String | **No default**. Must use direct port 5432 with `?sslmode=require&connection_limit=5`. |
 | `PG_BOSS_SCHEMA` | NO | `QueueService` (pg-boss schema) | Render Environment | Defaults to `'pgboss'`. |
 | `JWT_SECRET` | **YES** | `AuthService`, `JwtStrategy`, `RateLimitGuard` | Render Secrets | **No default in production**. Minimum 32 characters (`openssl rand -base64 32`). |
 | `JWT_EXPIRES_IN` | NO | `TokenService` | Render Environment | Defaults to `'7d'`. |
@@ -100,9 +100,9 @@ This document provides the definitive preflight evaluation of the CareerForge re
   - Render PostgreSQL provides direct session connections on port 5432, which is fully compatible with pg-boss.
   - **CRITICAL WARNING**: Never route `DATABASE_URL` through a transaction pooler (such as PgBouncer in transaction mode or Supabase port 6543) because pg-boss session-scoped advisory locks will fail. Use direct connection on port 5432.
 - **Connection Pool Sizing**:
-  - A 256 MB PostgreSQL instance supports ~20–50 max connections.
-  - Configure `DATABASE_URL` query parameters: `?sslmode=require&connection_limit=10`.
-  - Prisma pool (10) + pg-boss pool (~5) = ~15 connections, remaining safely below Render's connection thresholds.
+  - A 256 MB PostgreSQL instance supports ~20–50 max connections (Supabase Session Pooler limit is 15).
+  - Configure `DATABASE_URL` query parameters: `?sslmode=require&connection_limit=5`.
+  - PgBoss pool (3 query + 1 LISTEN = 4) + Prisma pool (5) = 9 connections total, remaining safely below the 15-connection threshold and reserving 6 connections for migrations/admin.
 - **Schema Separation**:
   - Prisma entity tables live in schema `public`.
   - pg-boss queue engine tables live in schema `pgboss`.
