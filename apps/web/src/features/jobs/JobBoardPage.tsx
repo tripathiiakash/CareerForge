@@ -1,7 +1,6 @@
 import React, { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useLocation } from 'react-router-dom';
 import {
-  Briefcase,
   Compass,
   AlertCircle,
   RotateCcw,
@@ -20,6 +19,8 @@ import { EmploymentType, JobFilterParams } from './types';
 
 export const JobBoardPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const isStudentPortal = location.pathname.startsWith('/student');
 
   // Parse filters from URL search parameters
   const filters: JobFilterParams = useMemo(() => {
@@ -51,6 +52,7 @@ export const JobBoardPage: React.FC = () => {
   // Update URL search parameters
   const updateFilters = (updated: Partial<JobFilterParams>) => {
     const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('q');
 
     const merged = { ...filters, ...updated };
 
@@ -96,30 +98,37 @@ export const JobBoardPage: React.FC = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div
+      className={`space-y-5 max-w-7xl mx-auto ${
+        isStudentPortal ? '' : 'px-4 sm:px-6 lg:px-8 py-6 sm:py-8'
+      }`}
+    >
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
-            <Compass className="h-7 w-7 text-primary" />
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <Compass className="h-6 w-6 text-primary shrink-0" />
             <span>Active Job Board</span>
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
             Browse verified opportunities curated for software engineers and
             technologists.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {isFetching && !isLoading && (
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 text-xs text-slate-400">
               <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
               <span>Updating...</span>
             </span>
           )}
-          <Badge variant="info" className="text-xs">
-            {meta.total} Active Role{meta.total === 1 ? '' : 's'}
-          </Badge>
+          {!isLoading && (
+            <Badge variant="info" className="text-xs font-medium">
+              {meta.total} {hasActiveFilters ? 'Matching' : 'Active'} Role
+              {meta.total === 1 ? '' : 's'}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -134,21 +143,21 @@ export const JobBoardPage: React.FC = () => {
       {/* Main Results / State Section */}
       {isLoading ? (
         // Loading Skeleton
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {[1, 2, 3, 4].map((n) => (
             <Card
               key={n}
               glass
-              className="animate-pulse p-6 border border-border/50"
+              className="animate-pulse p-5 border border-border/50"
             >
               <div className="flex items-start gap-4">
-                <div className="h-12 w-12 rounded-xl bg-secondary/80" />
+                <div className="h-12 w-12 rounded-xl bg-secondary/80 shrink-0" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-4 w-48 bg-secondary/80 rounded" />
-                  <div className="h-5 w-72 bg-secondary/80 rounded" />
-                  <div className="flex gap-2 pt-2">
-                    <div className="h-6 w-16 bg-secondary/60 rounded-full" />
-                    <div className="h-6 w-20 bg-secondary/60 rounded-full" />
+                  <div className="h-4 w-40 bg-secondary/80 rounded" />
+                  <div className="h-5 w-64 bg-secondary/80 rounded" />
+                  <div className="flex gap-2 pt-1.5">
+                    <div className="h-5 w-16 bg-secondary/60 rounded-full" />
+                    <div className="h-5 w-20 bg-secondary/60 rounded-full" />
                   </div>
                 </div>
               </div>
@@ -169,7 +178,7 @@ export const JobBoardPage: React.FC = () => {
               <h2 className="text-lg font-semibold text-foreground">
                 Unable to Load Job Listings
               </h2>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto mt-1">
+              <p className="text-sm text-slate-300 max-w-md mx-auto mt-1">
                 {error?.message ||
                   'A network error occurred while communicating with the server.'}
               </p>
@@ -189,7 +198,7 @@ export const JobBoardPage: React.FC = () => {
         // Empty State
         <Card glass className="text-center p-12 border-dashed border-border/80">
           <CardContent className="space-y-4 pt-4">
-            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-muted-foreground mx-auto">
+            <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-slate-400 mx-auto">
               <Inbox className="h-6 w-6" />
             </div>
             <div>
@@ -198,7 +207,7 @@ export const JobBoardPage: React.FC = () => {
                   ? 'No Matches for Current Criteria'
                   : 'No Active Opportunities Currently Available'}
               </h2>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto mt-1">
+              <p className="text-sm text-slate-300 max-w-md mx-auto mt-1">
                 {hasActiveFilters
                   ? 'Try broadening your search keyword, removing specific skills, or clearing employment filters.'
                   : 'Employers regularly post new roles. Please check back shortly.'}
@@ -219,7 +228,7 @@ export const JobBoardPage: React.FC = () => {
         </Card>
       ) : (
         // Job Listings List
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {jobs.map((job) => (
             <JobCard key={job.id} job={job} />
           ))}
@@ -227,7 +236,7 @@ export const JobBoardPage: React.FC = () => {
           {/* Pagination Controls */}
           {meta.totalPages > 1 && (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-4 border-t border-border/40">
-              <p className="text-xs text-muted-foreground text-center sm:text-left">
+              <p className="text-xs text-slate-300 text-center sm:text-left">
                 Showing{' '}
                 <span className="font-semibold text-foreground">
                   {(meta.page - 1) * meta.limit + 1}
@@ -256,7 +265,7 @@ export const JobBoardPage: React.FC = () => {
                   <span>Previous</span>
                 </Button>
 
-                <span className="text-xs font-medium px-3 py-1 bg-secondary/50 rounded-lg border border-border/40">
+                <span className="text-xs font-medium px-3 py-1 bg-secondary/50 rounded-lg border border-border/40 text-slate-300">
                   Page {meta.page} of {meta.totalPages}
                 </span>
 

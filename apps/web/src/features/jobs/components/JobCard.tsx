@@ -42,6 +42,10 @@ export const JobCard: React.FC<JobCardProps> = ({ job, basePath }) => {
   const [imageError, setImageError] = useState(false);
   const formattedDate = formatPostedDate(job.created_at);
   const isInternship = job.employment_type === 'INTERNSHIP';
+  const isVerifiedEmployer = Boolean(
+    (job.company as { is_verified?: boolean })?.is_verified ||
+    (job as { is_verified_employer?: boolean })?.is_verified_employer
+  );
 
   let currentPath = '';
   try {
@@ -61,7 +65,7 @@ export const JobCard: React.FC<JobCardProps> = ({ job, basePath }) => {
       glass
       className="group relative overflow-hidden transition-all duration-300 hover:border-primary/40 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-0.5"
     >
-      <CardContent className="p-5 sm:p-6 space-y-4">
+      <CardContent className="p-4 sm:p-5 space-y-3.5">
         {/* Header: Company Avatar + Title & Company Info */}
         <div className="flex items-start gap-3.5 sm:gap-4">
           <div className="h-12 w-12 shrink-0 rounded-xl bg-secondary/80 border border-border/60 flex items-center justify-center overflow-hidden shadow-sm">
@@ -146,8 +150,14 @@ export const JobCard: React.FC<JobCardProps> = ({ job, basePath }) => {
 
         {/* Action Footer */}
         <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs">
-          <span className="text-muted-foreground">
-            Verified Employer Opportunity
+          <span className="text-slate-400">
+            {isVerifiedEmployer ? (
+              <span className="inline-flex items-center gap-1 text-emerald-400 font-medium">
+                Verified Employer Opportunity
+              </span>
+            ) : (
+              'Active Opportunity'
+            )}
           </span>
 
           <Link
